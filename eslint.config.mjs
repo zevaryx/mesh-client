@@ -27,6 +27,7 @@ export default tseslint.config(
       'vite.config.mts',
       '*.config.{ts,js,mjs,cjs}',
       'dist-electron/**',
+      'dist-headless/**',
       'coverage/**',
       'playwright-report/**',
       'test-results/**',

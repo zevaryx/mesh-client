@@ -35,7 +35,6 @@ import {
 import { APP_ABOUT_TAGLINE } from '../shared/appTagline';
 import { isChannelIdentityKey } from '../shared/channelIdentityKey';
 import { clampQueryLimit } from '../shared/clampQueryLimit';
-import { parseConnectHostPort } from '../shared/connectHost';
 import { docsSitePageUrl } from '../shared/docsSite';
 import { NODES_LAST_HEARD_SEC_SQL, normalizeLastHeardToUnixSec } from '../shared/lastHeardUnits';
 import { findLxmUrlInArgv, isForwardableMeshClientOpenUrl } from '../shared/meshClientDeepLink';
@@ -131,7 +130,7 @@ import { writeGattToRadio } from './gattIpcWrite';
 import { formatGpxTracks, GPX_EXPORT_MAX_POINTS } from './gpxExportFormat';
 import { isHarmlessSocketOptionError } from './harmlessSocketOptionError';
 import { probeHttpRttMs, probeTcpRttMs } from './host-link-rtt';
-import { isValidHttpHostname } from './httpHostValidation';
+import { isValidHttpHostname, validateHttpHost } from './httpHostValidation';
 import { registerBeaconIpcHandlers } from './ipc/beacon-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from './ipc/environment-telemetry-handlers';
 import { registerFlasherHandlers } from './ipc/flasher-handlers';
@@ -6625,20 +6624,6 @@ const CHAT_EXPORT_MAX_MESSAGES = 10_000;
 const DB_SAVE_NODE_PATH_MAX_BYTES = 16 * 1024;
 /** Max Meshtastic HTTP toRadio payload (aligned with meshcore:tcp-write cap). */
 const HTTP_WRITE_TO_RADIO_MAX_BYTES = 256 * 1024;
-const MAX_HOST_LENGTH = 253;
-
-function validateHttpHost(host: unknown): asserts host is string {
-  if (typeof host !== 'string' || host.length === 0 || host.length > MAX_HOST_LENGTH) {
-    throw new Error('Invalid host');
-  }
-  // http:preflight/http:connect pass an authority string with a port already
-  // appended (formatHostForUrl); meshcore:tcp-connect passes a bare host.
-  // Strip a trailing port before validating so both call sites work.
-  const bareHost = parseConnectHostPort(host, 0).host;
-  if (!isValidHttpHostname(bareHost)) {
-    throw new Error('Invalid host format');
-  }
-}
 
 async function httpPreflight(host: string, tls: boolean): Promise<void> {
   const protocol = tls ? 'https' : 'http';

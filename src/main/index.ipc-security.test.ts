@@ -12,6 +12,7 @@ const SUPPORT_BUNDLE_SOURCE = readFileSync(join(__dirname, 'support-bundle.ts'),
 const TAK_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/tak-handlers.ts'), 'utf-8');
 const GPS_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/gps-handlers.ts'), 'utf-8');
 const TCP_BRIDGE_SOURCE = readFileSync(join(__dirname, 'ipc/tcp-bridge.ts'), 'utf-8');
+const HOST_VALIDATION_SOURCE = readFileSync(join(__dirname, 'httpHostValidation.ts'), 'utf-8');
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
   'utf-8',
@@ -33,9 +34,12 @@ function ipcHandlerBody(channel: string, span = 400): string {
 // ─── http:preflight / http:connect hostname validation ──────────────
 
 describe('validateHttpHost (source contract)', () => {
-  it('uses isValidHttpHostname from httpHostValidation', () => {
-    expect(INDEX_SOURCE).toContain("import { isValidHttpHostname } from './httpHostValidation'");
-    expect(INDEX_SOURCE).toContain('isValidHttpHostname(bareHost)');
+  it('uses the shared validateHttpHost from httpHostValidation', () => {
+    expect(INDEX_SOURCE).toContain(
+      "import { isValidHttpHostname, validateHttpHost } from './httpHostValidation'",
+    );
+    expect(INDEX_SOURCE).not.toContain('function validateHttpHost(');
+    expect(HOST_VALIDATION_SOURCE).toContain('isValidConnectHost(bareHost)');
   });
 
   it('calls validateHttpHost in http:preflight handler', () => {
@@ -77,9 +81,9 @@ describe('validateHttpHost (source contract)', () => {
     // has a port appended (connection.ts: formatHostForUrl(host, port)), even for
     // a bare IP with no port typed. isValidHttpHostname alone rejects that string
     // because it looks like an unbracketed (and invalid) IPv6 literal.
-    const bodyIdx = INDEX_SOURCE.indexOf('function validateHttpHost(');
+    const bodyIdx = HOST_VALIDATION_SOURCE.indexOf('function validateHttpHost(');
     expect(bodyIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(bodyIdx, bodyIdx + 500);
+    const body = HOST_VALIDATION_SOURCE.slice(bodyIdx, bodyIdx + 700);
     expect(body).toContain('parseConnectHostPort(host, 0).host');
   });
 

@@ -152,6 +152,7 @@ nav:
           - Offline maps: development/offline-maps.md
           - Live packet map: development/live-packet-map.md
           - Settings search: development/settings-search.md
+          - Headless web UI: development/headless-webui.md
   - Project:
       - License: license.md
       - Credits: credits.md

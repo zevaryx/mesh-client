@@ -22,6 +22,7 @@ File-level developer notes for each subsystem, for human contributors and coding
 | App shell (rail, section tabs, status bar, launcher), UI tokens, controls, copy rules                     | [style-guide.md](../style-guide.md)                                                     |
 | Launcher settings search (registry, `data-setting-anchor`, reveal, guards)                                | [settings-search.md](settings-search.md)                                                |
 | Developer service announcements feed (`announcements/announcements.json`), strip, pre-commit warning      | [service-announcements.md — Implementation](../service-announcements.md#implementation) |
+| Headless web UI / Docker image (browser bridge, headless server, porting handlers off Electron)           | [headless-webui.md](headless-webui.md)                                                  |
 | Symptom → where-to-check index                                                                            | [common-issues.md](common-issues.md)                                                    |
 | Where to look first by area (diagnostics, protocols, lifecycle, DB, BLE, MQTT, Rooms, UI)                 | [architecture-quick-ref.md](architecture-quick-ref.md)                                  |
 

@@ -6,7 +6,7 @@
  * MeshCore rejects a missing socket; Meshtastic resolves `'no-socket'`.
  */
 
-import { type BrowserWindow, ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 import net from 'net';
 
 import { formatHostForSocket } from '../../shared/connectHost';
@@ -18,6 +18,7 @@ import {
 } from '../live-session-meter';
 import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
 import { meshtasticTcpWriteErrorIsNoSocket } from '../meshtasticTcpWriteResult';
+import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender } from '../validate-ipc-sender';
 
 export type TcpBridgeProtocol = 'meshcore' | 'meshtastic';
@@ -34,7 +35,7 @@ export const TCP_BRIDGE_KEEPALIVE_INITIAL_DELAY_MS = 30_000;
 export interface TcpBridgeDeps {
   protocol: TcpBridgeProtocol;
   writeMissing: TcpBridgeWriteMissing;
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
 }
 
@@ -49,7 +50,7 @@ export interface TcpBridgeHandlers {
 }
 
 export interface TcpBridgeRegisterDeps {
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
 }
 

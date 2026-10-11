@@ -1,0 +1,98 @@
+# Headless web UI (Docker)
+
+Run Mesh Client as a server and use it from a browser: the React renderer is served over HTTP and talks to a Node process (no Electron) through a WebSocket. The goal is an always-on gateway image (`docker run … mesh-client-web`) for TCP/HTTP radios, MQTT and Reticulum.
+
+> **Status: early.** The bridge, server, build and image are in place. Only the TCP radio bridge is available so far. The app stops at its boot screen ("Saved settings could not be loaded") until the database, secret store and app-settings handlers are ported (see [Porting status](#porting-status)).
+
+## Architecture
+
+```text
+browser                                   headless server (Node 22, no Electron)
+───────                                   ──────────────────────────────────────
+dist/renderer (unchanged Vite build)      dist-headless/server.js
+  └─ window.electronAPI                     ├─ HTTP: static renderer, /web-bridge.js, /healthz
+       = src/preload/index.ts               ├─ WS /ipc (token + same-origin check)
+         bundled with electron →            │    invoke/send → HeadlessIpcRegistry
+         src/preload/web/                   │    webContents.send → broadcast to sessions
+         electronRendererShim.ts  ◄── WS ──►└─ main-process handler modules, bundled with
+                                                 electron → src/main/headless/electronShim.ts
+```
+
+The trick on both sides is the same: **alias the `electron` module at bundle time** so existing code runs unchanged.
+
+- **Browser:** `src/preload/index.ts` only uses `contextBridge` and `ipcRenderer`. `scripts/build-headless.mjs` bundles it as an IIFE (`web-bridge.js`) with `electron` → `electronRendererShim.ts`, so the browser gets the exact same `window.electronAPI` as the desktop app. The server injects `<script src="/web-bridge.js">` ahead of the app module in `index.html`, so `devElectronApiStub` never installs.
+- **Server:** handler modules keep calling `ipcMain.handle(...)` and `getMainWindow()?.webContents.send(...)`. In the headless bundle `ipcMain` is backed by `HeadlessIpcRegistry`, and the one `BrowserWindow` broadcasts to every bridge session. The shim exports only what ported modules use: importing anything else **fails the headless build** with "No matching export", so a module is never silently stubbed.
+
+### Wire protocol
+
+`src/shared/webBridgeProtocol.ts`: JSON frames (`invoke` / `send` from the browser; `result` / `error` / `event` from the server). Values JSON cannot carry are tagged: `Uint8Array` / `Buffer` / typed arrays (decoded as `Uint8Array`, as with Electron IPC), `ArrayBuffer`, `Date`, `Map`, `Set`, `bigint`, and `undefined` inside arrays. Invoke rejections use Electron's text (`Error invoking remote method '<channel>': Error: <message>`) so renderer error matching keeps working.
+
+### Security model
+
+- **Token:** `MESH_CLIENT_WEB_TOKEN` (min 16 chars) or a random token generated per start and printed once as `http://…/?token=…`. The bridge stores it in `localStorage` and strips it from the address bar; it rides on the WebSocket URL (`/ipc?token=`), compared in constant time.
+- **Origin:** browser upgrades must have `Origin` matching `Host`. Behind a reverse proxy, forward `Host` unchanged.
+- **Sender validation is kept:** authenticated sessions get a synthetic event with `senderFrame.url = mesh-client://headless-web/`, and the shim reports `app.isPackaged === true`, so `assertIpcSender` applies its packaged-build rules unchanged.
+- No TLS in the server itself; put it behind a TLS reverse proxy for anything beyond a trusted LAN. `MESH_CLIENT_WEB_AUTH=off` disables the token for isolated networks only.
+- Responses carry `Referrer-Policy: no-referrer` (the first URL holds the token), `X-Frame-Options: DENY`, `nosniff`. The renderer CSP is unchanged; `'self'` already allows `/web-bridge.js` and the same-origin WebSocket.
+
+## Build and run
+
+```bash
+pnpm run build:headless # vite build + dist-headless/{server,web-bridge}.js
+pnpm run start:headless # http://127.0.0.1:8080/?token=… printed in the log
+
+docker build -t mesh-client-web .
+docker run --rm -p 8080:8080 -v mesh-client-data:/data mesh-client-web
+```
+
+The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the runtime image holds only Node, `dist/renderer` and `dist-headless/`. The image runs as `node`, keeps state in the `/data` volume and has a `/healthz` health check. Behind a Docker Hub rate limit or mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node`.
+
+| Variable                   | Default                     | Meaning                                                  |
+| -------------------------- | --------------------------- | -------------------------------------------------------- |
+| `MESH_CLIENT_DATA_DIR`     | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image) |
+| `MESH_CLIENT_WEB_HOST`     | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                    |
+| `MESH_CLIENT_WEB_PORT`     | `8080`                      | HTTP + WebSocket port                                    |
+| `MESH_CLIENT_WEB_TOKEN`    | random per start            | Session token (min 16 chars)                             |
+| `MESH_CLIENT_WEB_AUTH`     | `token`                     | `off` disables auth (isolated networks only)             |
+| `MESH_CLIENT_RENDERER_DIR` | `<bundle>/../dist/renderer` | Vite renderer build                                      |
+
+## Porting a handler module
+
+1. Make the module take narrow dependencies instead of Electron objects, e.g. `RendererPushTarget` (`src/main/rendererPushTarget.ts`) instead of `BrowserWindow`, and move helpers that live in `index.ts` into their own module (as `validateHttpHost` moved to `httpHostValidation.ts`).
+2. Register it from `registerHeadlessHandlers()` in `src/main/headless/index.ts`, alongside the existing Electron registration in `src/main/index.ts`.
+3. Run `node scripts/build-headless.mjs`. A "No matching export" error names the Electron API the module needs: add a deliberate headless implementation to `electronShim.ts` (with a test), or keep that path out of headless.
+4. Add a test that drives the module through the registry on the shim (pattern: `src/main/headless/headlessTcpBridge.test.ts`).
+
+Electron APIs and their headless meaning, for the shim:
+
+| Electron                                         | Headless                                                                       |
+| ------------------------------------------------ | ------------------------------------------------------------------------------ |
+| `app.getPath`                                    | Under `MESH_CLIENT_DATA_DIR` (`logs/`, `exports/`)                             |
+| `ipcMain`                                        | `HeadlessIpcRegistry`                                                          |
+| `webContents.send`                               | Broadcast to all bridge sessions                                               |
+| `dialog` (open/save)                             | Not ported: needs browser upload/download endpoints                            |
+| `safeStorage`                                    | Not ported: needs a key from a Docker secret / env (weaker than an OS keyring) |
+| `shell`, tray, updater, power events, spellcheck | Not applicable; drop or no-op per call site                                    |
+
+## Porting status
+
+| Area                                                  | Status                                                                                |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Bridge, server, build, Docker image                   | Done                                                                                  |
+| Meshtastic / MeshCore TCP (`*:tcp-*`)                 | Done (`ipc/tcp-bridge.ts`)                                                            |
+| Boot gate: `secureSecrets:*`, `db:*`, `appSettings:*` | Next: needs `database.ts` startup dialogs and `safeStorage` replaced                  |
+| Meshtastic HTTP (`http:*`, `hostLink:*`)              | Pending (handlers inline in `index.ts`)                                               |
+| MQTT (`mqtt:*`)                                       | Pending                                                                               |
+| Reticulum sidecar (`reticulum:*`)                     | Pending; the image also needs the Rust sidecar binary                                 |
+| BLE (`gatt*`)                                         | Linux hosts only (host D-Bus/BlueZ passthrough); pending                              |
+| Serial                                                | Web Serial in the viewer's Chromium browser; server-side serial would be a new bridge |
+
+Open design questions: several tabs share one backend and radio (all see every push and can send); `getPlatform()` reports the server's OS (`linux`); exports and attachments that pass server file paths need upload/download flows.
+
+## Key files
+
+- `src/shared/webBridgeProtocol.ts`: frames and value codec
+- `src/preload/web/electronRendererShim.ts`: browser `ipcRenderer` / `contextBridge`
+- `src/main/headless/`: `index.ts` (entry), `config.ts` (env), `webServer.ts` (HTTP/WS), `ipcRegistry.ts`, `electronShim.ts`
+- `scripts/build-headless.mjs`: server + bridge bundles
+- `Dockerfile`, `.dockerignore`
