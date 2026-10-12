@@ -339,4 +339,40 @@ describe('MeshtasticBackendIngest', () => {
       expect(t.records).toEqual([]);
     });
   });
+
+  describe('packet links (HTTP, BLE)', () => {
+    /** HTTP polls and BLE notifications carry one bare FromRadio, without stream framing. */
+    const raw = (framed: Uint8Array) => framed.subarray(4);
+
+    it('decodes one FromRadio per push on HTTP and sends no heartbeat', async () => {
+      const t = setup();
+      t.ingest.linkOpened('http');
+      for (const f of configDump()) t.ingest.pushBytes(raw(f));
+      t.ingest.pushBytes(
+        raw(textPacket({ from: ALICE, to: BROADCAST, id: 400, text: 'over http' })),
+      );
+      await vi.waitFor(() => {
+        expect(t.rows).toHaveLength(1);
+      });
+      expect(t.rows[0]).toMatchObject({ sender_name: 'ALI', radioNodeId: ME, packetId: 400 });
+      expect(t.activeTimers()).toEqual([]);
+    });
+
+    it('sends raw (unframed) heartbeats on BLE and switches format when the link changes', () => {
+      const t = setup();
+      t.ingest.linkOpened('ble');
+      t.activeTimers()[0]?.fn();
+      const bleBeat = t.writes[0];
+      expect(fromBinary(Mesh.ToRadioSchema, bleBeat ?? new Uint8Array()).payloadVariant.case).toBe(
+        'heartbeat',
+      );
+      t.ingest.linkClosed('tcp'); // late close from a link that is no longer current: ignored
+      expect(t.activeTimers()).toHaveLength(1);
+      t.ingest.linkOpened('tcp');
+      t.activeTimers()[0]?.fn();
+      expect(t.writes[1]?.subarray(0, 2)).toEqual(new Uint8Array([0x94, 0xc3]));
+      t.ingest.linkClosed('tcp');
+      expect(t.activeTimers()).toEqual([]);
+    });
+  });
 });

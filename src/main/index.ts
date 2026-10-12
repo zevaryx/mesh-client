@@ -107,6 +107,7 @@ import {
   createDesktopMeshtasticBackend,
   isDesktopMeshtasticBackendEnabled,
 } from './meshtastic-backend/desktopBackend';
+import { attachMeshtasticGattTap } from './meshtastic-backend/gattTap';
 import { persistMeshtasticBackendRecord } from './meshtastic-backend/persist';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { MQTTManager } from './mqtt-manager';
@@ -2189,6 +2190,21 @@ gattSidecarProxy.on(
     mainWindow?.webContents.send('gatt-link-rssi', { sessionId, rssi });
   },
 );
+// ─── Meshtastic background ingest (opt-in) ─────────────────────────
+// Stores Meshtastic TCP chat, nodes, positions and telemetry in a utilityProcess while the
+// window's renderer is not decoding.
+const meshtasticDesktopBackend = isDesktopMeshtasticBackendEnabled()
+  ? createDesktopMeshtasticBackend({
+      persist: (record) => {
+        persistMeshtasticBackendRecord(record);
+      },
+      onCaughtUp: (count) => {
+        console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
+        sendMeshtasticBackendCaughtUp(mainWindow, { count });
+      },
+    })
+  : null;
+
 gattSidecarProxy.on('connected', ({ sessionId }: { sessionId: GattSessionProfile }) => {
   mainWindow?.webContents.send('gatt-connected', { sessionId });
 });
@@ -2207,6 +2223,10 @@ gattSidecarProxy.on(
     mainWindow?.webContents.send('gatt-from-radio', { sessionId, bytes });
   },
 );
+// Opt-in Meshtastic background ingest also sees the BLE session (desktop only).
+if (meshtasticDesktopBackend) {
+  attachMeshtasticGattTap(gattSidecarProxy, meshtasticDesktopBackend.taps.ble);
+}
 gattSidecarProxy.on(
   'issue',
   (payload: { sessionId?: GattSessionProfile; code: string; message: string }) => {
@@ -2839,32 +2859,20 @@ registerChatOutboxIpcHandlers();
 
 // ─── MeshCore Path History ───────────────────────────────────────────────
 
-// ─── Meshtastic background ingest (opt-in spike) ───────────────────
-// Stores Meshtastic TCP chat, nodes, positions and telemetry in a utilityProcess while the
-// window's renderer is not decoding.
-const meshtasticDesktopBackend = isDesktopMeshtasticBackendEnabled()
-  ? createDesktopMeshtasticBackend({
-      persist: (record) => {
-        persistMeshtasticBackendRecord(record);
-      },
-      onCaughtUp: (count) => {
-        console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
-        sendMeshtasticBackendCaughtUp(mainWindow, { count });
-      },
-    })
-  : null;
-
 // ─── MeshCore / Meshtastic TCP bridges ─────────────────────────────
 // Independent sockets (two createTcpBridge instances). writeMissing is the
 // only protocol fork: MeshCore rejects; Meshtastic returns 'no-socket'.
 registerTcpBridgeIpcHandlers({
   getMainWindow: () => mainWindow,
   validateHost: validateHttpHost,
-  ...(meshtasticDesktopBackend ? { meshtasticTap: meshtasticDesktopBackend.tap } : {}),
+  ...(meshtasticDesktopBackend ? { meshtasticTap: meshtasticDesktopBackend.taps.tcp } : {}),
 });
 
 // ─── Meshtastic HTTP bridge ─────────────────────────────────────────
-registerHttpBridgeIpcHandlers({ getMainWindow: () => mainWindow });
+registerHttpBridgeIpcHandlers({
+  getMainWindow: () => mainWindow,
+  ...(meshtasticDesktopBackend ? { meshtasticTap: meshtasticDesktopBackend.taps.http } : {}),
+});
 
 registerTakIpcHandlers({
   idleTakStatus: IDLE_TAK_STATUS,

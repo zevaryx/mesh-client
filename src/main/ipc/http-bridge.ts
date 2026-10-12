@@ -13,6 +13,7 @@ import { snapshotLiveSessionMeter } from '../live-session-meter';
 import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
 import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
+import type { TcpBridgeTap } from './tcp-bridge';
 
 let httpDevice: {
   host: string;
@@ -96,18 +97,29 @@ async function httpWriteToRadio(host: string, tls: boolean, data: Uint8Array): P
 
 export interface HttpBridgeIpcDeps {
   getMainWindow: () => RendererPushTarget | null;
+  /** Meshtastic background ingest: sees each polled FromRadio (same shape as `TcpBridgeTap`). */
+  meshtasticTap?: TcpBridgeTap;
+}
+
+/** Background-ingest tap of the registered bridge (one per process, like `httpDevice`). */
+let httpTap: TcpBridgeTap | undefined;
+
+/** End the current poll loop, telling the tap the link is gone. */
+function stopHttpDevice(): void {
+  if (!httpDevice) return;
+  clearInterval(httpDevice.intervalId);
+  httpDevice = null;
+  httpTap?.onClose();
 }
 
 /** Stop polling the radio (headless shutdown). Electron relies on process exit, as before. */
 export function stopHttpBridgePolling(): void {
-  if (httpDevice) {
-    clearInterval(httpDevice.intervalId);
-    httpDevice = null;
-  }
+  stopHttpDevice();
 }
 
 /** Register `http:*` and `hostLink:*`. Channel name literals keep check:ipc-contract aligned. */
 export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
+  httpTap = deps.meshtasticTap;
   ipcMain.handle('http:preflight', async (event, host: unknown, tls: unknown) => {
     if (!validateIpcSender(event)) throw new Error('http:preflight: unauthorized sender');
     validateHttpHost(host);
@@ -149,10 +161,7 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     if (typeof tls !== 'boolean') {
       throw new Error('Invalid tls');
     }
-    if (httpDevice) {
-      clearInterval(httpDevice.intervalId);
-      httpDevice = null;
-    }
+    stopHttpDevice();
     await httpPreflight(host, tls);
     const intervalId = setInterval(() => {
       if (httpDevice?.fetchInFlight) return;
@@ -172,6 +181,8 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
             readBuffer = await readBoundedArrayBuffer(response, HTTP_FROMRADIO_MAX_RESPONSE_BYTES);
             if (readBuffer.byteLength > 0) {
               const data = new Uint8Array(readBuffer);
+              // A poll still in flight from a replaced connection must not feed the new link.
+              if (httpDevice?.intervalId === intervalId) httpTap?.onData(data);
               deps.getMainWindow()?.webContents.send('http:data', data);
             }
           }
@@ -190,6 +201,7 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
             if (httpDevice) {
               clearInterval(httpDevice.intervalId);
               httpDevice = null;
+              httpTap?.onClose();
             }
           }
         } finally {
@@ -198,6 +210,15 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
       })();
     }, HTTP_FETCH_INTERVAL_MS);
     httpDevice = { host, tls, intervalId, fetchInFlight: false };
+    httpTap?.onOpen((bytes) => {
+      if (httpDevice?.intervalId !== intervalId) return;
+      httpWriteToRadio(host, tls, bytes).catch((err: unknown) => {
+        console.debug(
+          '[IPC] http background-ingest write failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+      });
+    });
     logDeviceConnection(
       `transport=http stack=meshtastic host=${sanitizeLogMessage(host)} tls=${tls}`,
     );
@@ -223,8 +244,7 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     assertIpcSender(event, 'http:disconnect');
     if (httpDevice) {
       console.debug('[IPC] http:disconnect');
-      clearInterval(httpDevice.intervalId);
-      httpDevice = null;
+      stopHttpDevice();
     }
   });
 }

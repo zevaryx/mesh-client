@@ -4,13 +4,13 @@
  * directly, so the shapes double as documentation of the boundary.
  */
 import type { TcpBridgeTap } from '../ipc/tcp-bridge';
-import type { MeshtasticBackendIngest } from './meshtasticBackendIngest';
+import type { MeshtasticBackendIngest, MeshtasticLinkKind } from './meshtasticBackendIngest';
 import type { MeshtasticBackendRecord } from './meshtasticBackendRecords';
 
 export type MeshtasticBackendCommand =
-  | { t: 'open' }
+  | { t: 'open'; kind: MeshtasticLinkKind }
   | { t: 'data'; bytes: Uint8Array }
-  | { t: 'close' }
+  | { t: 'close'; kind: MeshtasticLinkKind }
   | { t: 'present'; value: boolean };
 
 export type MeshtasticBackendEvent =
@@ -18,9 +18,12 @@ export type MeshtasticBackendEvent =
   | { t: 'write'; frame: Uint8Array }
   | { t: 'caughtUp'; count: number };
 
-/** What the main process wires: the transport tap plus renderer presence. */
+/** One tap per Meshtastic link the main process carries (TCP socket, HTTP poll, BLE session). */
+export type MeshtasticLinkTaps = Record<MeshtasticLinkKind, TcpBridgeTap>;
+
+/** What the main process wires: the transport taps plus renderer presence. */
 export interface MeshtasticBackendHandle {
-  tap: TcpBridgeTap;
+  taps: MeshtasticLinkTaps;
   setRendererPresent: (present: boolean) => void;
   dispose: () => void;
 }
@@ -37,13 +40,13 @@ export function applyMeshtasticBackendCommand(
 ): void {
   switch (cmd.t) {
     case 'open':
-      ingest.linkOpened();
+      ingest.linkOpened(cmd.kind);
       break;
     case 'data':
       ingest.pushBytes(cmd.bytes);
       break;
     case 'close':
-      ingest.linkClosed();
+      ingest.linkClosed(cmd.kind);
       break;
     case 'present':
       ingest.setRendererPresent(cmd.value);
@@ -55,12 +58,14 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
+const LINK_KINDS: readonly unknown[] = ['tcp', 'http', 'ble'];
+
 export function isMeshtasticBackendCommand(v: unknown): v is MeshtasticBackendCommand {
   if (!isRecord(v)) return false;
   switch (v.t) {
     case 'open':
     case 'close':
-      return true;
+      return LINK_KINDS.includes(v.kind);
     case 'data':
       return v.bytes instanceof Uint8Array;
     case 'present':
@@ -97,4 +102,36 @@ export function dispatchMeshtasticBackendEvent(
   } catch (err) {
     console.warn(`[meshtastic-backend] host ${event.t} failed`, err);
   }
+}
+
+/**
+ * Taps for every link kind, sharing one ingest. Only the most recently opened link feeds data
+ * and receives heartbeats, so a stale link (e.g. HTTP still polling after a switch to TCP) is
+ * ignored. `write` sends a heartbeat to that current link.
+ */
+export function createMeshtasticLinkTaps(send: (cmd: MeshtasticBackendCommand) => void): {
+  taps: MeshtasticLinkTaps;
+  write: (frame: Uint8Array) => void;
+} {
+  let current: { kind: MeshtasticLinkKind; write: (frame: Uint8Array) => void } | null = null;
+  const tapFor = (kind: MeshtasticLinkKind): TcpBridgeTap => ({
+    onOpen: (write) => {
+      current = { kind, write };
+      send({ t: 'open', kind });
+    },
+    onData: (bytes) => {
+      if (current?.kind === kind) send({ t: 'data', bytes });
+    },
+    onClose: () => {
+      if (current?.kind !== kind) return;
+      current = null;
+      send({ t: 'close', kind });
+    },
+  });
+  return {
+    taps: { tcp: tapFor('tcp'), http: tapFor('http'), ble: tapFor('ble') },
+    write: (frame) => {
+      current?.write(frame);
+    },
+  };
 }

@@ -3,6 +3,8 @@
  * server is plain Node already, so a separate process would add no isolation it needs.
  */
 import {
+  applyMeshtasticBackendCommand,
+  createMeshtasticLinkTaps,
   dispatchMeshtasticBackendEvent,
   type MeshtasticBackendHandle,
   type MeshtasticBackendHostDeps,
@@ -12,38 +14,30 @@ import { MeshtasticBackendIngest } from './meshtasticBackendIngest';
 export function startInProcessMeshtasticBackend(
   deps: MeshtasticBackendHostDeps,
 ): MeshtasticBackendHandle {
-  let write: ((frame: Uint8Array) => void) | null = null;
-  const ingest = new MeshtasticBackendIngest({
+  let ingest: MeshtasticBackendIngest | null = null;
+  const links = createMeshtasticLinkTaps((cmd) => {
+    if (ingest) applyMeshtasticBackendCommand(ingest, cmd);
+  });
+  ingest = new MeshtasticBackendIngest({
     persist: (record) => {
-      dispatchMeshtasticBackendEvent({ t: 'persist', record }, deps, write);
+      dispatchMeshtasticBackendEvent({ t: 'persist', record }, deps, links.write);
     },
     writeToRadio: (frame) => {
-      dispatchMeshtasticBackendEvent({ t: 'write', frame }, deps, write);
+      dispatchMeshtasticBackendEvent({ t: 'write', frame }, deps, links.write);
     },
     onCaughtUp: (count) => {
-      dispatchMeshtasticBackendEvent({ t: 'caughtUp', count }, deps, write);
+      dispatchMeshtasticBackendEvent({ t: 'caughtUp', count }, deps, links.write);
     },
   });
+  const running = ingest;
   return {
-    tap: {
-      onOpen: (w) => {
-        write = w;
-        ingest.linkOpened();
-      },
-      onData: (chunk) => {
-        ingest.pushBytes(chunk);
-      },
-      onClose: () => {
-        write = null;
-        ingest.linkClosed();
-      },
-    },
+    taps: links.taps,
     setRendererPresent: (present) => {
-      ingest.setRendererPresent(present);
+      running.setRendererPresent(present);
     },
     dispose: () => {
-      write = null;
-      ingest.dispose();
+      ingest = null;
+      running.dispose();
     },
   };
 }

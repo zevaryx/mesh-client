@@ -110,9 +110,12 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerTcpBridgeIpcHandlers({
     getMainWindow: pushTarget,
     validateHost: validateHttpHost,
-    ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.tap } : {}),
+    ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.taps.tcp } : {}),
   });
-  registerHttpBridgeIpcHandlers({ getMainWindow: pushTarget });
+  registerHttpBridgeIpcHandlers({
+    getMainWindow: pushTarget,
+    ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.taps.http } : {}),
+  });
   registerMqttIpcHandlers({
     mqttManager,
     meshcoreMqttAdapter,

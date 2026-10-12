@@ -168,7 +168,7 @@ describe('headless Meshtastic background ingest', () => {
     registerTcpBridgeIpcHandlers({
       getMainWindow: () => pushWindow,
       validateHost: validateHttpHost,
-      meshtasticTap: backend.tap,
+      meshtasticTap: backend.taps.tcp,
     });
     base = `http://127.0.0.1:${(await server.listen()).port}`;
   });

@@ -49,6 +49,14 @@ import {
 
 const { PortNum } = Portnums;
 
+/**
+ * How a link delivers FromRadio and takes keep-alives:
+ * - `tcp`: a byte stream (0x94 0xC3 framing); heartbeats are framed.
+ * - `http`: one FromRadio per `/api/v1/fromradio` poll; no heartbeat (the renderer sends none).
+ * - `ble`: one FromRadio per sidecar notification; heartbeats are raw ToRadio.
+ */
+export type MeshtasticLinkKind = 'tcp' | 'http' | 'ble';
+
 /** Same cadence as the renderer's keep-alive (`meshtasticTransportSideEffects.ts`). */
 export const MESHTASTIC_BACKEND_HEARTBEAT_MS = 60 * MS_PER_SECOND;
 /** Node names kept for `sender_name`; the radio's NodeDB dump refills it on every connect. */
@@ -74,7 +82,7 @@ export interface MeshtasticBackendMessageRow {
 export interface MeshtasticBackendSinks {
   /** Store one record (message, node patch, position point, environment reading). */
   persist: (record: MeshtasticBackendRecord) => void;
-  /** Framed toRadio bytes (0x94 0xC3 header included) for the active socket. */
+  /** A ToRadio heartbeat for the active link, already in that link's wire format. */
   writeToRadio: (frame: Uint8Array) => void;
   /** A renderer took ownership after the backend persisted `count` records; it should reload. */
   onCaughtUp: (count: number) => void;
@@ -100,11 +108,13 @@ export function frameMeshtasticToRadio(payload: Uint8Array): Uint8Array {
   return frame;
 }
 
-export function meshtasticHeartbeatFrame(): Uint8Array {
+/** Heartbeat ToRadio, framed for the stream API unless `raw` (BLE writes bare protobufs). */
+export function meshtasticHeartbeatFrame(raw = false): Uint8Array {
   const toRadio = create(Mesh.ToRadioSchema, {
     payloadVariant: { case: 'heartbeat', value: create(Mesh.HeartbeatSchema) },
   });
-  return frameMeshtasticToRadio(toBinary(Mesh.ToRadioSchema, toRadio));
+  const bytes = toBinary(Mesh.ToRadioSchema, toRadio);
+  return raw ? bytes : frameMeshtasticToRadio(bytes);
 }
 
 export class MeshtasticBackendIngest {
@@ -112,6 +122,7 @@ export class MeshtasticBackendIngest {
   /** A present renderer owns the current socket (it opened it); the backend stays passive. */
   private attached = false;
   private linkUp = false;
+  private linkKind: MeshtasticLinkKind = 'tcp';
   private myNodeNum = 0;
   private readonly channelKeyByIndex = new Map<number, string>();
   private readonly names = new Map<number, NodeNames>();
@@ -135,9 +146,11 @@ export class MeshtasticBackendIngest {
       });
   }
 
-  /** A new socket connected: drop per-link state; the radio re-sends it during config. */
-  linkOpened(): void {
-    this.resetFramer();
+  /** A new link connected: drop per-link state; the radio re-sends it during config. */
+  linkOpened(kind: MeshtasticLinkKind = 'tcp'): void {
+    if (kind === 'tcp') this.resetFramer();
+    else this.closeFramer();
+    this.linkKind = kind;
     this.linkUp = true;
     this.myNodeNum = 0;
     this.channelKeyByIndex.clear();
@@ -150,17 +163,20 @@ export class MeshtasticBackendIngest {
     this.syncHeartbeat();
   }
 
-  linkClosed(): void {
+  /** A link closed. A late close from a link already replaced by another kind is ignored. */
+  linkClosed(kind?: MeshtasticLinkKind): void {
+    if (kind !== undefined && kind !== this.linkKind) return;
     this.linkUp = false;
-    void this.framerWriter?.close().catch(() => {
-      // catch-no-log-ok framer already closed by an earlier link drop
-    });
-    this.framerWriter = null;
+    this.closeFramer();
     this.syncHeartbeat();
   }
 
-  /** Raw inbound bytes from the active socket. */
+  /** Inbound data: stream bytes on `tcp`, one whole FromRadio per call on `http` / `ble`. */
   pushBytes(chunk: Uint8Array): void {
+    if (this.linkKind !== 'tcp') {
+      this.handleFromRadio(chunk);
+      return;
+    }
     if (!this.framerWriter) this.resetFramer();
     void this.framerWriter?.write(chunk).catch((err: unknown) => {
       console.debug('[meshtastic-backend] framer write failed', err);
@@ -185,10 +201,15 @@ export class MeshtasticBackendIngest {
     this.linkClosed();
   }
 
-  private resetFramer(): void {
+  private closeFramer(): void {
     void this.framerWriter?.close().catch(() => {
-      // catch-no-log-ok replaced framer may already be closed
+      // catch-no-log-ok framer already closed by an earlier link drop
     });
+    this.framerWriter = null;
+  }
+
+  private resetFramer(): void {
+    this.closeFramer();
     const framer = Utils.fromDeviceStream();
     this.framerWriter = framer.writable.getWriter();
     const reader = framer.readable.getReader();
@@ -205,14 +226,17 @@ export class MeshtasticBackendIngest {
   }
 
   private syncHeartbeat(): void {
-    const want = this.linkUp && !this.attached;
-    if (want && this.heartbeat == null) {
-      this.heartbeat = this.setTimer(() => {
-        this.send(meshtasticHeartbeatFrame());
-      }, MESHTASTIC_BACKEND_HEARTBEAT_MS);
-    } else if (!want && this.heartbeat != null) {
+    const want = this.linkUp && !this.attached && this.linkKind !== 'http';
+    if (this.heartbeat != null) {
+      // Re-arm on every change so a link-kind switch never keeps the old wire format.
       this.clearTimer(this.heartbeat);
       this.heartbeat = null;
+    }
+    if (want) {
+      const raw = this.linkKind === 'ble';
+      this.heartbeat = this.setTimer(() => {
+        this.send(meshtasticHeartbeatFrame(raw));
+      }, MESHTASTIC_BACKEND_HEARTBEAT_MS);
     }
   }
 

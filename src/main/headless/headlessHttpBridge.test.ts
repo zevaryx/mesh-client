@@ -30,6 +30,8 @@ describe('HTTP bridge on the headless shim', () => {
   const writes: Buffer[] = [];
   /** Frames the fake radio hands out, one per fromradio GET, then empty bodies. */
   const pending: Buffer[] = [Buffer.from([0x0a, 0x01, 0x02])];
+  /** Meshtastic background-ingest tap: sees the same polled frames as the renderer. */
+  const tap = { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() };
 
   beforeAll(async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
@@ -65,7 +67,7 @@ describe('HTTP bridge on the headless shim', () => {
     const window = new BrowserWindow((channel, args) => {
       pushes.push({ channel, args });
     });
-    registerHttpBridgeIpcHandlers({ getMainWindow: () => window });
+    registerHttpBridgeIpcHandlers({ getMainWindow: () => window, meshtasticTap: tap });
   });
 
   afterAll(async () => {
@@ -97,11 +99,21 @@ describe('HTTP bridge on the headless shim', () => {
     const data = pushes.find((p) => p.channel === 'http:data');
     expect(Array.from(data?.args[0] as Uint8Array)).toEqual([0x0a, 0x01, 0x02]);
 
+    expect(tap.onOpen).toHaveBeenCalledTimes(1);
+    expect(tap.onData).toHaveBeenCalledWith(new Uint8Array([0x0a, 0x01, 0x02]));
+
     await invoke('http:write', [1, 2, 3]);
     expect(writes.map((w) => Array.from(w))).toEqual([[1, 2, 3]]);
+    // The tap's writer reaches the same radio (used for background-ingest keep-alives).
+    const tapWrite = tap.onOpen.mock.calls[0]?.[0] as (bytes: Uint8Array) => void;
+    tapWrite(new Uint8Array([7]));
+    await vi.waitFor(() => {
+      expect(writes.map((w) => Array.from(w))).toEqual([[1, 2, 3], [7]]);
+    });
     await expect(invoke('http:write', [256])).rejects.toThrow('byte values must be integers');
 
     await invoke('http:disconnect');
+    expect(tap.onClose).toHaveBeenCalledTimes(1);
     await expect(invoke('http:write', [1])).rejects.toThrow('no active connection');
   }, 15_000);
 

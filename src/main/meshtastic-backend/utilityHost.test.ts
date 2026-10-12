@@ -10,7 +10,11 @@ import {
   createDesktopMeshtasticBackend,
   isDesktopMeshtasticBackendEnabled,
 } from './desktopBackend';
-import type { MeshtasticBackendCommand, MeshtasticBackendHandle } from './hostProtocol';
+import {
+  createMeshtasticLinkTaps,
+  type MeshtasticBackendCommand,
+  type MeshtasticBackendHandle,
+} from './hostProtocol';
 import { type MeshtasticBackendChild, startUtilityMeshtasticBackend } from './utilityHost';
 
 class FakeChild extends EventEmitter implements MeshtasticBackendChild {
@@ -44,17 +48,17 @@ describe('startUtilityMeshtasticBackend', () => {
     const handle = startUtilityMeshtasticBackend(d, () => child);
     const write = vi.fn();
     handle.setRendererPresent(true);
-    handle.tap.onOpen(write);
-    handle.tap.onData(new Uint8Array([1, 2]));
-    handle.tap.onClose();
+    handle.taps.tcp.onOpen(write);
+    handle.taps.tcp.onData(new Uint8Array([1, 2]));
+    handle.taps.tcp.onClose();
     expect(child.sent).toEqual([
       { t: 'present', value: true },
-      { t: 'open' },
+      { t: 'open', kind: 'tcp' },
       { t: 'data', bytes: new Uint8Array([1, 2]) },
-      { t: 'close' },
+      { t: 'close', kind: 'tcp' },
     ]);
 
-    handle.tap.onOpen(write);
+    handle.taps.tcp.onOpen(write);
     child.emit('message', { t: 'write', frame: new Uint8Array([9]) });
     child.emit('message', { t: 'persist', record: { kind: 'message', row: { payload: 'x' } } });
     child.emit('message', { t: 'caughtUp', count: 3 });
@@ -73,14 +77,15 @@ describe('startUtilityMeshtasticBackend', () => {
   it('becomes a no-op when the worker is missing or exits', () => {
     const missing = startUtilityMeshtasticBackend(deps(), () => null);
     expect(() => {
-      missing.tap.onData(new Uint8Array([1]));
+      missing.taps.tcp.onData(new Uint8Array([1]));
       missing.dispose();
     }).not.toThrow();
 
     const child = new FakeChild();
     const handle = startUtilityMeshtasticBackend(deps(), () => child);
     child.emit('exit', 1);
-    handle.tap.onData(new Uint8Array([1]));
+    handle.taps.tcp.onOpen(vi.fn());
+    handle.taps.tcp.onData(new Uint8Array([1]));
     expect(child.sent).toEqual([]);
   });
 });
@@ -100,13 +105,17 @@ describe('createDesktopMeshtasticBackend', () => {
   it('forwards the tap after start and tracks renderer presence from window events', () => {
     const present: boolean[] = [];
     const inner: MeshtasticBackendHandle = {
-      tap: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
+      taps: {
+        tcp: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
+        http: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
+        ble: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
+      },
       setRendererPresent: (p) => present.push(p),
       dispose: vi.fn(),
     };
     const desktop = createDesktopMeshtasticBackend(deps(), () => inner);
-    desktop.tap.onData(new Uint8Array([1])); // before start: dropped
-    expect(inner.tap.onData).not.toHaveBeenCalled();
+    desktop.taps.tcp.onData(new Uint8Array([1])); // before start: dropped
+    expect(inner.taps.tcp.onData).not.toHaveBeenCalled();
 
     const wc = new EventEmitter();
     const win = Object.assign(new EventEmitter(), { webContents: wc });
@@ -119,9 +128,36 @@ describe('createDesktopMeshtasticBackend', () => {
     win.emit('closed');
     expect(present).toEqual([false, true, false, true, false, false]);
 
-    desktop.tap.onData(new Uint8Array([2]));
-    expect(inner.tap.onData).toHaveBeenCalledWith(new Uint8Array([2]));
+    desktop.taps.ble.onData(new Uint8Array([2]));
+    expect(inner.taps.ble.onData).toHaveBeenCalledWith(new Uint8Array([2]));
+    expect(inner.taps.tcp.onData).not.toHaveBeenCalled();
     desktop.dispose();
     expect(inner.dispose).toHaveBeenCalled();
+  });
+});
+
+describe('createMeshtasticLinkTaps', () => {
+  it('feeds only the most recently opened link and sends heartbeats to it', () => {
+    const sent: MeshtasticBackendCommand[] = [];
+    const links = createMeshtasticLinkTaps((cmd) => sent.push(cmd));
+    const httpWrite = vi.fn();
+    const tcpWrite = vi.fn();
+    links.taps.http.onOpen(httpWrite);
+    links.taps.tcp.onOpen(tcpWrite); // renderer switched transports; HTTP still polling
+    links.taps.http.onData(new Uint8Array([1])); // stale link: ignored
+    links.taps.tcp.onData(new Uint8Array([2]));
+    links.write(new Uint8Array([9]));
+    links.taps.http.onClose(); // stale close: ignored
+    expect(sent).toEqual([
+      { t: 'open', kind: 'http' },
+      { t: 'open', kind: 'tcp' },
+      { t: 'data', bytes: new Uint8Array([2]) },
+    ]);
+    expect(tcpWrite).toHaveBeenCalledWith(new Uint8Array([9]));
+    expect(httpWrite).not.toHaveBeenCalled();
+    links.taps.tcp.onClose();
+    links.write(new Uint8Array([8]));
+    expect(sent.at(-1)).toEqual({ t: 'close', kind: 'tcp' });
+    expect(tcpWrite).toHaveBeenCalledTimes(1);
   });
 });

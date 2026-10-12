@@ -4,12 +4,17 @@
  * not decoding: closed (macOS keeps the app alive), crashed, or mid-reload.
  *
  * `utilityProcess.fork` needs a ready app while the TCP bridge registers at module load, so the
- * bridge gets {@link DesktopMeshtasticBackend.tap}, which forwards once {@link start} has run.
+ * bridges get {@link DesktopMeshtasticBackend.taps}, which forward once {@link start} has run.
  */
 import type { BrowserWindow } from 'electron';
 
 import type { TcpBridgeTap } from '../ipc/tcp-bridge';
-import type { MeshtasticBackendHandle, MeshtasticBackendHostDeps } from './hostProtocol';
+import type {
+  MeshtasticBackendHandle,
+  MeshtasticBackendHostDeps,
+  MeshtasticLinkTaps,
+} from './hostProtocol';
+import type { MeshtasticLinkKind } from './meshtasticBackendIngest';
 import { startUtilityMeshtasticBackend } from './utilityHost';
 
 export const MESHTASTIC_BACKEND_ENV = 'MESH_CLIENT_MESHTASTIC_BACKEND';
@@ -21,7 +26,7 @@ export function isDesktopMeshtasticBackendEnabled(
 }
 
 export interface DesktopMeshtasticBackend {
-  tap: TcpBridgeTap;
+  taps: MeshtasticLinkTaps;
   /** Fork the worker (after `app.whenReady`). */
   start: () => void;
   /** Track whether `win`'s renderer is loaded and decoding. */
@@ -37,16 +42,17 @@ export function createDesktopMeshtasticBackend(
 ): DesktopMeshtasticBackend {
   let handle: MeshtasticBackendHandle | null = null;
   let present = false;
+  const forward = (kind: MeshtasticLinkKind): TcpBridgeTap => ({
+    onOpen: (write) => handle?.taps[kind].onOpen(write),
+    onData: (chunk) => handle?.taps[kind].onData(chunk),
+    onClose: () => handle?.taps[kind].onClose(),
+  });
   const setPresent = (value: boolean): void => {
     present = value;
     handle?.setRendererPresent(value);
   };
   return {
-    tap: {
-      onOpen: (write) => handle?.tap.onOpen(write),
-      onData: (chunk) => handle?.tap.onData(chunk),
-      onClose: () => handle?.tap.onClose(),
-    },
+    taps: { tcp: forward('tcp'), http: forward('http'), ble: forward('ble') },
     start: () => {
       if (handle) return;
       handle = startHost(deps);

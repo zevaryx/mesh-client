@@ -12,6 +12,7 @@ import path from 'node:path';
 import { utilityProcess } from 'electron';
 
 import {
+  createMeshtasticLinkTaps,
   dispatchMeshtasticBackendEvent,
   isMeshtasticBackendEvent,
   type MeshtasticBackendCommand,
@@ -43,7 +44,6 @@ export function startUtilityMeshtasticBackend(
   fork: () => MeshtasticBackendChild | null = forkWorker,
 ): MeshtasticBackendHandle {
   let child = fork();
-  let write: ((frame: Uint8Array) => void) | null = null;
   const send = (cmd: MeshtasticBackendCommand): void => {
     if (!child) return;
     try {
@@ -52,6 +52,7 @@ export function startUtilityMeshtasticBackend(
       console.warn('[meshtastic-backend] post to worker failed', err);
     }
   };
+  const links = createMeshtasticLinkTaps(send);
   if (child) {
     const current = child;
     current.on('message', (message) => {
@@ -59,7 +60,7 @@ export function startUtilityMeshtasticBackend(
         console.warn('[meshtastic-backend] dropped malformed worker event');
         return;
       }
-      dispatchMeshtasticBackendEvent(message, deps, write);
+      dispatchMeshtasticBackendEvent(message, deps, links.write);
     });
     current.on('exit', (code) => {
       if (child !== current) return;
@@ -68,24 +69,11 @@ export function startUtilityMeshtasticBackend(
     });
   }
   return {
-    tap: {
-      onOpen: (w) => {
-        write = w;
-        send({ t: 'open' });
-      },
-      onData: (bytes) => {
-        send({ t: 'data', bytes });
-      },
-      onClose: () => {
-        write = null;
-        send({ t: 'close' });
-      },
-    },
+    taps: links.taps,
     setRendererPresent: (value) => {
       send({ t: 'present', value });
     },
     dispose: () => {
-      write = null;
       const current = child;
       child = null;
       current?.kill();
