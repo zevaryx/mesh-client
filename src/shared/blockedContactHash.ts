@@ -4,6 +4,13 @@
  * compares against these normalized values.
  */
 
+/**
+ * `blocked_contacts.identity_id` for Meshtastic / MeshCore. Node blocks follow the sender, not the
+ * radio we happen to be connected through, and LoRa identity ids change across connects, so both
+ * protocols use one stable scope (the `protocol` column keeps them apart).
+ */
+export const LORA_BLOCKLIST_SCOPE_ID = 'lora-blocklist';
+
 /** LXMF destination hashes are 16 bytes / 32 hex chars. */
 export const BLOCKED_CONTACT_HASH_HEX_LENGTH = 32;
 

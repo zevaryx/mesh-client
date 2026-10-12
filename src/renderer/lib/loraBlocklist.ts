@@ -1,14 +1,10 @@
 import { useBlockStore } from '@/renderer/stores/blockStore';
+import { LORA_BLOCKLIST_SCOPE_ID } from '@/shared/blockedContactHash';
 import { bytesToHex } from '@/shared/hexBytes';
 
 import { getMeshcorePubKey } from './meshcore/meshcorePubKeyRegistry';
 
-/**
- * `blocked_contacts.identity_id` for Meshtastic / MeshCore. Node blocks follow the sender, not the
- * radio we happen to be connected through, and LoRa identity ids change across connects, so both
- * protocols use one stable scope (the `protocol` column keeps them apart).
- */
-export const LORA_BLOCKLIST_SCOPE_ID = 'lora-blocklist';
+export { LORA_BLOCKLIST_SCOPE_ID } from '@/shared/blockedContactHash';
 
 /** Protocols whose blocklist is keyed by node id / pubkey and filtered at `PacketRouter`. */
 export function isLoraBlocklistProtocol(protocol: string): protocol is 'meshtastic' | 'meshcore' {

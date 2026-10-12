@@ -18,7 +18,7 @@ vi.mock('electron', async () => import('./electronShim'));
 const { BrowserWindow, configureHeadlessApp } = await import('./electronShim');
 const { HEADLESS_SENDER_URL, headlessIpcRegistry } = await import('./ipcRegistry');
 const { createHeadlessWebServer } = await import('./webServer');
-const { closeDatabase, initDatabase } = await import('../database');
+const { closeDatabase, getDatabase, initDatabase } = await import('../database');
 const { registerMeshtasticDbIpcHandlers } = await import('../ipc/db-meshtastic-handlers');
 const { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } =
   await import('../ipc/tcp-bridge');
@@ -240,5 +240,28 @@ describe('headless Meshtastic background ingest', () => {
     });
     expect(await storedMessages()).toHaveLength(2);
     await second.close();
+  });
+
+  it('drops rows from blocked senders, like PacketRouter', async () => {
+    const blocked = 0x0badbeef;
+    getDatabase()
+      .prepareOnce(
+        'INSERT INTO blocked_contacts (protocol, identity_id, blocked_hash, created_at) VALUES (?, ?, ?, ?)',
+      )
+      .run('meshtastic', 'lora-blocklist', String(blocked), Date.now());
+    const row = (from: number, packetId: number) => ({
+      sender_id: from,
+      sender_name: 'x',
+      payload: 'hello',
+      channel: 0,
+      timestamp: 1_700_000_100_000,
+      packetId,
+      receivedVia: 'rf',
+    });
+    expect(persistMeshtasticBackendRow(row(blocked, 900))).toBe(false);
+    expect(persistMeshtasticBackendRow(row(ALICE, 901))).toBe(true);
+    const senders = (await storedMessages()).map((m) => m.sender_id);
+    expect(senders).not.toContain(blocked);
+    expect(senders).toContain(ALICE);
   });
 });
