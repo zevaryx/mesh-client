@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
-import { ipcMain } from 'electron';
+import { type BrowserWindow as ElectronBrowserWindow, ipcMain } from 'electron';
 
 import {
   closeDatabase,
@@ -23,6 +23,7 @@ import { registerChatOutboxIpcHandlers } from '../ipc/chat-outbox-handlers';
 import { registerMeshcoreDbIpcHandlers } from '../ipc/db-meshcore-handlers';
 import { registerMeshtasticDbIpcHandlers } from '../ipc/db-meshtastic-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-telemetry-handlers';
+import { registerFileDialogIpcHandlers } from '../ipc/file-dialog-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
@@ -103,6 +104,11 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   // Server location (OS / IP geolocation), not the viewer's: the server is the station.
   registerGpsIpcHandlers();
   registerServiceAnnouncementIpcHandlers({ ipcMain });
+  // Typed against Electron's BrowserWindow (the dialog parent). At runtime `electron` is the shim,
+  // whose dialogs ignore the parent and serve the calling browser instead; one cast, here.
+  registerFileDialogIpcHandlers({
+    getMainWindow: () => pushTarget() as unknown as ElectronBrowserWindow | null,
+  });
   // BLE (RNode / LoRa GATT) is not wired headless: the sidecar's btleplug needs host BlueZ.
   registerReticulumIpcHandlers({
     idleStatus: IDLE_RETICULUM_STATUS,

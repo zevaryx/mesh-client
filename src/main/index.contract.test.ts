@@ -10,6 +10,11 @@ const SECURE_SECRETS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/secure-secrets-handlers.ts'),
   'utf-8',
 );
+/** True when `ipcMain.handle(` registers `channel`, written on one line or wrapped (2 / 4 spaces). */
+function registersHandler(source: string, channel: string): boolean {
+  return ['', '\n  ', '\n    '].some((gap) => source.includes(`ipcMain.handle(${gap}'${channel}'`));
+}
+
 /** index.ts plus the IPC modules moved out of it (shared with the headless server). */
 const MAIN_IPC_SOURCE = [
   INDEX_SOURCE,
@@ -19,6 +24,7 @@ const MAIN_IPC_SOURCE = [
   readFileSync(join(__dirname, 'ipc/chat-outbox-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/mqtt-handlers.ts'), 'utf-8'),
+  readFileSync(join(__dirname, 'ipc/file-dialog-handlers.ts'), 'utf-8'),
 ].join('\n');
 const APP_SETTINGS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/app-settings-handlers.ts'),
@@ -722,8 +728,8 @@ describe('MQTT IPC handlers (source contract)', () => {
   });
 
   it('registers meshtastic XMODEM file IPC handlers', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('meshtastic:xmodemPickUpload'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('meshtastic:xmodemSaveDownload'");
+    expect(registersHandler(MAIN_IPC_SOURCE, 'meshtastic:xmodemPickUpload')).toBe(true);
+    expect(registersHandler(MAIN_IPC_SOURCE, 'meshtastic:xmodemSaveDownload')).toBe(true);
   });
 
   it('registers mqtt:publishNodeInfo and mqtt:publishPosition', () => {
@@ -748,8 +754,8 @@ describe('MQTT IPC handlers (source contract)', () => {
   });
 
   it('registers support bundle export IPC', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('support:exportBundle'");
-    expect(INDEX_SOURCE).toContain('buildSupportBundleZip');
+    expect(registersHandler(MAIN_IPC_SOURCE, 'support:exportBundle')).toBe(true);
+    expect(MAIN_IPC_SOURCE).toContain('buildSupportBundleZip');
   });
 });
 
@@ -965,16 +971,16 @@ describe('Native Electron call guards (source contract)', () => {
   });
 
   it('logs native IPC helper failures locally before fallback or rejection', () => {
-    expect(INDEX_SOURCE).toContain("'[IPC] notify:message failed:'");
+    expect(MAIN_IPC_SOURCE).toContain("'[IPC] notify:message failed:'");
     expect(SECURE_SECRETS_IPC_SOURCE).toContain(
       'const secureSecretStore = new SecureSecretStore(deps.getDatabase)',
     );
-    expect(INDEX_SOURCE).toContain('registerSecureSecretsIpcHandlers({ getDatabase })');
-    expect(INDEX_SOURCE).not.toContain("ipcMain.handle('storage:decrypt'");
-    expect(INDEX_SOURCE).toContain("'[IPC] app:getLoginItem failed:'");
-    expect(INDEX_SOURCE).toContain("'[IPC] app:setLoginItem failed:'");
-    expect(INDEX_SOURCE).toContain("'[IPC] app:showEmojiPanel failed:'");
-    expect(INDEX_SOURCE).toContain("'[IPC] meshcore:openJsonFile failed:'");
+    expect(MAIN_IPC_SOURCE).toContain('registerSecureSecretsIpcHandlers({ getDatabase })');
+    expect(MAIN_IPC_SOURCE).not.toContain("ipcMain.handle('storage:decrypt'");
+    expect(MAIN_IPC_SOURCE).toContain("'[IPC] app:getLoginItem failed:'");
+    expect(MAIN_IPC_SOURCE).toContain("'[IPC] app:setLoginItem failed:'");
+    expect(MAIN_IPC_SOURCE).toContain("'[IPC] app:showEmojiPanel failed:'");
+    expect(MAIN_IPC_SOURCE).toContain("'[IPC] meshcore:openJsonFile failed:'");
   });
 
   it('guards fatal startup error dialog fallback', () => {
@@ -995,8 +1001,8 @@ describe('Native Electron call guards (source contract)', () => {
   });
 
   it('shows import blocked dialog when merge source schema is too new', () => {
-    expect(INDEX_SOURCE).toContain("'Mesh-Client — Import Blocked'");
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toContain("'Mesh-Client — Import Blocked'");
+    expect(MAIN_IPC_SOURCE).toMatch(
       /db:import[\s\S]*?isDatabaseSchemaTooNewError\(err\)[\s\S]*?formatDatabaseSchemaTooNewMessage/,
     );
   });
@@ -1051,22 +1057,22 @@ describe('Native Electron call guards (source contract)', () => {
   });
 
   it('reads meshcore import JSON via fs.promises.readFile', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('meshcore:openJsonFile'[\s\S]*?fs\.promises\.readFile/,
     );
   });
 
   it('validates IPC sender for meshcore:openJsonFile and device-connected listeners', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('meshcore:openJsonFile'[\s\S]*?assertIpcSender\(event, 'meshcore:openJsonFile'\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.on\('device-connected'[\s\S]*?validateIpcSender\(event\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.on\('device-disconnected'[\s\S]*?validateIpcSender\(event\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('app:getProcessUptimeSec'[\s\S]*?assertIpcSender\(event, 'app:getProcessUptimeSec'\)/,
     );
   });

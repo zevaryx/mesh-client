@@ -36,6 +36,10 @@ const CHAT_OUTBOX_IPC_SOURCE = readFileSync(
 );
 const HTTP_BRIDGE_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8');
 const MQTT_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/mqtt-handlers.ts'), 'utf-8');
+const FILE_DIALOG_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/file-dialog-handlers.ts'),
+  'utf-8',
+);
 const TAK_SERVER_HOST_SOURCE = readFileSync(join(__dirname, 'tak/tak-server-host.ts'), 'utf-8');
 /** index.ts plus the IPC modules moved out of it (shared with the headless server). */
 const MAIN_IPC_SOURCE = [
@@ -46,6 +50,7 @@ const MAIN_IPC_SOURCE = [
   CHAT_OUTBOX_IPC_SOURCE,
   HTTP_BRIDGE_IPC_SOURCE,
   MQTT_IPC_SOURCE,
+  FILE_DIALOG_IPC_SOURCE,
 ].join('\n');
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
@@ -65,6 +70,7 @@ function ipcHandlerBody(channel: string, span = 400): string {
     CHAT_OUTBOX_IPC_SOURCE,
     HTTP_BRIDGE_IPC_SOURCE,
     MQTT_IPC_SOURCE,
+    FILE_DIALOG_IPC_SOURCE,
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -298,10 +304,10 @@ describe('bluetooth IPC sender validation (source contract, H1)', () => {
   });
 
   it('meshtastic:xmodemPickUpload uses a bounded descriptor read', () => {
-    expect(INDEX_SOURCE).toContain('MESHTASTIC_XMODEM_UPLOAD_MAX_BYTES');
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('meshtastic:xmodemPickUpload'");
+    expect(MAIN_IPC_SOURCE).toContain('MESHTASTIC_XMODEM_UPLOAD_MAX_BYTES');
+    const handlerIdx = MAIN_IPC_SOURCE.indexOf("ipcMain.handle('meshtastic:xmodemPickUpload'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 900);
+    const body = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 900);
     expect(body).toContain('MESHTASTIC_XMODEM_UPLOAD_MAX_BYTES');
     expect(body).toContain('readFileUpTo(filePath, MESHTASTIC_XMODEM_UPLOAD_MAX_BYTES)');
     expect(body).toContain("err.message === 'File too large'");
@@ -761,21 +767,21 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('chat:export caps message array length', () => {
-    expect(INDEX_SOURCE).toContain('CHAT_EXPORT_MAX_MESSAGES');
+    expect(MAIN_IPC_SOURCE).toContain('CHAT_EXPORT_MAX_MESSAGES');
   });
 
   it('chat:export validates per-message field sizes and total bytes', () => {
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('chat:export'");
-    expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 900);
+    // Handler lives in ipc/file-dialog-handlers.ts (one indent deeper, plus the window lookup).
+    const body = ipcHandlerBody('chat:export', 1100);
+    expect(body.length).toBeGreaterThan(0);
     expect(body).toContain('assertChatExportMessageSizes(messages)');
     expect(body).toContain('formatChatExportLinesWithTotalCap(messages)');
     expect(body).toContain('exportIpcRateLimit.checkOrThrow()');
   });
 
   it('expensive export/secret IPC channels use createIpcRateLimiter', () => {
-    expect(INDEX_SOURCE).toContain('createIpcRateLimiter');
-    expect(INDEX_SOURCE).toContain('exportIpcRateLimit');
+    expect(MAIN_IPC_SOURCE).toContain('createIpcRateLimiter');
+    expect(MAIN_IPC_SOURCE).toContain('exportIpcRateLimit');
     expect(SECURE_SECRETS_IPC_SOURCE).toContain('createIpcRateLimiter');
     expect(SECURE_SECRETS_IPC_SOURCE).toContain('secureSecretIpcRateLimit');
     for (const channel of [
@@ -785,9 +791,8 @@ describe('privileged IPC sender validation (source contract)', () => {
       'support:exportBundle',
       'mecp:exportReceivedLog',
     ] as const) {
-      const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
-      expect(handlerIdx).toBeGreaterThan(-1);
-      const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 500);
+      const body = ipcHandlerBody(channel, 600);
+      expect(body.length).toBeGreaterThan(0);
       expect(body).toMatch(/RateLimit\.checkOrThrow\(\)/);
     }
     for (const channel of [
@@ -806,9 +811,8 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('support:exportBundle validates mode and snapshot size', () => {
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('support:exportBundle'");
-    expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 1200);
+    const body = ipcHandlerBody('support:exportBundle', 1400);
+    expect(body.length).toBeGreaterThan(0);
     expect(body).toContain('validateIpcSender(event)');
     expect(body).toContain('isSupportBundleMode');
     expect(body).toContain('buildSupportBundleZip');

@@ -44,9 +44,17 @@ describe('app lifecycle handlers', () => {
   });
 
   it('skips db IPC handlers quietly when SQLite is already closed', () => {
-    expect(INDEX_SOURCE).toContain("from './db-ipc-lifecycle'");
-    expect(INDEX_SOURCE).toContain('getDbForIpc(');
-    expect(INDEX_SOURCE).toContain('finishDbIpcHandler');
+    // db:* handlers live in ipc/ modules shared with the headless server.
+    for (const file of [
+      'ipc/db-meshtastic-handlers.ts',
+      'ipc/db-meshcore-handlers.ts',
+      'ipc/file-dialog-handlers.ts',
+    ]) {
+      const source = readFileSync(join(__dirname, file), 'utf-8');
+      expect(source).toContain("from '../db-ipc-lifecycle'");
+      expect(source).toContain('getDbForIpc(');
+      expect(source).toContain('finishDbIpcHandler');
+    }
   });
 });
 
