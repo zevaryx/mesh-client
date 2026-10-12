@@ -1,5 +1,4 @@
 // @vitest-environment node
-import type { BrowserWindow } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { ipcMainHandleMock } = vi.hoisted(() => ({
@@ -969,7 +968,7 @@ describe('wireReticulumSidecarBridge', () => {
   it('forwards manager "event" emissions to the main window', () => {
     const manager = createManagerStub();
     const win = createWinStub();
-    wireReticulumSidecarBridge(manager as never, () => win as unknown as BrowserWindow);
+    wireReticulumSidecarBridge(manager as never, () => win);
 
     const eventHandler = manager.on.mock.calls.find((call) => call[0] === 'event')?.[1] as (
       evt: unknown,
@@ -985,7 +984,7 @@ describe('wireReticulumSidecarBridge', () => {
   it('forwards manager "voiceAudio" emissions to reticulum:voiceAudio', () => {
     const manager = createManagerStub();
     const win = createWinStub();
-    wireReticulumSidecarBridge(manager as never, () => win as unknown as BrowserWindow);
+    wireReticulumSidecarBridge(manager as never, () => win);
 
     const voiceHandler = manager.on.mock.calls.find((call) => call[0] === 'voiceAudio')?.[1] as (
       evt: unknown,
@@ -1001,7 +1000,7 @@ describe('wireReticulumSidecarBridge', () => {
   it('forwards manager "status" emissions to the main window', () => {
     const manager = createManagerStub();
     const win = createWinStub();
-    wireReticulumSidecarBridge(manager as never, () => win as unknown as BrowserWindow);
+    wireReticulumSidecarBridge(manager as never, () => win);
 
     const statusHandler = manager.on.mock.calls.find((call) => call[0] === 'status')?.[1] as (
       status: unknown,
@@ -1029,7 +1028,7 @@ describe('wireReticulumSidecarBridge', () => {
   it('does not send when the main window is destroyed', () => {
     const manager = createManagerStub();
     const win = createWinStub(true);
-    wireReticulumSidecarBridge(manager as never, () => win as unknown as BrowserWindow);
+    wireReticulumSidecarBridge(manager as never, () => win);
 
     const statusHandler = manager.on.mock.calls.find((call) => call[0] === 'status')?.[1] as (
       status: unknown,
