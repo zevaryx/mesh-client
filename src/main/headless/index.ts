@@ -289,6 +289,9 @@ async function main(): Promise<void> {
     host: config.host,
     port: config.port,
     maxUploadBytes: config.maxUploadBytes,
+    maxSessions: config.maxSessions,
+    trustProxy: config.trustProxy,
+    allowedHosts: config.allowedHosts,
     // The desktop `mesh-tiles:` handler: cached tile, else fetched from the basemap and cached.
     tileHandler: createMeshTilesProtocolHandler({
       cache: tileCache,

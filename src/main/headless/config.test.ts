@@ -150,3 +150,89 @@ describe('resolveHeadlessConfig Meshtastic background ingest', () => {
     ).toThrow('MESH_CLIENT_MESHTASTIC_BACKEND must be "on" or "off"');
   });
 });
+
+describe('resolveHeadlessConfig hardening options', () => {
+  const files: Record<string, string> = { '/run/secrets/web_token': '  file-token-0123456789\n' };
+  const readFile = (file: string): string => {
+    const content = files[file];
+    if (content === undefined) throw new Error('ENOENT');
+    return content;
+  };
+
+  it('reads the token from a file (Docker secret) ahead of the variable', () => {
+    const config = resolveHeadlessConfig(
+      {
+        MESH_CLIENT_WEB_TOKEN_FILE: '/run/secrets/web_token',
+        MESH_CLIENT_WEB_TOKEN: 'env-token-0123456789',
+      },
+      BUNDLE_DIR,
+      readFile,
+    );
+    expect(config.token).toBe('file-token-0123456789');
+    expect(config.tokenSource).toBe('file');
+    expect(config.tokenGenerated).toBe(false);
+  });
+
+  it('fails clearly on a missing, empty or short token file', () => {
+    files['/run/secrets/empty'] = '\n';
+    files['/run/secrets/short'] = 'short';
+    expect(() =>
+      resolveHeadlessConfig({ MESH_CLIENT_WEB_TOKEN_FILE: '/nope' }, BUNDLE_DIR, readFile),
+    ).toThrow('MESH_CLIENT_WEB_TOKEN_FILE could not be read');
+    expect(() =>
+      resolveHeadlessConfig(
+        { MESH_CLIENT_WEB_TOKEN_FILE: '/run/secrets/empty' },
+        BUNDLE_DIR,
+        readFile,
+      ),
+    ).toThrow('MESH_CLIENT_WEB_TOKEN_FILE is empty');
+    expect(() =>
+      resolveHeadlessConfig(
+        { MESH_CLIENT_WEB_TOKEN_FILE: '/run/secrets/short' },
+        BUNDLE_DIR,
+        readFile,
+      ),
+    ).toThrow('at least 16');
+  });
+
+  it('reports where the token came from', () => {
+    expect(resolveHeadlessConfig({}, BUNDLE_DIR).tokenSource).toBe('generated');
+    expect(
+      resolveHeadlessConfig({ MESH_CLIENT_WEB_TOKEN: 'env-token-0123456789' }, BUNDLE_DIR)
+        .tokenSource,
+    ).toBe('env');
+    expect(resolveHeadlessConfig({ MESH_CLIENT_WEB_AUTH: 'off' }, BUNDLE_DIR).tokenSource).toBe(
+      null,
+    );
+  });
+
+  it('parses allowed host names for auth-off mode', () => {
+    expect(resolveHeadlessConfig({}, BUNDLE_DIR).allowedHosts).toEqual([]);
+    expect(
+      resolveHeadlessConfig(
+        { MESH_CLIENT_WEB_ALLOWED_HOSTS: ' Station.Local , ,mesh.lan' },
+        BUNDLE_DIR,
+      ).allowedHosts,
+    ).toEqual(['station.local', 'mesh.lan']);
+  });
+
+  it('parses the session cap and proxy trust', () => {
+    const defaults = resolveHeadlessConfig({}, BUNDLE_DIR);
+    expect(defaults.maxSessions).toBe(16);
+    expect(defaults.trustProxy).toBe(false);
+    const set = resolveHeadlessConfig(
+      { MESH_CLIENT_WEB_MAX_SESSIONS: '4', MESH_CLIENT_WEB_TRUST_PROXY: 'on' },
+      BUNDLE_DIR,
+    );
+    expect(set.maxSessions).toBe(4);
+    expect(set.trustProxy).toBe(true);
+    for (const value of ['0', '257', '2.5', 'x']) {
+      expect(() =>
+        resolveHeadlessConfig({ MESH_CLIENT_WEB_MAX_SESSIONS: value }, BUNDLE_DIR),
+      ).toThrow('MESH_CLIENT_WEB_MAX_SESSIONS');
+    }
+    expect(() => resolveHeadlessConfig({ MESH_CLIENT_WEB_TRUST_PROXY: 'yes' }, BUNDLE_DIR)).toThrow(
+      'MESH_CLIENT_WEB_TRUST_PROXY must be "on" or "off"',
+    );
+  });
+});

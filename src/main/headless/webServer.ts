@@ -13,7 +13,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { type AddressInfo, isIP } from 'node:net';
 import path from 'node:path';
 
 import WebSocket, { WebSocketServer } from 'ws';
@@ -35,7 +35,9 @@ import {
   webTilesPathToMeshTilesUrl,
 } from '../../shared/webBridgeProtocol';
 import { sanitizeLogMessage } from '../sanitize-log-message';
+import { HeadlessAuthThrottle, headlessClientKey } from './authThrottle';
 import { runInHeadlessCall } from './callContext';
+import { HEADLESS_DEFAULT_MAX_SESSIONS } from './config';
 import { HeadlessFileTransfer } from './fileTransfer';
 import {
   HEADLESS_SENDER_URL,
@@ -58,6 +60,15 @@ export interface HeadlessWebServerOptions {
   platform?: string;
   /** Total bytes one browser file pick may upload (default {@link HEADLESS_DEFAULT_MAX_UPLOAD_BYTES}). */
   maxUploadBytes?: number;
+  /** Most bridge sessions (tabs) open at once; more are refused (default 16). */
+  maxSessions?: number;
+  /**
+   * Host names (lowercase, no port) accepted when auth is off, besides IP literals and
+   * `localhost`; see {@link headlessHostAllowed}.
+   */
+  allowedHosts?: readonly string[];
+  /** Key the bad-token lockout on `X-Forwarded-For` (see `authThrottle.ts`). */
+  trustProxy?: boolean;
   /** Called with the new count whenever a bridge session opens or closes. */
   onSessionCountChange?: (count: number) => void;
   /**
@@ -83,6 +94,29 @@ function bearerToken(req: http.IncomingMessage): string | null {
  */
 export function headlessTilesCookieValue(token: string): string {
   return createHmac('sha256', token).update('mesh-client map tiles').digest('base64url');
+}
+
+/**
+ * DNS-rebinding guard for `MESH_CLIENT_WEB_AUTH=off`: a page on an attacker's domain that
+ * re-resolves to this server sends `Host: <attacker domain>` (and a matching `Origin`), so without
+ * a token only IP literals, `localhost` and operator-listed names are served. With a token the
+ * rebinding page still cannot authenticate, so any host is accepted.
+ */
+export function headlessHostAllowed(
+  hostHeader: string | undefined,
+  allowedHosts: readonly string[],
+): boolean {
+  if (!hostHeader) return false;
+  let hostname: string;
+  try {
+    hostname = new URL(`http://${hostHeader}`).hostname.toLowerCase();
+  } catch {
+    // catch-no-log-ok unparsable Host is refused by the caller
+    return false;
+  }
+  const bare = hostname.startsWith('[') ? hostname.slice(1, -1) : hostname;
+  if (isIP(bare) !== 0 || bare === 'localhost') return true;
+  return allowedHosts.includes(bare);
 }
 
 /** Value of one cookie in a `Cookie` header, or `null`. */
@@ -139,6 +173,8 @@ const SECURITY_HEADERS: Record<string, string> = {
   'Referrer-Policy': 'no-referrer',
   'X-Frame-Options': 'DENY',
   'Cross-Origin-Opener-Policy': 'same-origin',
+  // The renderer's CSP is a <meta> tag, which cannot set frame-ancestors.
+  'Content-Security-Policy': "frame-ancestors 'none'",
 };
 
 /** Constant-time token comparison (length mismatch still returns false). */
@@ -239,6 +275,33 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
   };
 
   const tilesCookie = token === null ? null : headlessTilesCookieValue(token);
+  const throttle = new HeadlessAuthThrottle();
+  const maxSessions = options.maxSessions ?? HEADLESS_DEFAULT_MAX_SESSIONS;
+
+  /**
+   * Token check with the bad-token lockout: 200 (allowed), 401 (wrong / missing) or 429 (this
+   * client failed too often; refused without checking, so a guess cannot succeed meanwhile).
+   */
+  const checkToken = (req: http.IncomingMessage, provided: string | null): 200 | 401 | 429 => {
+    // Auth off (`null`); a configured token is never empty (16+ characters).
+    if (!token) return 200;
+    const client = headlessClientKey(req, options.trustProxy === true);
+    if (throttle.isLocked(client)) return 429;
+    if (headlessTokenMatches(token, provided)) {
+      throttle.recordSuccess(client);
+      return 200;
+    }
+    if (throttle.recordFailure(client)) {
+      console.warn(
+        `[headless] too many bad tokens from ${sanitizeLogMessage(client)}; refusing it for a while`,
+      );
+    }
+    return 401;
+  };
+
+  const sendAuthFailure = (res: http.ServerResponse, status: 401 | 429): void => {
+    sendPlain(res, status, status === 429 ? 'Too Many Requests' : 'Unauthorized');
+  };
 
   const issueTilesCookie = (req: http.IncomingMessage, res: http.ServerResponse): void => {
     req.resume();
@@ -246,8 +309,9 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
       sendPlain(res, 405, 'Method Not Allowed');
       return;
     }
-    if (token !== null && !headlessTokenMatches(token, bearerToken(req))) {
-      sendPlain(res, 401, 'Unauthorized');
+    const access = checkToken(req, bearerToken(req));
+    if (access !== 200) {
+      sendAuthFailure(res, access);
       return;
     }
     const attrs = [`Path=${WEB_BRIDGE_TILES_PATH}`, 'HttpOnly', 'SameSite=Strict'];
@@ -270,6 +334,8 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
       return;
     }
     // Without the cookie the server would be an open tile proxy and reveal which areas are cached.
+    // Not counted by the lockout: a map view with a stale cookie fails dozens of tiles at once,
+    // and the cookie only grants tiles.
     if (
       tilesCookie !== null &&
       !headlessTokenMatches(tilesCookie, readRequestCookie(req, WEB_BRIDGE_TILES_COOKIE))
@@ -299,16 +365,31 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     );
   };
 
+  const allowedHosts = (options.allowedHosts ?? []).map((h) => h.toLowerCase());
+  const hostRefused = (req: http.IncomingMessage): boolean =>
+    token === null && !headlessHostAllowed(req.headers.host, allowedHosts);
+
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://headless.invalid');
+    if (hostRefused(req)) {
+      req.resume();
+      sendPlain(
+        res,
+        421,
+        'This host name is not allowed while MESH_CLIENT_WEB_AUTH=off. Use the IP address, or ' +
+          'add the name to MESH_CLIENT_WEB_ALLOWED_HOSTS.',
+      );
+      return;
+    }
     if (url.pathname === WEB_BRIDGE_TILES_SESSION_PATH) {
       issueTilesCookie(req, res);
       return;
     }
     if (url.pathname.startsWith(`${WEB_BRIDGE_FILES_PATH}/`)) {
-      if (token !== null && !headlessTokenMatches(token, bearerToken(req))) {
+      const access = checkToken(req, bearerToken(req));
+      if (access !== 200) {
         req.resume();
-        sendPlain(res, 401, 'Unauthorized');
+        sendAuthFailure(res, access);
         return;
       }
       if (!transfer.handleHttp(req, res, url)) sendPlain(res, 404, 'Not Found');
@@ -377,15 +458,21 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
       reject(404, 'Not Found');
       return;
     }
+    if (hostRefused(req)) {
+      reject(421, 'Misdirected Request');
+      return;
+    }
     if (!isAllowedOrigin(req)) {
       reject(403, 'Forbidden');
       return;
     }
-    if (
-      token !== null &&
-      !headlessTokenMatches(token, url.searchParams.get(WEB_BRIDGE_TOKEN_PARAM))
-    ) {
-      reject(401, 'Unauthorized');
+    const access = checkToken(req, url.searchParams.get(WEB_BRIDGE_TOKEN_PARAM));
+    if (access !== 200) {
+      reject(access, access === 429 ? 'Too Many Requests' : 'Unauthorized');
+      return;
+    }
+    if (sessions.size >= maxSessions) {
+      reject(503, 'Service Unavailable');
       return;
     }
     wss.handleUpgrade(req, socket, head, (ws) => {

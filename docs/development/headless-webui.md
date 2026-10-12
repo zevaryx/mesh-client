@@ -33,13 +33,17 @@ Server pushes (`webContents.send`) that happen while a browser's WebSocket is do
 
 ### Security model
 
-- **Token:** `MESH_CLIENT_WEB_TOKEN` (min 16 chars) or a random token generated per start and printed once as `http://…/?token=…`. The bridge stores it in `localStorage` and strips it from the address bar; it rides on the WebSocket URL (`/ipc?token=`), compared in constant time.
+- **Token:** `MESH_CLIENT_WEB_TOKEN_FILE` (a Docker secret), `MESH_CLIENT_WEB_TOKEN` (min 16 chars), or a random token generated per start and printed once as `http://…/?token=…`. The bridge stores it in `localStorage` and strips it from the address bar; it rides on the WebSocket URL (`/ipc?token=`), compared in constant time. **Rotating:** change the file (or variable) and restart; open tabs then need the new `?token=` link.
+- **Bad tokens:** a client that sends 20 wrong tokens within a minute is refused (HTTP 429) for 5 minutes, before its token is even checked (`authThrottle.ts`). The limit sits above what a tab left open across a token change produces, so that tab never locks its own client out. Clients are keyed by remote address; behind a reverse proxy every browser shares the proxy's address unless `MESH_CLIENT_WEB_TRUST_PROXY=on` keys on `X-Forwarded-For`. Only turn that on when the proxy is the only way in, since clients can set that header themselves.
+- **Sessions:** at most `MESH_CLIENT_WEB_MAX_SESSIONS` tabs (default 16) are connected at once; more upgrades get 503.
 - **Origin:** browser upgrades must have `Origin` matching `Host`. Behind a reverse proxy, forward `Host` unchanged.
 - **Sender validation is kept:** authenticated sessions get a synthetic event with `senderFrame.url = mesh-client://headless-web/`, and the shim reports `app.isPackaged === true`, so `assertIpcSender` applies its packaged-build rules unchanged.
-- No TLS in the server itself; put it behind a TLS reverse proxy for anything beyond a trusted LAN. `MESH_CLIENT_WEB_AUTH=off` disables the token for isolated networks only.
+- No TLS in the server itself; put it behind a TLS reverse proxy for anything beyond a trusted LAN (see [Reverse proxy](#reverse-proxy)).
+- **`MESH_CLIENT_WEB_AUTH=off`** disables the token for isolated networks only. Without a token, a website someone on that network visits could reach the server through DNS rebinding (its own domain re-resolved to the server). So with auth off the server only answers requests whose `Host` is an IP address, `localhost`, or a name listed in `MESH_CLIENT_WEB_ALLOWED_HOSTS`; others get 421.
 - **Network reach:** the radio bridges (`*:tcp-connect`, `http:connect`, `hostLink:probe*`) make the **server** open connections to hosts the browser names, after the same hostname validation as the desktop app. A token holder can therefore reach hosts on the server's network (radios, but also anything else listening). Treat the token like SSH access to that network; restrict egress with Docker networking if that matters.
 - **Map tiles:** `/tiles` needs the tile cookie described in [Map tiles](#map-tiles); its value is derived from the token, not the token.
-- Responses carry `Referrer-Policy: no-referrer` (the first URL holds the token), `X-Frame-Options: DENY`, `nosniff`. The renderer CSP is unchanged; `'self'` already allows `/web-bridge.js` and the same-origin WebSocket.
+- Responses carry `Referrer-Policy: no-referrer` (the first URL holds the token), `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'` (the renderer's own CSP is a `<meta>` tag, which cannot set that), and `nosniff`. The renderer CSP is unchanged; `'self'` already allows `/web-bridge.js` and the same-origin WebSocket.
+- **Untrusted frames:** a bridge frame that cannot be decoded (malformed tag, nesting deep enough to overflow the stack) is dropped and logged; the session stays open. A `__proto__` key stays a plain field.
 
 ## Build and run
 
@@ -57,19 +61,60 @@ docker run --rm -p 8080:8080 -v mesh-client-data:/data \
 
 The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the runtime image holds only Node, `dist/renderer` and `dist-headless/`. The image runs as `node`, keeps state in the `/data` volume and has a `/healthz` health check. Behind a Docker Hub rate limit or mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node`.
 
-| Variable                            | Default                     | Meaning                                                                                          |
-| ----------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------ |
-| `MESH_CLIENT_DATA_DIR`              | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image)                                         |
-| `MESH_CLIENT_WEB_HOST`              | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                                                            |
-| `MESH_CLIENT_WEB_PORT`              | `8080`                      | HTTP + WebSocket port                                                                            |
-| `MESH_CLIENT_WEB_TOKEN`             | random per start            | Session token (min 16 chars)                                                                     |
-| `MESH_CLIENT_WEB_AUTH`              | `token`                     | `off` disables auth (isolated networks only)                                                     |
-| `MESH_CLIENT_RENDERER_DIR`          | `<bundle>/../dist/renderer` | Vite renderer build                                                                              |
-| `MESH_CLIENT_SECRET_KEY_FILE`       | unset                       | File with key material (min 16 chars) for stored secrets; use a Docker secret                    |
-| `MESH_CLIENT_SECRET_KEY`            | unset                       | Same, inline; visible in `docker inspect`, so prefer the file                                    |
-| `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE` | unset                       | `1` allows an irreversible database schema upgrade at start (back up `/data` first)              |
-| `MESH_CLIENT_WEB_MAX_UPLOAD_MB`     | `64`                        | Max total upload per browser file pick (1–1024 MiB)                                              |
-| `MESH_CLIENT_MESHTASTIC_BACKEND`    | `on`                        | `off` stops [storing Meshtastic chat while no tab owns the radio](#background-ingest-meshtastic) |
+| Variable                            | Default                     | Meaning                                                                                            |
+| ----------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
+| `MESH_CLIENT_DATA_DIR`              | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image)                                           |
+| `MESH_CLIENT_WEB_HOST`              | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                                                              |
+| `MESH_CLIENT_WEB_PORT`              | `8080`                      | HTTP + WebSocket port                                                                              |
+| `MESH_CLIENT_WEB_TOKEN`             | random per start            | Session token (min 16 chars)                                                                       |
+| `MESH_CLIENT_WEB_TOKEN_FILE`        | unset                       | File holding the token (Docker secret); wins over `MESH_CLIENT_WEB_TOKEN`                          |
+| `MESH_CLIENT_WEB_MAX_SESSIONS`      | `16`                        | Browser tabs connected at once (1–256)                                                             |
+| `MESH_CLIENT_WEB_TRUST_PROXY`       | `off`                       | `on` keys the bad-token lockout on `X-Forwarded-For` (only behind a proxy that is the only way in) |
+| `MESH_CLIENT_WEB_ALLOWED_HOSTS`     | unset                       | With auth off: comma-separated host names served besides IP addresses and `localhost`              |
+| `MESH_CLIENT_WEB_AUTH`              | `token`                     | `off` disables auth (isolated networks only)                                                       |
+| `MESH_CLIENT_RENDERER_DIR`          | `<bundle>/../dist/renderer` | Vite renderer build                                                                                |
+| `MESH_CLIENT_SECRET_KEY_FILE`       | unset                       | File with key material (min 16 chars) for stored secrets; use a Docker secret                      |
+| `MESH_CLIENT_SECRET_KEY`            | unset                       | Same, inline; visible in `docker inspect`, so prefer the file                                      |
+| `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE` | unset                       | `1` allows an irreversible database schema upgrade at start (back up `/data` first)                |
+| `MESH_CLIENT_WEB_MAX_UPLOAD_MB`     | `64`                        | Max total upload per browser file pick (1–1024 MiB)                                                |
+| `MESH_CLIENT_MESHTASTIC_BACKEND`    | `on`                        | `off` stops [storing Meshtastic chat while no tab owns the radio](#background-ingest-meshtastic)   |
+
+### Reverse proxy
+
+The server speaks plain HTTP. For TLS, put a reverse proxy in front that forwards the WebSocket upgrade on `/ipc`, keeps `Host` unchanged (the `Origin` check compares against it) and sets `X-Forwarded-Proto` (the tile cookie is then marked `Secure`). Keep the server on loopback or a private Docker network so the proxy is the only way in.
+
+Caddy (gets a certificate automatically; WebSockets and `Host` work by default):
+
+```text
+mesh.example.org {
+  reverse_proxy 127.0.0.1:8080
+}
+```
+
+nginx:
+
+```nginx
+server {
+  listen 443 ssl;
+  server_name mesh.example.org;
+  ssl_certificate     /etc/ssl/mesh.crt;
+  ssl_certificate_key /etc/ssl/mesh.key;
+  client_max_body_size 64m;          # match MESH_CLIENT_WEB_MAX_UPLOAD_MB
+
+  location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $http_connection;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 1h;           # the bridge WebSocket stays open
+  }
+}
+```
+
+With the proxy as the only way in, set `MESH_CLIENT_WEB_TRUST_PROXY=on` so the bad-token lockout applies per browser instead of to the proxy.
 
 ## Background ingest (Meshtastic)
 

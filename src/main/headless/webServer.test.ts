@@ -1,5 +1,6 @@
 // @vitest-environment node
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -14,6 +15,7 @@ import {
 import { HEADLESS_SENDER_URL, type HeadlessIpcEvent, HeadlessIpcRegistry } from './ipcRegistry';
 import {
   createHeadlessWebServer,
+  headlessHostAllowed,
   headlessTokenMatches,
   type HeadlessWebServer,
   injectWebBridgeScript,
@@ -34,7 +36,7 @@ function writeFixture(rel: string, content: string): void {
   fs.writeFileSync(file, content);
 }
 
-async function startServer(token: string | null = TOKEN): Promise<number> {
+async function startServer(token: string | null = TOKEN, maxSessions?: number): Promise<number> {
   server = createHeadlessWebServer({
     registry,
     rendererDir,
@@ -43,6 +45,7 @@ async function startServer(token: string | null = TOKEN): Promise<number> {
     host: '127.0.0.1',
     port: 0,
     platform: 'win32',
+    ...(maxSessions != null ? { maxSessions } : {}),
   });
   return (await server.listen()).port;
 }
@@ -58,6 +61,24 @@ function openClient(
       resolve(ws);
     });
     ws.once('error', reject);
+  });
+}
+
+/** GET with an explicit Host header (`fetch` does not let tests set one). */
+function getWithHost(port: number, host: string): Promise<{ status: number; body: string }> {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host: '127.0.0.1', port, path: '/', headers: { Host: host } }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (chunk: string) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          resolve({ status: res.statusCode ?? 0, body });
+        });
+      })
+      .on('error', reject);
   });
 }
 
@@ -127,6 +148,48 @@ describe('headless web server', () => {
     const port = await startServer();
     await expect(openClient(port, '')).rejects.toThrow('401');
     await expect(openClient(port, '?token=wrong-token-0123456789')).rejects.toThrow('401');
+  });
+
+  it('with auth off, serves IP / localhost hosts only (rebinding guard)', async () => {
+    const port = await startServer(null);
+    const rebind = await getWithHost(port, `evil.example:${port}`);
+    expect(rebind.status).toBe(421);
+    expect(rebind.body).toContain('MESH_CLIENT_WEB_ALLOWED_HOSTS');
+    await expect(
+      openClient(port, '', { Host: `evil.example:${port}`, Origin: `http://evil.example:${port}` }),
+    ).rejects.toThrow('421');
+    expect((await fetch(`http://127.0.0.1:${port}/`)).status).toBe(200);
+    (await openClient(port, '')).close();
+  });
+
+  it('serves any host name when a token is required', async () => {
+    const port = await startServer();
+    expect((await getWithHost(port, `station.example:${port}`)).status).toBe(200);
+  });
+
+  it('locks out a client after repeated bad tokens, even for the right token', async () => {
+    const port = await startServer();
+    for (let i = 0; i < 20; i++) {
+      await expect(openClient(port, '?token=wrong-token-0123456789')).rejects.toThrow('401');
+    }
+    await expect(openClient(port, `?token=${TOKEN}`)).rejects.toThrow('429');
+    const files = await fetch(`http://127.0.0.1:${port}/files/download/x`, {
+      headers: { Authorization: `Bearer ${TOKEN}` },
+    });
+    expect(files.status).toBe(429);
+  });
+
+  it('refuses bridge sessions beyond the cap and frames from other sites', async () => {
+    const port = await startServer(TOKEN, 1);
+    const first = await openClient(port);
+    await expect(openClient(port)).rejects.toThrow('503');
+    first.close();
+    await vi.waitFor(() => {
+      expect(server?.sessionCount()).toBe(0);
+    });
+    (await openClient(port)).close();
+    const res = await fetch(`http://127.0.0.1:${port}/`);
+    expect(res.headers.get('content-security-policy')).toBe("frame-ancestors 'none'");
   });
 
   it('rejects cross-origin bridge upgrades even with a valid token', async () => {
@@ -278,6 +341,21 @@ describe('resolveStaticFile', () => {
     expect(resolveStaticFile(rendererDir, '/')).toBe(path.join(rendererDir, 'index.html'));
     expect(resolveStaticFile(rendererDir, '/chat/room')).toBe(path.join(rendererDir, 'index.html'));
     expect(resolveStaticFile(rendererDir, '/missing.css')).toBeNull();
+  });
+});
+
+describe('headlessHostAllowed (DNS-rebinding guard with auth off)', () => {
+  it('accepts IP literals and localhost with or without a port', () => {
+    for (const host of ['127.0.0.1:8080', '192.168.1.20', '[::1]:8080', 'localhost:8080']) {
+      expect(headlessHostAllowed(host, [])).toBe(true);
+    }
+  });
+
+  it('refuses other names unless listed, and missing or junk Host headers', () => {
+    expect(headlessHostAllowed('evil.example:8080', [])).toBe(false);
+    expect(headlessHostAllowed('Station.Local:8080', ['station.local'])).toBe(true);
+    expect(headlessHostAllowed(undefined, [])).toBe(false);
+    expect(headlessHostAllowed('bad host', [])).toBe(false);
   });
 });
 

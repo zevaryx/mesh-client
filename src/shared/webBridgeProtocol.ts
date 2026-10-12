@@ -260,7 +260,15 @@ export function decodeWireValue(value: unknown): unknown {
 
 function decodeObjectFields(value: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value)) out[k] = decodeWireValue(v);
+  for (const [k, v] of Object.entries(value)) {
+    // `JSON.parse` keeps "__proto__" as an own key; assigning it would swap the prototype.
+    Object.defineProperty(out, k, {
+      value: decodeWireValue(v),
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
+  }
   return out;
 }
 
@@ -283,8 +291,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Decode, or `ok: false` when the value cannot be decoded: a malformed tag (bad base64 or bigint, a
+ * `map` without entries) or nesting deep enough to overflow the stack. Frames come from the
+ * network, so this must never throw into the socket's message handler.
+ */
+function tryDecode(value: unknown): { ok: true; value: unknown } | { ok: false } {
+  try {
+    return { ok: true, value: decodeWireValue(value) };
+  } catch {
+    // catch-no-log-ok undecodable frame is reported by the caller as a dropped frame
+    return { ok: false };
+  }
+}
+
 function decodeArgs(args: unknown): unknown[] | null {
-  return Array.isArray(args) ? args.map((a) => decodeWireValue(a)) : null;
+  if (!Array.isArray(args)) return null;
+  const decoded = tryDecode(args);
+  return decoded.ok ? (decoded.value as unknown[]) : null;
 }
 
 /** Parse a renderer → server frame; `null` when malformed (caller drops it). */
@@ -322,7 +346,10 @@ export function parseWebBridgeServerFrame(raw: string): WebBridgeServerFrame | n
   }
   if (!Number.isSafeInteger(parsed.id)) return null;
   const id = parsed.id as number;
-  if (parsed.t === 'result') return { t: 'result', id, value: decodeWireValue(parsed.value) };
+  if (parsed.t === 'result') {
+    const decoded = tryDecode(parsed.value);
+    return decoded.ok ? { t: 'result', id, value: decoded.value } : null;
+  }
   if (parsed.t === 'error' && typeof parsed.message === 'string') {
     return { t: 'error', id, message: parsed.message };
   }

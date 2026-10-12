@@ -137,3 +137,42 @@ describe('normalizeHeadlessHostPlatform', () => {
     }
   });
 });
+
+describe('webBridgeProtocol hostile frames', () => {
+  const invoke = (args: unknown): string =>
+    JSON.stringify({ t: 'invoke', id: 1, channel: 'x:y', args });
+
+  it.each([
+    ['bad base64', { __mcwb: 'u8', b64: '%%%' }],
+    ['map without entries', { __mcwb: 'map' }],
+    ['set without values', { __mcwb: 'set', values: 5 }],
+    ['invalid bigint', { __mcwb: 'bigint', s: 'not-a-number' }],
+  ])('drops a frame with a malformed tag (%s) instead of throwing', (_label, tagged) => {
+    expect(() => parseWebBridgeClientFrame(invoke([tagged]))).not.toThrow();
+    expect(parseWebBridgeClientFrame(invoke([tagged]))).toBeNull();
+    const result = JSON.stringify({ t: 'result', id: 2, value: tagged });
+    expect(parseWebBridgeServerFrame(result)).toBeNull();
+  });
+
+  it('drops nesting deep enough to overflow the decoder', () => {
+    const deep = `${'['.repeat(200_000)}${']'.repeat(200_000)}`;
+    const raw = `{"t":"invoke","id":1,"channel":"x:y","args":[${deep}]}`;
+    expect(parseWebBridgeClientFrame(raw)).toBeNull();
+  });
+
+  it('keeps "__proto__" as a plain field instead of a prototype', () => {
+    const frame = parseWebBridgeClientFrame(invoke([JSON.parse('{"__proto__":{"admin":true}}')]));
+    const arg = frame?.t === 'invoke' ? (frame.args[0] as Record<string, unknown>) : null;
+    expect(Object.getPrototypeOf(arg)).toBe(Object.prototype);
+    expect((arg as { admin?: boolean } | null)?.admin).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(arg, '__proto__')).toBe(true);
+  });
+
+  it('still decodes a legitimate null result', () => {
+    expect(parseWebBridgeServerFrame(JSON.stringify({ t: 'result', id: 3, value: null }))).toEqual({
+      t: 'result',
+      id: 3,
+      value: null,
+    });
+  });
+});

@@ -202,6 +202,32 @@ describe('headless file transfer', () => {
     c.ws.close();
   });
 
+  it('handles uploads running at the same time: own files, one shared size cap', async () => {
+    const c = await connect();
+    const result = c.invoke('test:open');
+    const req = (await c.nextEvent(WEB_BRIDGE_PICK_FILES_EVENT)) as WebBridgePickFilesRequest;
+    const small = await Promise.all(
+      ['a.pem', 'b.pem', 'c.pem'].map((name) => upload(req, name, name.toUpperCase())),
+    );
+    expect(small.map((r) => r.status)).toEqual([204, 204, 204]);
+    // Together over the 1024-byte cap: one of them must be refused.
+    const big = await Promise.all([
+      upload(req, 'd.bin', new Blob([new Uint8Array(600)])),
+      upload(req, 'e.bin', new Blob([new Uint8Array(600)])),
+    ]);
+    expect(big.map((r) => r.status).sort()).toEqual([204, 413]);
+    expect((await complete(req, { canceled: false })).status).toBe(204);
+    const files = (await result) as { name: string }[];
+    expect(
+      files
+        .map((f) => f.name)
+        .slice(0, 3)
+        .sort(),
+    ).toEqual(['a.pem', 'b.pem', 'c.pem']);
+    expect(files).toHaveLength(4);
+    c.ws.close();
+  });
+
   it('save dialog: a successful call delivers the file once', async () => {
     const c = await connect();
     const stagedPath = (await c.invoke('test:save', false)) as string;

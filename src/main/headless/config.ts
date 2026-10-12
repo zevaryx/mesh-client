@@ -7,6 +7,10 @@
  * | `MESH_CLIENT_WEB_HOST`       | `127.0.0.1`          | Bind address (`0.0.0.0` in the Docker image)  |
  * | `MESH_CLIENT_WEB_PORT`       | `8080`               | HTTP + WebSocket port                         |
  * | `MESH_CLIENT_WEB_TOKEN`      | random per start     | Session token (min 16 chars)                  |
+ * | `MESH_CLIENT_WEB_TOKEN_FILE` | unset                | File holding the token (Docker secret); wins over the variable |
+ * | `MESH_CLIENT_WEB_MAX_SESSIONS` | `16`               | Browser tabs connected at once (1–256)        |
+ * | `MESH_CLIENT_WEB_TRUST_PROXY` | `off`               | `on`: key the bad-token lockout on `X-Forwarded-For` |
+ * | `MESH_CLIENT_WEB_ALLOWED_HOSTS` | unset             | With auth off: host names served besides IPs and localhost |
  * | `MESH_CLIENT_WEB_AUTH`       | `token`              | `off` disables auth (isolated networks only)  |
  * | `MESH_CLIENT_RENDERER_DIR`   | `<bundle>/../dist/renderer` | Vite renderer build                    |
  * | `MESH_CLIENT_SECRET_KEY_FILE`| unset                | File with key material for stored secrets (Docker secret) |
@@ -44,6 +48,20 @@ export interface HeadlessConfig {
   maxUploadBytes: number;
   /** Store Meshtastic TCP chat in the server while no browser tab owns the link. */
   meshtasticBackgroundIngest: boolean;
+  tokenSource: 'file' | 'env' | 'generated' | null;
+  maxSessions: number;
+  trustProxy: boolean;
+  /** Host names accepted when auth is off (DNS-rebinding guard), lowercase. */
+  allowedHosts: string[];
+}
+
+export const HEADLESS_DEFAULT_MAX_SESSIONS = 16;
+
+function parseOnOff(value: string | undefined, fallback: boolean, name: string): boolean {
+  const mode = (value ?? (fallback ? 'on' : 'off')).trim().toLowerCase();
+  if (mode !== 'on' && mode !== 'off')
+    throw new HeadlessConfigError(`${name} must be "on" or "off"`);
+  return mode === 'on';
 }
 
 export const HEADLESS_DEFAULT_MAX_UPLOAD_MB = 64;
@@ -71,18 +89,36 @@ export function resolveHeadlessConfig(
 
   let token: string | null = null;
   let tokenGenerated = false;
+  let tokenSource: HeadlessConfig['tokenSource'] = null;
   if (authMode === 'token') {
-    const configured = env.MESH_CLIENT_WEB_TOKEN?.trim();
+    const tokenFile = env.MESH_CLIENT_WEB_TOKEN_FILE?.trim();
+    let configured: string | undefined;
+    if (tokenFile) {
+      try {
+        configured = readFile(tokenFile).trim();
+      } catch (err) {
+        throw new HeadlessConfigError(
+          `MESH_CLIENT_WEB_TOKEN_FILE could not be read: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      tokenSource = 'file';
+    } else {
+      configured = env.MESH_CLIENT_WEB_TOKEN?.trim();
+      if (configured) tokenSource = 'env';
+    }
     if (configured) {
       if (configured.length < HEADLESS_MIN_TOKEN_LENGTH) {
         throw new HeadlessConfigError(
-          `MESH_CLIENT_WEB_TOKEN must be at least ${HEADLESS_MIN_TOKEN_LENGTH} characters`,
+          `the web token must be at least ${HEADLESS_MIN_TOKEN_LENGTH} characters`,
         );
       }
       token = configured;
+    } else if (tokenFile) {
+      throw new HeadlessConfigError('MESH_CLIENT_WEB_TOKEN_FILE is empty');
     } else {
       token = randomBytes(24).toString('base64url');
       tokenGenerated = true;
+      tokenSource = 'generated';
     }
   }
 
@@ -120,13 +156,34 @@ export function resolveHeadlessConfig(
     throw new HeadlessConfigError('MESH_CLIENT_WEB_MAX_UPLOAD_MB must be an integer 1-1024');
   }
 
-  const backendMode = (env.MESH_CLIENT_MESHTASTIC_BACKEND ?? 'on').trim().toLowerCase();
-  if (backendMode !== 'on' && backendMode !== 'off') {
-    throw new HeadlessConfigError('MESH_CLIENT_MESHTASTIC_BACKEND must be "on" or "off"');
+  const meshtasticBackgroundIngest = parseOnOff(
+    env.MESH_CLIENT_MESHTASTIC_BACKEND,
+    true,
+    'MESH_CLIENT_MESHTASTIC_BACKEND',
+  );
+  const trustProxy = parseOnOff(
+    env.MESH_CLIENT_WEB_TRUST_PROXY,
+    false,
+    'MESH_CLIENT_WEB_TRUST_PROXY',
+  );
+
+  const rawSessions = env.MESH_CLIENT_WEB_MAX_SESSIONS?.trim();
+  const maxSessions = rawSessions ? Number(rawSessions) : HEADLESS_DEFAULT_MAX_SESSIONS;
+  if (!Number.isInteger(maxSessions) || maxSessions < 1 || maxSessions > 256) {
+    throw new HeadlessConfigError('MESH_CLIENT_WEB_MAX_SESSIONS must be an integer 1-256');
   }
 
+  const allowedHosts = (env.MESH_CLIENT_WEB_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((h) => h.trim().toLowerCase())
+    .filter((h) => h !== '');
+
   return {
-    meshtasticBackgroundIngest: backendMode === 'on',
+    allowedHosts,
+    meshtasticBackgroundIngest,
+    tokenSource,
+    maxSessions,
+    trustProxy,
     maxUploadBytes: uploadMb * 1024 * 1024,
     secretKey,
     secretKeySource,

@@ -46,7 +46,10 @@ interface PendingPick {
   sessionId: number;
   dir: string;
   files: string[];
+  /** Bytes received so far, counted as they arrive (concurrent uploads share the cap). */
   bytes: number;
+  /** Uploads started; each gets its own sub-directory index. */
+  slots: number;
   resolve: (paths: string[] | null) => void;
   reject: (err: Error) => void;
   timer: NodeJS.Timeout;
@@ -186,7 +189,16 @@ export class HeadlessFileTransfer {
         this.settlePick(requestId, { canceled: true });
       }, PICK_TIMEOUT_MS);
       timer.unref();
-      this.picks.set(requestId, { sessionId, dir, files: [], bytes: 0, resolve, reject, timer });
+      this.picks.set(requestId, {
+        sessionId,
+        dir,
+        files: [],
+        bytes: 0,
+        slots: 0,
+        resolve,
+        reject,
+        timer,
+      });
       const request: WebBridgePickFilesRequest = {
         requestId,
         multiple: opts.multiple,
@@ -298,7 +310,7 @@ export class HeadlessFileTransfer {
       req.resume();
       return;
     }
-    if (pick.files.length >= MAX_FILES_PER_PICK) {
+    if (pick.slots >= MAX_FILES_PER_PICK) {
       sendJson(res, 413, { error: 'too many files' });
       req.resume();
       return;
@@ -309,9 +321,20 @@ export class HeadlessFileTransfer {
       req.resume();
       return;
     }
-    // One sub-directory per file keeps each picked file's own base name (handlers use it).
-    const fileDir = path.join(pick.dir, String(pick.files.length));
-    fs.mkdirSync(fileDir);
+    // One sub-directory per file keeps each picked file's own base name (handlers use it). The
+    // index comes from a counter, so uploads running at the same time never share a directory.
+    const fileDir = path.join(pick.dir, String(pick.slots++));
+    try {
+      fs.mkdirSync(fileDir);
+    } catch (err) {
+      console.error(
+        '[headless] upload directory failed:',
+        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      );
+      sendJson(res, 500, { error: 'write failed' });
+      req.resume();
+      return;
+    }
     const filePath = path.join(fileDir, sanitizeTransferFileName(url.searchParams.get('name')));
     const out = fs.createWriteStream(filePath, { flags: 'wx', mode: 0o600 });
     let written = 0;
@@ -319,13 +342,16 @@ export class HeadlessFileTransfer {
     const fail = (status: number, message: string): void => {
       if (failed) return;
       failed = true;
+      pick.bytes -= written;
       out.destroy();
       fs.rmSync(fileDir, { recursive: true, force: true });
       sendJson(res, status, { error: message });
     };
     req.on('data', (chunk: Buffer) => {
+      if (failed) return;
       written += chunk.length;
-      if (pick.bytes + written > this.maxUploadBytes) {
+      pick.bytes += chunk.length;
+      if (pick.bytes > this.maxUploadBytes) {
         req.pause();
         fail(413, `upload exceeds ${this.maxUploadBytes} bytes`);
       }
@@ -344,7 +370,6 @@ export class HeadlessFileTransfer {
         sendJson(res, 404);
         return;
       }
-      pick.bytes += written;
       pick.files.push(filePath);
       sendJson(res, 204);
     });
