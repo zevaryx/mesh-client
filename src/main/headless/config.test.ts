@@ -137,3 +137,16 @@ describe('resolveHeadlessConfig upload limit', () => {
     }
   });
 });
+
+describe('resolveHeadlessConfig Meshtastic background ingest', () => {
+  it('is on by default, can be turned off, and rejects other values', () => {
+    expect(resolveHeadlessConfig({}, BUNDLE_DIR).meshtasticBackgroundIngest).toBe(true);
+    expect(
+      resolveHeadlessConfig({ MESH_CLIENT_MESHTASTIC_BACKEND: ' OFF ' }, BUNDLE_DIR)
+        .meshtasticBackgroundIngest,
+    ).toBe(false);
+    expect(() =>
+      resolveHeadlessConfig({ MESH_CLIENT_MESHTASTIC_BACKEND: 'utility' }, BUNDLE_DIR),
+    ).toThrow('MESH_CLIENT_MESHTASTIC_BACKEND must be "on" or "off"');
+  });
+});

@@ -1298,6 +1298,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         return () => ipcRenderer.off('meshtastic:tcp-disconnected', handler);
       },
     },
+    onBackendCaughtUp: (cb: (payload: { count: number }) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: { count: number }) => {
+        cb(payload);
+      };
+      ipcRenderer.on('meshtastic:backend-caught-up', handler);
+      return () => ipcRenderer.off('meshtastic:backend-caught-up', handler);
+    },
   },
 
   // ─── TAK server ──────────────────────────────────────────────────

@@ -267,6 +267,42 @@ describe('createTcpBridge', () => {
     expect(send).toHaveBeenCalledWith('meshcore:tcp-data', new Uint8Array([1, 2, 3]));
   });
 
+  it('feeds the tap only from the active socket and stops its writes once replaced', async () => {
+    const tap = { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() };
+    const bridge = createTcpBridge({
+      protocol: 'meshtastic',
+      writeMissing: 'no-socket',
+      getMainWindow,
+      validateHost,
+      tap,
+    });
+    const first = bridge.connect(event, '192.168.1.5', 4403);
+    const firstSock = latestSocket();
+    firstSock.completeConnect();
+    await first;
+    expect(tap.onOpen).toHaveBeenCalledTimes(1);
+    const tapWrite = tap.onOpen.mock.calls[0]?.[0] as (bytes: Uint8Array) => void;
+    firstSock.emit('data', Buffer.from([9, 8]));
+    expect(tap.onData).toHaveBeenCalledWith(new Uint8Array([9, 8]));
+    tapWrite(new Uint8Array([1]));
+    expect(firstSock.write).toHaveBeenCalledWith(new Uint8Array([1]));
+
+    const second = bridge.connect(event, '192.168.1.6', 4403);
+    const secondSock = latestSocket();
+    expect(tap.onClose).toHaveBeenCalledTimes(1);
+    secondSock.completeConnect();
+    await second;
+    firstSock.emit('data', Buffer.from([7]));
+    expect(tap.onData).toHaveBeenCalledTimes(1);
+    tapWrite(new Uint8Array([2]));
+    expect(firstSock.write).toHaveBeenCalledTimes(1);
+
+    secondSock.emit('close', true);
+    expect(tap.onClose).toHaveBeenCalledTimes(2);
+    bridge.disconnect(event);
+    expect(tap.onClose).toHaveBeenCalledTimes(2);
+  });
+
   it('enables TCP_NODELAY and keepalive, then times out a hung connect', async () => {
     vi.useFakeTimers();
     const bridge = createTcpBridge({

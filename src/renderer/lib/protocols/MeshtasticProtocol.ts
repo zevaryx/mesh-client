@@ -26,6 +26,12 @@ import { meshtasticComputedRfHopsAway } from '../meshtasticRfHops';
 import type { ProtocolCapabilities } from '../radio/BaseRadioProvider';
 import { MESHTASTIC_CAPABILITIES } from '../radio/BaseRadioProvider';
 import type { TransportParams } from '../types';
+import {
+  decodeMeshtasticTextPacket,
+  isFiniteNumber,
+  MESHTASTIC_MAX_TEXT_MESSAGE_CHARS,
+  normalizedNodeNum,
+} from './meshtasticTextDecode';
 import type {
   ChannelEvent,
   DeviceGpsStateEvent,
@@ -82,23 +88,11 @@ const MAX_TRACE_ROUTE_HOPS = 32;
 const MAX_NEIGHBOR_ENTRIES = 256;
 
 /** Meshtastic text payloads are limited to ~237 bytes; allow slack for MQTT replays. */
-const MAX_TEXT_MESSAGE_CHARS = 1024;
+const MAX_TEXT_MESSAGE_CHARS = MESHTASTIC_MAX_TEXT_MESSAGE_CHARS;
 const MAX_RAW_PACKET_BYTES = 64 * 1024;
 
 const MAX_LATITUDE = 90;
 const MAX_LONGITUDE = 180;
-
-function isFiniteNumber(value: unknown): value is number {
-  return typeof value === 'number' && Number.isFinite(value);
-}
-
-/** Node numbers are unsigned 32-bit; reject NaN / negative / out-of-range values. */
-function normalizedNodeNum(value: unknown): number | undefined {
-  if (!isFiniteNumber(value)) return undefined;
-  const num = Math.trunc(value);
-  if (num < 0 || num > 0xffffffff) return undefined;
-  return num >>> 0;
-}
 
 // The type parameter is an explicit call-site assertion of the SDK surface the
 // caller needs; the runtime check is the same for every handle shape.
@@ -783,56 +777,7 @@ export class MeshtasticProtocol implements Protocol {
   // --- Decoders (pure; called from subscribe) ---
 
   private decodeTextMessage(raw: unknown): DomainEvent[] {
-    const p = raw as {
-      payloadVariant: {
-        case: string;
-        value: { payload: Uint8Array; replyId?: number; reply_id?: number; emoji?: number };
-      };
-      from: number;
-      to: number;
-      id: number;
-      channel?: number;
-      rxTime?: Date | number;
-      rxSnr?: number;
-      rxRssi?: number;
-      hopStart?: number;
-      hopLimit?: number;
-      viaMqtt?: boolean;
-    };
-    if (p.payloadVariant.case !== 'decoded') return [];
-    const data = p.payloadVariant.value;
-    if (!(data.payload instanceof Uint8Array)) return [];
-    const from = normalizedNodeNum(p.from);
-    const to = normalizedNodeNum(p.to);
-    if (from === undefined || to === undefined) return [];
-    const hopCount = meshtasticComputedRfHopsAway(p);
-    const rawReplyId = data.replyId ?? data.reply_id;
-    let text: string;
-    try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(data.payload);
-    } catch {
-      // catch-no-log-ok malformed inbound text is dropped before reaching UI or persistence
-      return [];
-    }
-    return [
-      {
-        type: 'text_message',
-        payload: {
-          id: String(normalizedNodeNum(p.id) ?? 0),
-          from,
-          to,
-          payload:
-            text.length > MAX_TEXT_MESSAGE_CHARS ? text.slice(0, MAX_TEXT_MESSAGE_CHARS) : text,
-          channelIndex: isFiniteNumber(p.channel) ? Math.trunc(p.channel) : 0,
-          timestamp: meshtasticPacketRxTimeMs(p.rxTime) || Date.now(),
-          rxSnr: p.rxSnr,
-          rxRssi: p.rxRssi,
-          ...(hopCount != null ? { hopCount } : {}),
-          replyTo: rawReplyId ? String(rawReplyId) : undefined,
-          tapback: data.emoji != null ? data.emoji !== 0 : undefined,
-        },
-      },
-    ];
+    return decodeMeshtasticTextPacket(raw);
   }
 
   private decodeUserPacket(raw: unknown): DomainEvent[] {

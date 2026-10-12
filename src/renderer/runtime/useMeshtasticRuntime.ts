@@ -23,6 +23,7 @@ import { isDeviceChooserCancel } from '@/renderer/lib/deviceChooserCancel';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { canTransmitLocation } from '@/renderer/lib/locationTransmit';
 import { shouldSuppressMeshtasticNodeHear } from '@/renderer/lib/meshcoreBleMacMeshtasticNodeId';
+import { subscribeMeshtasticBackendCatchUp } from '@/renderer/lib/meshtastic/meshtasticBackendCatchUp';
 import {
   clearMeshtasticLockdownStatus,
   encodeMeshtasticLockdownAuth,
@@ -4236,6 +4237,15 @@ export function useMeshtasticRuntime() {
         });
     },
     [markPacketSeen],
+  );
+
+  // Headless background ingest: rows stored while no renderer owned the link.
+  useEffect(
+    () =>
+      subscribeMeshtasticBackendCatchUp(() => {
+        refreshMessagesFromDb();
+      }),
+    [refreshMessagesFromDb],
   );
 
   const setNodeFavorited = useCallback(async (nodeId: number, favorited: boolean) => {

@@ -44,10 +44,8 @@ export function safeMeshcoreRadioNodeId(value: unknown): number {
   return n;
 }
 
-export function validateSaveMessage(message: unknown): asserts message is Record<
-  string,
-  unknown
-> & {
+/** `db:saveMessage` payload after {@link validateSaveMessage}. */
+export type SaveMessageInput = Record<string, unknown> & {
   sender_id: number;
   sender_name: string;
   payload: string;
@@ -61,7 +59,9 @@ export function validateSaveMessage(message: unknown): asserts message is Record
   to?: number;
   mqttStatus?: string;
   receivedVia?: string;
-} {
+};
+
+export function validateSaveMessage(message: unknown): asserts message is SaveMessageInput {
   if (!message || typeof message !== 'object')
     throw new Error('db:saveMessage: message must be an object');
   const m = message as Record<string, unknown>;

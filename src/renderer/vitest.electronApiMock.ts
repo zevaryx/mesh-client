@@ -413,6 +413,7 @@ export function createElectronAPIMock(): ElectronAPI {
         onData: vi.fn().mockReturnValue(() => {}),
         onDisconnected: vi.fn().mockReturnValue(() => {}),
       },
+      onBackendCaughtUp: vi.fn().mockReturnValue(() => {}),
     },
     chat: {
       export: vi.fn().mockResolvedValue({ success: false }),

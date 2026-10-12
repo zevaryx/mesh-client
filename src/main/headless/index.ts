@@ -26,6 +26,7 @@ import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-tele
 import { registerFileDialogIpcHandlers } from '../ipc/file-dialog-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
+import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
 import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
 import {
@@ -40,6 +41,9 @@ import { registerServiceAnnouncementIpcHandlers } from '../ipc/service-announcem
 import { registerTakIpcHandlers } from '../ipc/tak-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from '../ipc/tcp-bridge';
 import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
+import type { MeshtasticBackendHandle } from '../meshtastic-backend/hostProtocol';
+import { startInProcessMeshtasticBackend } from '../meshtastic-backend/inProcessHost';
+import { persistMeshtasticBackendRow } from '../meshtastic-backend/persist';
 import { MQTTManager } from '../mqtt-manager';
 import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
 import { sanitizeLogMessage } from '../sanitize-log-message';
@@ -72,6 +76,24 @@ function ensureReticulumSidecarManager(): ReticulumSidecarManager {
   return reticulumSidecarManager;
 }
 
+/**
+ * Meshtastic background ingest (in-process): stores TCP chat while no browser tab owns the
+ * radio link, then tells the tab that takes the link back to reload. `null` when disabled.
+ */
+let meshtasticBackend: MeshtasticBackendHandle | null = null;
+
+function startMeshtasticBackend(): MeshtasticBackendHandle {
+  return startInProcessMeshtasticBackend({
+    persistMessage: (row) => {
+      persistMeshtasticBackendRow(row);
+    },
+    onCaughtUp: (count) => {
+      console.debug(`[headless] Meshtastic: ${count} message(s) stored while no tab was attached`);
+      sendMeshtasticBackendCaughtUp(pushTarget(), { count });
+    },
+  });
+}
+
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {
   headlessWindow = window;
@@ -87,6 +109,7 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerTcpBridgeIpcHandlers({
     getMainWindow: pushTarget,
     validateHost: validateHttpHost,
+    ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.tap } : {}),
   });
   registerHttpBridgeIpcHandlers({ getMainWindow: pushTarget });
   registerMqttIpcHandlers({
@@ -181,6 +204,7 @@ async function main(): Promise<void> {
     process.exit(2);
   }
 
+  if (config.meshtasticBackgroundIngest) meshtasticBackend = startMeshtasticBackend();
   const server = createHeadlessWebServer({
     registry: headlessIpcRegistry,
     rendererDir: config.rendererDir,
@@ -189,6 +213,9 @@ async function main(): Promise<void> {
     host: config.host,
     port: config.port,
     maxUploadBytes: config.maxUploadBytes,
+    onSessionCountChange: (count) => {
+      meshtasticBackend?.setRendererPresent(count > 0);
+    },
   });
   const window = new BrowserWindow(server.broadcast);
   registerHeadlessHandlers(window);
@@ -215,6 +242,7 @@ async function main(): Promise<void> {
     console.debug(`[headless] ${signal} — shutting down`);
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
+    meshtasticBackend?.dispose();
     stopHttpBridgePolling();
     mqttManager.disconnect();
     meshcoreMqttAdapter.disconnect();

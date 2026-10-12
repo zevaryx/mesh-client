@@ -84,6 +84,18 @@ export async function buildMainProcess(opts = {}) {
     logLevel: 'info',
   });
 
+  // Meshtastic background ingest, forked as an Electron utilityProcess (opt-in spike).
+  await esbuild.build({
+    absWorkingDir,
+    entryPoints: ['src/main/meshtastic-backend/utilityEntry.ts'],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outfile: path.join(path.dirname(outfile), 'meshtastic-backend.js'),
+    minify,
+    logLevel: 'info',
+  });
+
   const noticeDirectory = path.resolve(
     absWorkingDir,
     path.dirname(outfile),

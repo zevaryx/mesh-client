@@ -32,11 +32,22 @@ export const TCP_BRIDGE_CONNECT_TIMEOUT_MS = 20_000;
 /** Initial TCP keepalive probe delay (ms). */
 export const TCP_BRIDGE_KEEPALIVE_INITIAL_DELAY_MS = 30_000;
 
+/**
+ * Main-process observer of the active socket (Meshtastic background ingest). Sees exactly what
+ * the renderer sees; `write` targets the socket that was active at open and no-ops once replaced.
+ */
+export interface TcpBridgeTap {
+  onOpen: (write: (bytes: Uint8Array) => void) => void;
+  onData: (chunk: Uint8Array) => void;
+  onClose: () => void;
+}
+
 export interface TcpBridgeDeps {
   protocol: TcpBridgeProtocol;
   writeMissing: TcpBridgeWriteMissing;
   getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
+  tap?: TcpBridgeTap;
 }
 
 export interface TcpBridgeHandlers {
@@ -52,10 +63,11 @@ export interface TcpBridgeHandlers {
 export interface TcpBridgeRegisterDeps {
   getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
+  meshtasticTap?: TcpBridgeTap;
 }
 
 export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
-  const { protocol, writeMissing, getMainWindow } = deps;
+  const { protocol, writeMissing, getMainWindow, tap } = deps;
   const validateHost: (host: unknown) => asserts host is string = deps.validateHost;
   let activeSocket: net.Socket | null = null;
 
@@ -88,6 +100,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
         activeSocket = null;
         clearLiveSessionMeter(protocol);
         prev.destroy();
+        tap?.onClose();
       }
       const socketHost = formatHostForSocket(host);
       const socket = new net.Socket();
@@ -113,6 +126,13 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
           `transport=tcp stack=${protocol} host=${sanitizeLogMessage(socketHost)} port=${p}`,
         );
         resetLiveSessionMeter(protocol);
+        if (tap && activeSocket === socket) {
+          tap.onOpen((bytes) => {
+            if (activeSocket === socket && !socket.destroyed && !socket.writableEnded) {
+              socket.write(bytes);
+            }
+          });
+        }
         if (!settled) {
           settled = true;
           resolve();
@@ -137,6 +157,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
         // Superseded sockets must not update the live session meter (#792 connect-replace).
         if (activeSocket === socket) {
           noteLiveSessionData(protocol);
+          tap?.onData(new Uint8Array(chunk));
         }
         getMainWindow()?.webContents.send(dataChannel, new Uint8Array(chunk));
       });
@@ -160,6 +181,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
         if (activeSocket === socket) {
           activeSocket = null;
           clearLiveSessionMeter(protocol);
+          tap?.onClose();
           getMainWindow()?.webContents.send(disconnectedChannel);
         }
         // Connect-replace / timeout destroy can close a socket that never connected.
@@ -244,6 +266,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
       activeSocket = null;
       clearLiveSessionMeter(protocol);
       prev.destroy();
+      tap?.onClose();
     }
   };
 
@@ -252,6 +275,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
     const prev = activeSocket;
     activeSocket = null;
     clearLiveSessionMeter(protocol);
+    tap?.onClose();
     try {
       prev.destroy();
     } catch (err) {
@@ -281,6 +305,7 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
     writeMissing: 'no-socket',
     getMainWindow: deps.getMainWindow,
     validateHost: deps.validateHost,
+    tap: deps.meshtasticTap,
   });
   ipcMain.handle('meshtastic:tcp-connect', meshtastic.connect);
   ipcMain.handle('meshtastic:tcp-write', meshtastic.write);

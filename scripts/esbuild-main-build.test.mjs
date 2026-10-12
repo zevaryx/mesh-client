@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildMainProcess, parseEsbuildMainBuildArgs } from './esbuild-main-build.mjs';
 
 /** Keep the minified main outfile under esbuild's 1mb advisory (and well below). */
-const MAIN_BUNDLE_SIZE_BUDGET_BYTES = 640 * 1024;
+// 640 -> 644 KiB for the Meshtastic background-ingest desktop host (utilityProcess wiring, ~2.5 KB).
+const MAIN_BUNDLE_SIZE_BUDGET_BYTES = 644 * 1024;
 
 describe('esbuild-main-build', () => {
   /** @type {string | null} */
@@ -67,6 +68,9 @@ describe('esbuild-main-build', () => {
       const workerBytes = fs.readFileSync(worker);
       expect(workerBytes.length).toBeGreaterThan(10_000);
       expect(workerBytes.toString('utf8')).not.toContain('https://firefox-settings-attachments');
+      const backendWorker = fs.readFileSync(path.join(tempDir, 'meshtastic-backend.js'), 'utf8');
+      expect(backendWorker).toContain('parentPort');
+      expect(backendWorker).not.toMatch(/require\(["']electron["']\)/);
       const noticeDirectory = path.join(tempDir, 'translation-licenses');
       expect(fs.readFileSync(path.join(noticeDirectory, 'LICENSE-fastText.txt'), 'utf8')).toContain(
         'Copyright (c) 2016-present, Facebook, Inc.',

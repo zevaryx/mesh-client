@@ -71,6 +71,7 @@ import { registerGattPairingIpcHandlers } from './ipc/gatt-pairing-handlers';
 import { registerGeoIpcHandlers } from './ipc/geo-handlers';
 import { registerGpsIpcHandlers } from './ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers } from './ipc/http-bridge';
+import { sendMeshtasticBackendCaughtUp } from './ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from './ipc/mqtt-handlers';
 import { registerNotificationSoundHandlers } from './ipc/notification-sound-handlers';
 import { registerOfflineMapsIpcHandlers } from './ipc/offline-maps-handlers';
@@ -102,6 +103,11 @@ import {
 } from './log-service';
 import { appendMecpReceivedLog, isValidMecpAppendPayload } from './mecp-received-log';
 import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
+import {
+  createDesktopMeshtasticBackend,
+  isDesktopMeshtasticBackendEnabled,
+} from './meshtastic-backend/desktopBackend';
+import { persistMeshtasticBackendRow } from './meshtastic-backend/persist';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { MQTTManager } from './mqtt-manager';
 import { createMeshTilesProtocolHandler } from './offline-maps/protocol';
@@ -320,6 +326,7 @@ async function quitMainProcess(opts: { relaunch?: boolean } = {}): Promise<void>
     await shutdownAppResources();
 
     destroyRegisteredTcpBridgeSockets('quitMainProcess TCP socket destroy (ignored)');
+    meshtasticDesktopBackend?.dispose();
     stopPowerSaveBlocker();
 
     tray?.destroy();
@@ -1467,6 +1474,7 @@ function createWindow() {
     setMainWindow(null);
     mainWindow = null;
   });
+  meshtasticDesktopBackend?.watchWindow(mainWindow);
   win.on('close', () => {
     if (windowStateSaveTimer) clearTimeout(windowStateSaveTimer);
     if (!win.isMinimized() && !win.isMaximized()) {
@@ -2831,12 +2839,27 @@ registerChatOutboxIpcHandlers();
 
 // ─── MeshCore Path History ───────────────────────────────────────────────
 
+// ─── Meshtastic background ingest (opt-in spike) ───────────────────
+// Stores Meshtastic TCP chat in a utilityProcess while the window's renderer is not decoding.
+const meshtasticDesktopBackend = isDesktopMeshtasticBackendEnabled()
+  ? createDesktopMeshtasticBackend({
+      persistMessage: (row) => {
+        persistMeshtasticBackendRow(row);
+      },
+      onCaughtUp: (count) => {
+        console.debug(`[main] Meshtastic: ${count} message(s) stored by the background ingest`);
+        sendMeshtasticBackendCaughtUp(mainWindow, { count });
+      },
+    })
+  : null;
+
 // ─── MeshCore / Meshtastic TCP bridges ─────────────────────────────
 // Independent sockets (two createTcpBridge instances). writeMissing is the
 // only protocol fork: MeshCore rejects; Meshtastic returns 'no-socket'.
 registerTcpBridgeIpcHandlers({
   getMainWindow: () => mainWindow,
   validateHost: validateHttpHost,
+  ...(meshtasticDesktopBackend ? { meshtasticTap: meshtasticDesktopBackend.tap } : {}),
 });
 
 // ─── Meshtastic HTTP bridge ─────────────────────────────────────────
@@ -2951,6 +2974,7 @@ void app
         );
         app.dock?.setIcon(iconPath);
       }
+      meshtasticDesktopBackend?.start();
       createWindow();
 
       rendererHeartbeatWatchdog.startStallWatchdog(() => {
@@ -3116,6 +3140,7 @@ app.on('will-quit', (event) => {
       ); // log-injection-ok internal library error during cleanup
     }
     destroyRegisteredTcpBridgeSockets('TCP socket destroy during will-quit (ignored)');
+    meshtasticDesktopBackend?.dispose();
     stopPowerSaveBlocker();
     tray?.destroy();
     tray = null;

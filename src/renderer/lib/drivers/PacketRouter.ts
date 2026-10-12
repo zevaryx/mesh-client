@@ -1,5 +1,3 @@
-import { formatMeshtasticNodeId } from '@/shared/nodeNameUtils';
-
 import { MESHCORE_ROOM_MESSAGE_CHANNEL } from '../../hooks/meshcore/meshcoreHookPreamble';
 import type { ConnectionStatus } from '../../stores/connectionStore';
 import { setConnection } from '../../stores/connectionStore';
@@ -39,6 +37,7 @@ import { nextMeshcoreMessageLocalOrder } from '../meshcoreMessageOrder';
 import { ensureMeshtasticChatSenderInNodeStore } from '../meshtastic/meshtasticChatSenderNode';
 import { shouldSuppressMeshtasticLocalConfigWrite } from '../meshtastic/meshtasticConfigIngressGuard';
 import { meshtasticTracerouteLastHeardNodeIds } from '../meshtasticLastHeard';
+import { meshtasticSenderDisplayName } from '../protocols/meshtasticTextDecode';
 import type { DomainEvent, DomainEventType } from '../protocols/Protocol';
 import { retargetMeshtasticOutboundTempId } from '../sessions/meshtasticSession';
 import {
@@ -60,13 +59,7 @@ function resolveMeshtasticSenderName(identityId: IdentityId, from: number): stri
   if (from <= 0) return undefined;
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Identity bucket may be absent at runtime.
   const node = useNodeStore.getState().nodes[identityId]?.[from];
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Node may be absent when its identity bucket is missing.
-  const shortName = node?.shortName?.trim();
-  if (shortName) return shortName;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Node may be absent when its identity bucket is missing.
-  const longName = node?.longName?.trim();
-  if (longName) return longName.length > 7 ? longName.slice(0, 7) : longName;
-  return formatMeshtasticNodeId(from);
+  return meshtasticSenderDisplayName(from, node);
 }
 
 function upsertByIndex<T extends { index: number }>(arr: T[], item: T): T[] {

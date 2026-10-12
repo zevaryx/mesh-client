@@ -25,6 +25,7 @@ import {
   searchMessages,
   upsertNodePath,
 } from '../database';
+import type { NodeSqliteDB } from '../db-compat';
 import { finishDbIpcHandler, finishDbIpcReadHandler, getDbForIpc } from '../db-ipc-lifecycle';
 import { listMeshtasticDmPeersFromDb } from '../listDmPeers';
 import { sanitizeLogMessage } from '../log-service';
@@ -39,9 +40,52 @@ import {
   DB_SAVE_NODE_PATH_MAX_BYTES,
   safeMeshcoreRadioNodeId,
   safeNonNegativeInt,
+  type SaveMessageInput,
   validateSaveMessage,
   validateSaveNode,
 } from './db-ipc-validation';
+
+/**
+ * `INSERT OR IGNORE` one Meshtastic chat row (dedup: `idx_msg_packet_dedup` on sender + packet id).
+ * Shared by `db:saveMessage` and the main-process background ingest; callers validate first.
+ */
+export function insertMeshtasticMessageRow(db: NodeSqliteDB, message: SaveMessageInput) {
+  const stmt = db.prepareOnce(`
+      INSERT OR IGNORE INTO messages (sender_id, sender_name, payload, channel, timestamp, packet_id, status, error, emoji, reply_id, to_node, mqtt_status, received_via, reply_preview_text, reply_preview_sender, rx_hops, via_store_forward, radio_node_id, channel_key)
+      VALUES (@sender_id, @sender_name, @payload, @channel, @timestamp, @packet_id, @status, @error, @emoji, @reply_id, @to_node, @mqtt_status, @received_via, @reply_preview_text, @reply_preview_sender, @rx_hops, @via_store_forward, @radio_node_id, @channel_key)
+    `);
+  const radioNodeId = message.radioNodeId != null ? Number(message.radioNodeId) >>> 0 : 0;
+  const validReceivedVia = ['rf', 'mqtt', 'both'];
+  return stmt.run({
+    sender_id: safeNonNegativeInt(message.sender_id),
+    sender_name: message.sender_name,
+    payload: message.payload,
+    channel: safeNonNegativeInt(message.channel),
+    timestamp: message.timestamp,
+    packet_id: message.packetId != null ? safeNonNegativeInt(message.packetId) : null,
+    status: message.status ?? 'acked',
+    error: message.error ?? null,
+    emoji: message.emoji != null ? (sanitizeUnicodeReactionScalar(message.emoji) ?? null) : null,
+    reply_id: message.replyId != null ? safeNonNegativeInt(message.replyId) : null,
+    to_node: message.to != null ? safeNonNegativeInt(message.to) : null,
+    mqtt_status: message.mqttStatus ?? null,
+    received_via:
+      message.receivedVia != null && validReceivedVia.includes(message.receivedVia)
+        ? message.receivedVia
+        : null,
+    reply_preview_text: message.replyPreviewText ?? null,
+    reply_preview_sender: message.replyPreviewSender ?? null,
+    rx_hops:
+      message.rxHops != null &&
+      typeof message.rxHops === 'number' &&
+      Number.isFinite(message.rxHops)
+        ? Math.trunc(message.rxHops)
+        : null,
+    via_store_forward: message.viaStoreForward ? 1 : 0,
+    radio_node_id: radioNodeId > 0 ? radioNodeId : null,
+    channel_key: isChannelIdentityKey(message.channelKey) ? message.channelKey : null,
+  });
+}
 
 /** Register the Meshtastic `db:*` handlers. Channel name literals keep check:ipc-contract aligned. */
 export function registerMeshtasticDbIpcHandlers(): void {
@@ -52,42 +96,7 @@ export function registerMeshtasticDbIpcHandlers(): void {
       validateSaveMessage(message);
       const db = getDbForIpc('db:saveMessage');
       if (!db) return { changes: 0 };
-      const stmt = db.prepareOnce(`
-      INSERT OR IGNORE INTO messages (sender_id, sender_name, payload, channel, timestamp, packet_id, status, error, emoji, reply_id, to_node, mqtt_status, received_via, reply_preview_text, reply_preview_sender, rx_hops, via_store_forward, radio_node_id, channel_key)
-      VALUES (@sender_id, @sender_name, @payload, @channel, @timestamp, @packet_id, @status, @error, @emoji, @reply_id, @to_node, @mqtt_status, @received_via, @reply_preview_text, @reply_preview_sender, @rx_hops, @via_store_forward, @radio_node_id, @channel_key)
-    `);
-      const radioNodeId = message.radioNodeId != null ? Number(message.radioNodeId) >>> 0 : 0;
-      const validReceivedVia = ['rf', 'mqtt', 'both'];
-      return stmt.run({
-        sender_id: safeNonNegativeInt(message.sender_id),
-        sender_name: message.sender_name,
-        payload: message.payload,
-        channel: safeNonNegativeInt(message.channel),
-        timestamp: message.timestamp,
-        packet_id: message.packetId != null ? safeNonNegativeInt(message.packetId) : null,
-        status: message.status ?? 'acked',
-        error: message.error ?? null,
-        emoji:
-          message.emoji != null ? (sanitizeUnicodeReactionScalar(message.emoji) ?? null) : null,
-        reply_id: message.replyId != null ? safeNonNegativeInt(message.replyId) : null,
-        to_node: message.to != null ? safeNonNegativeInt(message.to) : null,
-        mqtt_status: message.mqttStatus ?? null,
-        received_via:
-          message.receivedVia != null && validReceivedVia.includes(message.receivedVia)
-            ? message.receivedVia
-            : null,
-        reply_preview_text: message.replyPreviewText ?? null,
-        reply_preview_sender: message.replyPreviewSender ?? null,
-        rx_hops:
-          message.rxHops != null &&
-          typeof message.rxHops === 'number' &&
-          Number.isFinite(message.rxHops)
-            ? Math.trunc(message.rxHops)
-            : null,
-        via_store_forward: message.viaStoreForward ? 1 : 0,
-        radio_node_id: radioNodeId > 0 ? radioNodeId : null,
-        channel_key: isChannelIdentityKey(message.channelKey) ? message.channelKey : null,
-      });
+      return insertMeshtasticMessageRow(db, message);
     } catch (err) {
       finishDbIpcHandler('db:saveMessage', err);
     }

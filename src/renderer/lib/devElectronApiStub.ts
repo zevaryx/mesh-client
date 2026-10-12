@@ -335,6 +335,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
         onData: noopUnsub,
         onDisconnected: noopUnsub,
       },
+      onBackendCaughtUp: noopUnsub,
     },
     mecp: {
       appendReceived: async () => ({ ok: true as const }),

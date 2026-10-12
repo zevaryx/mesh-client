@@ -53,6 +53,8 @@ export interface HeadlessWebServerOptions {
   platform?: string;
   /** Total bytes one browser file pick may upload (default {@link HEADLESS_DEFAULT_MAX_UPLOAD_BYTES}). */
   maxUploadBytes?: number;
+  /** Called with the new count whenever a bridge session opens or closes. */
+  onSessionCountChange?: (count: number) => void;
 }
 
 export const HEADLESS_DEFAULT_MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
@@ -290,6 +292,7 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     const sessionId = nextSessionId++;
     sessions.add(ws);
     console.debug(`[headless] bridge session ${sessionId} opened (${sessions.size} active)`);
+    options.onSessionCountChange?.(sessions.size);
     const event: HeadlessIpcEvent = {
       senderFrame: { url: HEADLESS_SENDER_URL },
       sender: { id: sessionId },
@@ -344,6 +347,7 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
       sessions.delete(ws);
       transfer.closeSession(sessionId);
       console.debug(`[headless] bridge session ${sessionId} closed (${sessions.size} active)`);
+      options.onSessionCountChange?.(sessions.size);
     });
     ws.on('error', (err) => {
       console.warn(

@@ -1324,6 +1324,11 @@ export interface ElectronAPI {
       onData: (cb: (bytes: Uint8Array) => void) => () => void;
       onDisconnected: (cb: () => void) => () => void;
     };
+    /**
+     * The main-process background ingest wrote `count` rows to SQLite while no renderer owned
+     * the radio link (e.g. every browser tab closed in headless mode); reload messages from DB.
+     */
+    onBackendCaughtUp: (cb: (payload: { count: number }) => void) => () => void;
   };
 
   // ─── Place lookup (weather forecast map layer) ──────────────────────────────

@@ -56,18 +56,28 @@ docker run --rm -p 8080:8080 -v mesh-client-data:/data \
 
 The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the runtime image holds only Node, `dist/renderer` and `dist-headless/`. The image runs as `node`, keeps state in the `/data` volume and has a `/healthz` health check. Behind a Docker Hub rate limit or mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node`.
 
-| Variable                            | Default                     | Meaning                                                                             |
-| ----------------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
-| `MESH_CLIENT_DATA_DIR`              | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image)                            |
-| `MESH_CLIENT_WEB_HOST`              | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                                               |
-| `MESH_CLIENT_WEB_PORT`              | `8080`                      | HTTP + WebSocket port                                                               |
-| `MESH_CLIENT_WEB_TOKEN`             | random per start            | Session token (min 16 chars)                                                        |
-| `MESH_CLIENT_WEB_AUTH`              | `token`                     | `off` disables auth (isolated networks only)                                        |
-| `MESH_CLIENT_RENDERER_DIR`          | `<bundle>/../dist/renderer` | Vite renderer build                                                                 |
-| `MESH_CLIENT_SECRET_KEY_FILE`       | unset                       | File with key material (min 16 chars) for stored secrets; use a Docker secret       |
-| `MESH_CLIENT_SECRET_KEY`            | unset                       | Same, inline; visible in `docker inspect`, so prefer the file                       |
-| `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE` | unset                       | `1` allows an irreversible database schema upgrade at start (back up `/data` first) |
-| `MESH_CLIENT_WEB_MAX_UPLOAD_MB`     | `64`                        | Max total upload per browser file pick (1–1024 MiB)                                 |
+| Variable                            | Default                     | Meaning                                                                                                |
+| ----------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `MESH_CLIENT_DATA_DIR`              | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image)                                               |
+| `MESH_CLIENT_WEB_HOST`              | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                                                                  |
+| `MESH_CLIENT_WEB_PORT`              | `8080`                      | HTTP + WebSocket port                                                                                  |
+| `MESH_CLIENT_WEB_TOKEN`             | random per start            | Session token (min 16 chars)                                                                           |
+| `MESH_CLIENT_WEB_AUTH`              | `token`                     | `off` disables auth (isolated networks only)                                                           |
+| `MESH_CLIENT_RENDERER_DIR`          | `<bundle>/../dist/renderer` | Vite renderer build                                                                                    |
+| `MESH_CLIENT_SECRET_KEY_FILE`       | unset                       | File with key material (min 16 chars) for stored secrets; use a Docker secret                          |
+| `MESH_CLIENT_SECRET_KEY`            | unset                       | Same, inline; visible in `docker inspect`, so prefer the file                                          |
+| `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE` | unset                       | `1` allows an irreversible database schema upgrade at start (back up `/data` first)                    |
+| `MESH_CLIENT_WEB_MAX_UPLOAD_MB`     | `64`                        | Max total upload per browser file pick (1–1024 MiB)                                                    |
+| `MESH_CLIENT_MESHTASTIC_BACKEND`    | `on`                        | `off` stops [storing Meshtastic chat while no tab owns the radio](#background-ingest-meshtastic-spike) |
+
+## Background ingest (Meshtastic, spike)
+
+Protocol handling runs in the renderer, so with no browser tab open the server only forwards radio bytes to nobody. For **Meshtastic over TCP** the server now stores chat itself while no tab is decoding:
+
+- **What it does:** `src/main/meshtastic-backend/` taps the bytes the TCP bridge already reads (`TcpBridgeTap` in `ipc/tcp-bridge.ts`), frames and decodes them in Node (`@meshtastic/core` framer, the renderer's own text decoder in `lib/protocols/meshtasticTextDecode.ts`), and writes text and DMs through the `db:saveMessage` insert (`insertMeshtasticMessageRow`). Sender names, channel keys and the radio's node id come from the config dump the radio sent when the tab connected. It sends the renderer's 60 s heartbeat so the radio keeps the TCP client.
+- **Who owns persistence:** only renderers open sockets, so a socket opened while a tab is connected belongs to that tab. When the last tab leaves the backend takes over, and it keeps storing until a connected tab opens the socket again (a fresh page is not decoding until its runtime reconnects). That reconnect hands ownership back and pushes `meshtastic:backend-caught-up`, and the runtime reloads messages from SQLite. Rows are deduplicated by the `(sender_id, packet_id)` unique index, so overlap with the renderer never duplicates.
+- **Hosts:** in-process here (`inProcessHost.ts`); on desktop an Electron `utilityProcess` (`utilityHost.ts`, `meshtastic-backend.js`), opt-in with `MESH_CLIENT_MESHTASTIC_BACKEND=on`, covering a closed window (macOS), a crashed renderer or a reload. In `pnpm run dev`, run `pnpm run build:main` once so the worker bundle exists.
+- **Not covered yet:** a server restart with no tab (nothing reconnects the radio), HTTP / BLE / serial links, MQTT, nodes, positions and telemetry, reply previews, notifications, and Store & Forward. MeshCore keeps messages on the radio until a client drains them, and Reticulum buffers the last 200 in the sidecar, so both already survive short gaps.
 
 ## File transfer
 
@@ -131,5 +141,6 @@ Open design question: several tabs share one backend and radio (all see every pu
 - `src/shared/webBridgeProtocol.ts`: frames and value codec
 - `src/preload/web/electronRendererShim.ts`: browser `ipcRenderer` / `contextBridge`
 - `src/main/headless/`: `index.ts` (entry), `config.ts` (env), `webServer.ts` (HTTP/WS), `ipcRegistry.ts`, `electronShim.ts`
+- `src/main/meshtastic-backend/`: Meshtastic background ingest and its in-process / `utilityProcess` hosts
 - `scripts/build-headless.mjs`: server + bridge bundles
 - `Dockerfile`, `.dockerignore`
