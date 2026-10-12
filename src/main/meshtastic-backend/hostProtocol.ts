@@ -4,10 +4,8 @@
  * directly, so the shapes double as documentation of the boundary.
  */
 import type { TcpBridgeTap } from '../ipc/tcp-bridge';
-import type {
-  MeshtasticBackendIngest,
-  MeshtasticBackendMessageRow,
-} from './meshtasticBackendIngest';
+import type { MeshtasticBackendIngest } from './meshtasticBackendIngest';
+import type { MeshtasticBackendRecord } from './meshtasticBackendRecords';
 
 export type MeshtasticBackendCommand =
   | { t: 'open' }
@@ -16,7 +14,7 @@ export type MeshtasticBackendCommand =
   | { t: 'present'; value: boolean };
 
 export type MeshtasticBackendEvent =
-  | { t: 'persist'; row: MeshtasticBackendMessageRow }
+  | { t: 'persist'; record: MeshtasticBackendRecord }
   | { t: 'write'; frame: Uint8Array }
   | { t: 'caughtUp'; count: number };
 
@@ -29,7 +27,7 @@ export interface MeshtasticBackendHandle {
 
 /** Main-process side effects a host needs (SQLite insert, push to renderers). */
 export interface MeshtasticBackendHostDeps {
-  persistMessage: (row: MeshtasticBackendMessageRow) => void;
+  persist: (record: MeshtasticBackendRecord) => void;
   onCaughtUp: (count: number) => void;
 }
 
@@ -76,7 +74,7 @@ export function isMeshtasticBackendEvent(v: unknown): v is MeshtasticBackendEven
   if (!isRecord(v)) return false;
   switch (v.t) {
     case 'persist':
-      return isRecord(v.row);
+      return isRecord(v.record) && typeof v.record.kind === 'string';
     case 'write':
       return v.frame instanceof Uint8Array;
     case 'caughtUp':
@@ -93,7 +91,7 @@ export function dispatchMeshtasticBackendEvent(
   write: ((frame: Uint8Array) => void) | null,
 ): void {
   try {
-    if (event.t === 'persist') deps.persistMessage(event.row);
+    if (event.t === 'persist') deps.persist(event.record);
     else if (event.t === 'write') write?.(event.frame);
     else deps.onCaughtUp(event.count);
   } catch (err) {

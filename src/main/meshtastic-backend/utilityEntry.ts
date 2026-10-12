@@ -16,8 +16,8 @@ const post = (event: MeshtasticBackendEvent): void => {
 };
 
 const ingest = new MeshtasticBackendIngest({
-  persistMessage: (row) => {
-    post({ t: 'persist', row });
+  persist: (record) => {
+    post({ t: 'persist', record });
   },
   writeToRadio: (frame) => {
     post({ t: 'write', frame });

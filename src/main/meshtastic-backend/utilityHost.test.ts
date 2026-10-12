@@ -26,7 +26,7 @@ class FakeChild extends EventEmitter implements MeshtasticBackendChild {
 }
 
 function deps() {
-  return { persistMessage: vi.fn(), onCaughtUp: vi.fn() };
+  return { persist: vi.fn(), onCaughtUp: vi.fn() };
 }
 
 describe('startUtilityMeshtasticBackend', () => {
@@ -56,11 +56,11 @@ describe('startUtilityMeshtasticBackend', () => {
 
     handle.tap.onOpen(write);
     child.emit('message', { t: 'write', frame: new Uint8Array([9]) });
-    child.emit('message', { t: 'persist', row: { payload: 'x' } });
+    child.emit('message', { t: 'persist', record: { kind: 'message', row: { payload: 'x' } } });
     child.emit('message', { t: 'caughtUp', count: 3 });
     child.emit('message', { t: 'persist' }); // malformed
     expect(write).toHaveBeenCalledWith(new Uint8Array([9]));
-    expect(d.persistMessage).toHaveBeenCalledWith({ payload: 'x' });
+    expect(d.persist).toHaveBeenCalledWith({ kind: 'message', row: { payload: 'x' } });
     expect(d.onCaughtUp).toHaveBeenCalledWith(3);
     expect(console.warn).toHaveBeenCalledWith(
       '[meshtastic-backend] dropped malformed worker event',

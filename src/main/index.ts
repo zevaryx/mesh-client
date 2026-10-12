@@ -107,7 +107,7 @@ import {
   createDesktopMeshtasticBackend,
   isDesktopMeshtasticBackendEnabled,
 } from './meshtastic-backend/desktopBackend';
-import { persistMeshtasticBackendRow } from './meshtastic-backend/persist';
+import { persistMeshtasticBackendRecord } from './meshtastic-backend/persist';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { MQTTManager } from './mqtt-manager';
 import { createMeshTilesProtocolHandler } from './offline-maps/protocol';
@@ -2840,14 +2840,15 @@ registerChatOutboxIpcHandlers();
 // ─── MeshCore Path History ───────────────────────────────────────────────
 
 // ─── Meshtastic background ingest (opt-in spike) ───────────────────
-// Stores Meshtastic TCP chat in a utilityProcess while the window's renderer is not decoding.
+// Stores Meshtastic TCP chat, nodes, positions and telemetry in a utilityProcess while the
+// window's renderer is not decoding.
 const meshtasticDesktopBackend = isDesktopMeshtasticBackendEnabled()
   ? createDesktopMeshtasticBackend({
-      persistMessage: (row) => {
-        persistMeshtasticBackendRow(row);
+      persist: (record) => {
+        persistMeshtasticBackendRecord(record);
       },
       onCaughtUp: (count) => {
-        console.debug(`[main] Meshtastic: ${count} message(s) stored by the background ingest`);
+        console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
         sendMeshtasticBackendCaughtUp(mainWindow, { count });
       },
     })

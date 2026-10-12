@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
-import { Mesh, Portnums } from '@meshtastic/protobufs';
+import { Config, Mesh, Portnums, Telemetry } from '@meshtastic/protobufs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { computeChannelIdentityKey } from '../../shared/channelIdentityKey';
@@ -9,10 +9,12 @@ import {
   MeshtasticBackendIngest,
   type MeshtasticBackendMessageRow,
 } from './meshtasticBackendIngest';
+import type { MeshtasticBackendRecord } from './meshtasticBackendRecords';
 import {
   ALICE,
   BROADCAST,
   configDump,
+  dataPacket,
   frame,
   ME,
   PSK,
@@ -22,12 +24,16 @@ import {
 const { PortNum } = Portnums;
 function setup() {
   const rows: MeshtasticBackendMessageRow[] = [];
+  const records: MeshtasticBackendRecord[] = [];
   const writes: Uint8Array[] = [];
   const caughtUp: number[] = [];
   const timers: { fn: () => void; ms: number; cleared: boolean }[] = [];
   const ingest = new MeshtasticBackendIngest(
     {
-      persistMessage: (row) => rows.push(row),
+      persist: (record) => {
+        records.push(record);
+        if (record.kind === 'message') rows.push(record.row);
+      },
       writeToRadio: (f) => writes.push(f),
       onCaughtUp: (n) => caughtUp.push(n),
     },
@@ -46,7 +52,9 @@ function setup() {
     for (const f of frames) ingest.pushBytes(f);
   };
   const activeTimers = () => timers.filter((t) => !t.cleared);
-  return { ingest, rows, writes, caughtUp, feed, activeTimers };
+  const ofKind = <K extends MeshtasticBackendRecord['kind']>(kind: K) =>
+    records.filter((r): r is Extract<MeshtasticBackendRecord, { kind: K }> => r.kind === kind);
+  return { ingest, rows, records, ofKind, writes, caughtUp, feed, activeTimers };
 }
 
 describe('MeshtasticBackendIngest', () => {
@@ -189,7 +197,8 @@ describe('MeshtasticBackendIngest', () => {
     expect(t.caughtUp).toEqual([]);
     t.ingest.linkOpened(); // the renderer's tcp-connect replaces the socket
     expect(t.ingest.isPersisting()).toBe(false);
-    expect(t.caughtUp).toEqual([2]);
+    // Two messages, each with a last-heard bump for its sender.
+    expect(t.caughtUp).toEqual([4]);
   });
 
   it('survives junk bytes on the stream', async () => {
@@ -202,6 +211,132 @@ describe('MeshtasticBackendIngest', () => {
     );
     await vi.waitFor(() => {
       expect(t.rows).toHaveLength(1);
+    });
+  });
+
+  describe('node identity, position and telemetry', () => {
+    const BOB = 0x0000beef;
+    const positionFrame = (from: number, latitudeI: number, longitudeI: number) =>
+      dataPacket({
+        from,
+        portnum: PortNum.POSITION_APP,
+        payload: toBinary(
+          Mesh.PositionSchema,
+          create(Mesh.PositionSchema, { latitudeI, longitudeI, altitude: 1600 }),
+        ),
+      });
+    const telemetryFrame = (from: number, variant: Telemetry.Telemetry['variant']) =>
+      dataPacket({
+        from,
+        portnum: PortNum.TELEMETRY_APP,
+        payload: toBinary(
+          Telemetry.TelemetrySchema,
+          create(Telemetry.TelemetrySchema, { variant }),
+        ),
+      });
+
+    it('stores a live NODEINFO_APP user as a node patch (default short name cleared)', async () => {
+      const t = setup();
+      t.ingest.linkOpened();
+      const publicKey = new Uint8Array(32).fill(0xab);
+      t.feed(
+        dataPacket({
+          from: BOB,
+          portnum: PortNum.NODEINFO_APP,
+          payload: toBinary(
+            Mesh.UserSchema,
+            create(Mesh.UserSchema, {
+              longName: 'Bob Base',
+              shortName: 'beef', // firmware default: last 4 hex of the node id
+              hwModel: Mesh.HardwareModel.RAK4631,
+              role: Config.Config_DeviceConfig_Role.ROUTER,
+              publicKey,
+            }),
+          ),
+        }),
+      );
+      await vi.waitFor(() => {
+        expect(t.ofKind('node')).toHaveLength(1);
+      });
+      expect(t.ofKind('node')[0]?.node).toEqual({
+        node_id: BOB,
+        long_name: 'Bob Base',
+        hw_model: expect.any(String) as string,
+        role: 2,
+        public_key_hex: 'ab'.repeat(32),
+        last_heard: 1_700_000_000_000,
+        source: 'rf',
+        via_mqtt: false,
+      });
+    });
+
+    it("stores peer positions with a history point, but never the radio's own position", async () => {
+      const t = setup();
+      t.ingest.linkOpened();
+      t.feed(...configDump()); // learns ME as the connected radio
+      t.feed(
+        positionFrame(BOB, 397_392_000, -1_049_903_000),
+        positionFrame(ME, 400_000_000, -1_050_000_000),
+        positionFrame(ALICE, 0, 0), // no fix: last-heard only
+      );
+      await vi.waitFor(() => {
+        expect(t.ofKind('node')).toHaveLength(2);
+      });
+      expect(t.ofKind('node').map((r) => r.node)).toEqual([
+        expect.objectContaining({ node_id: BOB, latitude: 39.7392, longitude: -104.9903 }),
+        { node_id: ALICE, last_heard: 1_700_000_000_000, source: 'rf', via_mqtt: false },
+      ]);
+      expect(t.ofKind('position')).toEqual([
+        {
+          kind: 'position',
+          nodeId: BOB,
+          latitude: 39.7392,
+          longitude: -104.9903,
+          recordedAt: 1_700_000_000_000,
+        },
+      ]);
+    });
+
+    it('stores battery, own radio stats and environment readings (deduplicated)', async () => {
+      const t = setup();
+      t.ingest.linkOpened();
+      t.feed(...configDump());
+      const env = create(Telemetry.EnvironmentMetricsSchema, { temperature: 21.5 });
+      t.feed(
+        telemetryFrame(BOB, {
+          case: 'deviceMetrics',
+          value: create(Telemetry.DeviceMetricsSchema, { batteryLevel: 87, voltage: 4.1 }),
+        }),
+        telemetryFrame(ME, {
+          case: 'localStats',
+          value: create(Telemetry.LocalStatsSchema, { channelUtilization: 12.5, numPacketsRx: 40 }),
+        }),
+        telemetryFrame(BOB, { case: 'environmentMetrics', value: env }),
+        telemetryFrame(BOB, { case: 'environmentMetrics', value: env }), // same reading: dropped
+      );
+      await vi.waitFor(() => {
+        expect(t.ofKind('environment')).toHaveLength(1);
+      });
+      await new Promise((r) => setTimeout(r, 10));
+      expect(t.ofKind('environment')).toHaveLength(1);
+      expect(t.ofKind('environment')[0]?.reading).toEqual({ temperature: 21.5 });
+      const nodes = t.ofKind('node').map((r) => r.node);
+      expect(nodes[0]).toMatchObject({ node_id: BOB, battery: 87 });
+      expect(nodes[0]).not.toHaveProperty('voltage'); // renderer stores battery only
+      expect(nodes[1]).toMatchObject({
+        node_id: ME,
+        channel_utilization: 12.5,
+        num_packets_rx: 40,
+      });
+    });
+
+    it('stores nothing for these packets while a renderer owns the link', async () => {
+      const t = setup();
+      t.ingest.setRendererPresent(true);
+      t.ingest.linkOpened();
+      t.feed(positionFrame(BOB, 397_392_000, -1_049_903_000));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(t.records).toEqual([]);
     });
   });
 });

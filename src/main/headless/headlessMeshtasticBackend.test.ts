@@ -25,7 +25,7 @@ const { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } =
 const { sendMeshtasticBackendCaughtUp } = await import('../ipc/meshtastic-backend-push');
 const { validateHttpHost } = await import('../httpHostValidation');
 const { startInProcessMeshtasticBackend } = await import('../meshtastic-backend/inProcessHost');
-const { persistMeshtasticBackendRow } = await import('../meshtastic-backend/persist');
+const { persistMeshtasticBackendRecord } = await import('../meshtastic-backend/persist');
 const { parseWebBridgeServerFrame, serializeWebBridgeFrame } =
   await import('../../shared/webBridgeProtocol');
 const { computeChannelIdentityKey } = await import('../../shared/channelIdentityKey');
@@ -145,8 +145,8 @@ describe('headless Meshtastic background ingest', () => {
 
     let window: InstanceType<typeof BrowserWindow> | null = null;
     backend = startInProcessMeshtasticBackend({
-      persistMessage: (row) => {
-        persistMeshtasticBackendRow(row);
+      persist: (record) => {
+        persistMeshtasticBackendRecord(record);
       },
       onCaughtUp: (count) => {
         sendMeshtasticBackendCaughtUp(window, { count });
@@ -226,7 +226,8 @@ describe('headless Meshtastic background ingest', () => {
     await vi.waitFor(() => {
       expect(second.events).toContainEqual({
         channel: 'meshtastic:backend-caught-up',
-        args: [{ count: 2 }],
+        // Two messages plus a last-heard bump for their sender each time.
+        args: [{ count: 4 }],
       });
     });
     const liveFrames = [
@@ -249,19 +250,85 @@ describe('headless Meshtastic background ingest', () => {
         'INSERT INTO blocked_contacts (protocol, identity_id, blocked_hash, created_at) VALUES (?, ?, ?, ?)',
       )
       .run('meshtastic', 'lora-blocklist', String(blocked), Date.now());
-    const row = (from: number, packetId: number) => ({
-      sender_id: from,
-      sender_name: 'x',
-      payload: 'hello',
-      channel: 0,
-      timestamp: 1_700_000_100_000,
-      packetId,
-      receivedVia: 'rf',
+    const message = (from: number, packetId: number) => ({
+      kind: 'message' as const,
+      row: {
+        sender_id: from,
+        sender_name: 'x',
+        payload: 'hello',
+        channel: 0,
+        timestamp: 1_700_000_100_000,
+        packetId,
+        receivedVia: 'rf' as const,
+      },
     });
-    expect(persistMeshtasticBackendRow(row(blocked, 900))).toBe(false);
-    expect(persistMeshtasticBackendRow(row(ALICE, 901))).toBe(true);
+    expect(persistMeshtasticBackendRecord(message(blocked, 900))).toBe(false);
+    expect(persistMeshtasticBackendRecord(message(ALICE, 901))).toBe(true);
     const senders = (await storedMessages()).map((m) => m.sender_id);
     expect(senders).not.toContain(blocked);
     expect(senders).toContain(ALICE);
+  });
+
+  it('merges node patches without wiping stored fields and keeps the newest last-heard', () => {
+    const db = getDatabase();
+    const nodeId = 0x00c0ffee;
+    const node = (patch: Record<string, unknown>) => ({
+      kind: 'node' as const,
+      node: { node_id: nodeId, source: 'rf' as const, via_mqtt: false as const, ...patch },
+    });
+    persistMeshtasticBackendRecord(
+      node({ long_name: 'Coffee', short_name: 'CAF', last_heard: 1_700_000_500_000 }),
+    );
+    persistMeshtasticBackendRecord(node({ battery: 64, last_heard: 1_700_000_100_000 }));
+    persistMeshtasticBackendRecord(node({ latitude: 39.5, longitude: -105.1 }));
+    const row = db
+      .prepareOnce(
+        'SELECT long_name, short_name, battery, last_heard, latitude, longitude FROM nodes WHERE node_id = ?',
+      )
+      .get(nodeId);
+    expect(row).toEqual({
+      long_name: 'Coffee',
+      short_name: 'CAF',
+      battery: 64,
+      last_heard: 1_700_000_500, // the older packet did not move it back
+      latitude: 39.5,
+      longitude: -105.1,
+    });
+  });
+
+  it('adds position history only after a 10 m move, and stores environment readings', () => {
+    const db = getDatabase();
+    const nodeId = 0x00feed01;
+    const at = (latitude: number, recordedAt: number) => ({
+      kind: 'position' as const,
+      nodeId,
+      latitude,
+      longitude: -105,
+      recordedAt,
+    });
+    expect(persistMeshtasticBackendRecord(at(39.0, 1))).toBe(true);
+    expect(persistMeshtasticBackendRecord(at(39.00001, 2))).toBe(false); // about 1 m
+    expect(persistMeshtasticBackendRecord(at(39.001, 3))).toBe(true); // about 111 m
+    const points = db
+      .prepareOnce('SELECT latitude FROM position_history WHERE node_id = ? ORDER BY recorded_at')
+      .all(nodeId);
+    expect(points).toEqual([{ latitude: 39.0 }, { latitude: 39.001 }]);
+
+    expect(
+      persistMeshtasticBackendRecord({
+        kind: 'environment',
+        nodeId,
+        recordedAt: 1_700_000_000_000,
+        reading: { temperature: 18.25, relativeHumidity: 40 },
+      }),
+    ).toBe(true);
+    const env = db
+      .prepareOnce(
+        'SELECT protocol, source, temperature, relative_humidity FROM node_environment_telemetry WHERE node_id = ?',
+      )
+      .all(nodeId);
+    expect(env).toEqual([
+      { protocol: 'meshtastic', source: 'rf', temperature: 18.25, relative_humidity: 40 },
+    ]);
   });
 });

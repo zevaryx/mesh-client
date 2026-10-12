@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { subscribeMeshtasticBackendCatchUp } from './meshtasticBackendCatchUp';
@@ -18,10 +19,12 @@ describe('subscribeMeshtasticBackendCatchUp', () => {
       },
     };
     const reload = vi.fn();
-    const stop = subscribeMeshtasticBackendCatchUp(reload, api);
+    const reloadHistories = vi.fn(() => Promise.resolve());
+    const stop = subscribeMeshtasticBackendCatchUp(reload, api, reloadHistories);
     push?.({ count: 3 });
     push?.({ count: 1 });
     expect(reload).toHaveBeenCalledTimes(2);
+    expect(reloadHistories).toHaveBeenCalledTimes(2);
     stop();
     expect(unsub).toHaveBeenCalledTimes(1);
   });

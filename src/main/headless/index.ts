@@ -43,7 +43,7 @@ import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from 
 import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
 import type { MeshtasticBackendHandle } from '../meshtastic-backend/hostProtocol';
 import { startInProcessMeshtasticBackend } from '../meshtastic-backend/inProcessHost';
-import { persistMeshtasticBackendRow } from '../meshtastic-backend/persist';
+import { persistMeshtasticBackendRecord } from '../meshtastic-backend/persist';
 import { MQTTManager } from '../mqtt-manager';
 import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
 import { sanitizeLogMessage } from '../sanitize-log-message';
@@ -77,18 +77,19 @@ function ensureReticulumSidecarManager(): ReticulumSidecarManager {
 }
 
 /**
- * Meshtastic background ingest (in-process): stores TCP chat while no browser tab owns the
+ * Meshtastic background ingest (in-process): stores TCP chat, nodes, positions and telemetry
+ * while no browser tab owns the
  * radio link, then tells the tab that takes the link back to reload. `null` when disabled.
  */
 let meshtasticBackend: MeshtasticBackendHandle | null = null;
 
 function startMeshtasticBackend(): MeshtasticBackendHandle {
   return startInProcessMeshtasticBackend({
-    persistMessage: (row) => {
-      persistMeshtasticBackendRow(row);
+    persist: (record) => {
+      persistMeshtasticBackendRecord(record);
     },
     onCaughtUp: (count) => {
-      console.debug(`[headless] Meshtastic: ${count} message(s) stored while no tab was attached`);
+      console.debug(`[headless] Meshtastic: ${count} record(s) stored while no tab was attached`);
       sendMeshtasticBackendCaughtUp(pushTarget(), { count });
     },
   });

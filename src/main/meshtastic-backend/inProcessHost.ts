@@ -14,8 +14,8 @@ export function startInProcessMeshtasticBackend(
 ): MeshtasticBackendHandle {
   let write: ((frame: Uint8Array) => void) | null = null;
   const ingest = new MeshtasticBackendIngest({
-    persistMessage: (row) => {
-      dispatchMeshtasticBackendEvent({ t: 'persist', row }, deps, write);
+    persist: (record) => {
+      dispatchMeshtasticBackendEvent({ t: 'persist', record }, deps, write);
     },
     writeToRadio: (frame) => {
       dispatchMeshtasticBackendEvent({ t: 'write', frame }, deps, write);

@@ -73,3 +73,25 @@ export function configDump(): Uint8Array[] {
     }),
   ];
 }
+
+/** Any decoded data packet (position, telemetry, node info…) as a stream frame. */
+export function dataPacket(opts: {
+  from: number;
+  portnum: Portnums.PortNum;
+  payload: Uint8Array;
+  to?: number;
+  rxTime?: number;
+}): Uint8Array {
+  return frame({
+    case: 'packet',
+    value: create(Mesh.MeshPacketSchema, {
+      from: opts.from,
+      to: opts.to ?? BROADCAST,
+      rxTime: opts.rxTime ?? 1_700_000_000,
+      payloadVariant: {
+        case: 'decoded',
+        value: create(Mesh.DataSchema, { portnum: opts.portnum, payload: opts.payload }),
+      },
+    }),
+  });
+}

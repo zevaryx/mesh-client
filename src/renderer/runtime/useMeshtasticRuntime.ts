@@ -4239,13 +4239,14 @@ export function useMeshtasticRuntime() {
     [markPacketSeen],
   );
 
-  // Headless background ingest: rows stored while no renderer owned the link.
+  // Background ingest: records stored while no renderer owned the link.
   useEffect(
     () =>
       subscribeMeshtasticBackendCatchUp(() => {
         refreshMessagesFromDb();
+        refreshNodesFromDb();
       }),
-    [refreshMessagesFromDb],
+    [refreshMessagesFromDb, refreshNodesFromDb],
   );
 
   const setNodeFavorited = useCallback(async (nodeId: number, favorited: boolean) => {

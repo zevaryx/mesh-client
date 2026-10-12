@@ -1,7 +1,7 @@
 /**
- * Meshtastic background ingest (spike): decode the radio byte stream in Node and persist chat
- * text while no renderer is attached, so messages are not lost when no window / browser tab is
- * open. Plain Node, no Electron imports: hosted in-process by the headless server and in a
+ * Meshtastic background ingest: decode the radio byte stream in Node and persist chat, node
+ * identity, positions and telemetry while no renderer is attached, so they are not lost when no
+ * window / browser tab is open (records: `meshtasticBackendRecords.ts`). Plain Node, no Electron imports: hosted in-process by the headless server and in a
  * `utilityProcess` on desktop (see `utilityHost.ts`).
  *
  * Ownership: only renderers open sockets, so a socket opened while a renderer is present is
@@ -14,10 +14,16 @@
  * Failure behavior: malformed frames are dropped and logged at debug; a failed sink call is
  * logged and the stream keeps going. Lost state on link drop is rebuilt from the next config dump.
  */
-import { create, fromBinary, toBinary } from '@bufbuild/protobuf';
+import { create, fromBinary, type Message, toBinary } from '@bufbuild/protobuf';
+import type { GenMessage } from '@bufbuild/protobuf/codegenv1';
 import { Utils } from '@meshtastic/core';
-import { Channel, Mesh, Portnums } from '@meshtastic/protobufs';
+import { Channel, Mesh, Portnums, Telemetry } from '@meshtastic/protobufs';
 
+import {
+  decodeMeshtasticPosition,
+  decodeMeshtasticTelemetry,
+  decodeMeshtasticUserPacket,
+} from '../../renderer/lib/protocols/meshtasticNodeDecode';
 import {
   decodeMeshtasticTextPacket,
   meshtasticSenderDisplayName,
@@ -25,9 +31,21 @@ import {
 import type { DomainEvent } from '../../renderer/lib/protocols/Protocol';
 import { normalizeReactionEmoji } from '../../renderer/lib/reactions';
 import { computeChannelIdentityKey } from '../../shared/channelIdentityKey';
+import {
+  ENVIRONMENT_TELEMETRY_DEDUP_WINDOW_MS,
+  type EnvironmentReading,
+  environmentReadingsEqual,
+} from '../../shared/environmentTelemetry';
 import { isMeshtasticBroadcastNodeNum } from '../../shared/nodeNameUtils';
 import { MESHTASTIC_TAPBACK_DATA_EMOJI_FLAG } from '../../shared/reactionEmoji';
 import { MS_PER_SECOND } from '../../shared/timeConstants';
+import {
+  type MeshtasticBackendRecord,
+  recordsForChatSender,
+  recordsForPosition,
+  recordsForTelemetry,
+  recordsForUserPacket,
+} from './meshtasticBackendRecords';
 
 const { PortNum } = Portnums;
 
@@ -54,10 +72,11 @@ export interface MeshtasticBackendMessageRow {
 }
 
 export interface MeshtasticBackendSinks {
-  persistMessage: (row: MeshtasticBackendMessageRow) => void;
+  /** Store one record (message, node patch, position point, environment reading). */
+  persist: (record: MeshtasticBackendRecord) => void;
   /** Framed toRadio bytes (0x94 0xC3 header included) for the active socket. */
   writeToRadio: (frame: Uint8Array) => void;
-  /** A renderer took ownership after the backend persisted `count` rows; it should reload. */
+  /** A renderer took ownership after the backend persisted `count` records; it should reload. */
   onCaughtUp: (count: number) => void;
 }
 
@@ -96,6 +115,8 @@ export class MeshtasticBackendIngest {
   private myNodeNum = 0;
   private readonly channelKeyByIndex = new Map<number, string>();
   private readonly names = new Map<number, NodeNames>();
+  /** Last stored environment reading per node, for the renderer's duplicate-reading window. */
+  private readonly lastEnvironment = new Map<number, { t: number; reading: EnvironmentReading }>();
   private framerWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
   private heartbeat: unknown = null;
   private persistedWhileDetached = 0;
@@ -247,17 +268,94 @@ export class MeshtasticBackendIngest {
   private handlePacket(packet: Mesh.MeshPacket): void {
     if (packet.payloadVariant.case !== 'decoded') return;
     const data = packet.payloadVariant.value;
-    if (data.portnum === PortNum.NODEINFO_APP) {
-      try {
-        this.rememberNames(packet.from, fromBinary(Mesh.UserSchema, data.payload));
-      } catch (err) {
-        console.debug('[meshtastic-backend] dropped undecodable User payload', err);
+    switch (data.portnum) {
+      case PortNum.TEXT_MESSAGE_APP:
+      case PortNum.ALERT_APP:
+        for (const event of decodeMeshtasticTextPacket(packet)) {
+          if (event.type === 'text_message') this.handleText(event.payload);
+        }
+        return;
+      case PortNum.NODEINFO_APP: {
+        const user = this.decodePayload(Mesh.UserSchema, data.payload, 'User');
+        if (!user) return;
+        this.rememberNames(packet.from, user);
+        // Same `{ from, rxTime, data }` shape as `@meshtastic/core`'s onUserPacket.
+        for (const event of decodeMeshtasticUserPacket({ ...packet, data: user })) {
+          if (event.type === 'node_info') this.persistAll(recordsForUserPacket(event.payload));
+        }
+        return;
       }
-      return;
+      case PortNum.POSITION_APP: {
+        const position = this.decodePayload(Mesh.PositionSchema, data.payload, 'Position');
+        if (!position) return;
+        for (const event of decodeMeshtasticPosition({ ...packet, data: position })) {
+          if (event.type === 'position') {
+            this.persistAll(recordsForPosition(event.payload, this.myNodeNum));
+          }
+        }
+        return;
+      }
+      case PortNum.TELEMETRY_APP: {
+        const telemetry = this.decodePayload(Telemetry.TelemetrySchema, data.payload, 'Telemetry');
+        if (!telemetry) return;
+        for (const event of decodeMeshtasticTelemetry({ ...packet, data: telemetry })) {
+          if (event.type === 'telemetry') {
+            this.persistAll(
+              recordsForTelemetry(event.payload, this.myNodeNum).filter((r) =>
+                this.isNewEnvironmentReading(r),
+              ),
+            );
+          }
+        }
+        return;
+      }
+      default:
+        return;
     }
-    if (data.portnum !== PortNum.TEXT_MESSAGE_APP && data.portnum !== PortNum.ALERT_APP) return;
-    for (const event of decodeMeshtasticTextPacket(packet)) {
-      if (event.type === 'text_message') this.handleText(event.payload);
+  }
+
+  private decodePayload<T extends Message>(
+    schema: GenMessage<T>,
+    payload: Uint8Array,
+    label: string,
+  ): T | null {
+    try {
+      return fromBinary(schema, payload);
+    } catch (err) {
+      console.debug(`[meshtastic-backend] dropped undecodable ${label} payload`, err);
+      return null;
+    }
+  }
+
+  /** Renderer parity: an identical reading within the dedup window is not stored again. */
+  private isNewEnvironmentReading(record: MeshtasticBackendRecord): boolean {
+    if (record.kind !== 'environment') return true;
+    const last = this.lastEnvironment.get(record.nodeId);
+    if (
+      last &&
+      record.recordedAt - last.t < ENVIRONMENT_TELEMETRY_DEDUP_WINDOW_MS &&
+      environmentReadingsEqual(last.reading, record.reading)
+    ) {
+      return false;
+    }
+    if (this.lastEnvironment.size >= MAX_NAMED_NODES && !this.lastEnvironment.has(record.nodeId)) {
+      const oldest = this.lastEnvironment.keys().next();
+      if (!oldest.done) this.lastEnvironment.delete(oldest.value);
+    }
+    this.lastEnvironment.set(record.nodeId, { t: record.recordedAt, reading: record.reading });
+    return true;
+  }
+
+  private persistAll(records: MeshtasticBackendRecord[]): void {
+    // The renderer owns persistence while attached.
+    if (this.attached) return;
+    for (const record of records) {
+      try {
+        this.sinks.persist(record);
+        this.persistedWhileDetached += 1;
+      } catch (err) {
+        console.warn(`[meshtastic-backend] persist ${record.kind} failed`, err);
+      }
     }
   }
 
@@ -286,12 +384,7 @@ export class MeshtasticBackendIngest {
       ...(this.myNodeNum !== 0 ? { radioNodeId: this.myNodeNum } : {}),
       ...(channelKey ? { channelKey } : {}),
     };
-    try {
-      this.sinks.persistMessage(row);
-      this.persistedWhileDetached += 1;
-    } catch (err) {
-      console.warn('[meshtastic-backend] persist failed', err);
-    }
+    this.persistAll([...recordsForChatSender(text.from, text.timestamp), { kind: 'message', row }]);
   }
 
   private rememberNames(nodeNum: number, user: { shortName: string; longName: string }): void {
