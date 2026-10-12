@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   buildHeadless,
+  HEADLESS_BRIDGE_PLATFORM_EXPR,
   HEADLESS_FORBIDDEN_PACKAGES,
   HEADLESS_SERVER_EXTERNALS,
   parseBuildHeadlessArgs,
@@ -48,6 +49,8 @@ describe('build-headless', () => {
     const bridge = fs.readFileSync(path.join(outdir, 'web-bridge.js'), 'utf8');
     expect(bridge).not.toMatch(/require\(["']electron["']\)/);
     expect(bridge).not.toContain('process.platform');
+    // getPlatform() reads the server-reported platform, not a build-time constant.
+    expect(bridge).toContain(HEADLESS_BRIDGE_PLATFORM_EXPR);
     expect(bridge).toContain('exposeInMainWorld');
   }, 60_000);
 });

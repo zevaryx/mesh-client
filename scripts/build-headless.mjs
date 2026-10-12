@@ -34,8 +34,12 @@ export const HEADLESS_FORBIDDEN_PACKAGES = MAIN_ESBUILD_EXTERNALS.filter((pkg) =
   pkg.startsWith('electron'),
 );
 
-/** Platform reported by `electronAPI.getPlatform()` in the browser: the server's OS. */
-export const HEADLESS_BRIDGE_PLATFORM = 'linux';
+/**
+ * What `process.platform` compiles to in the browser bridge: a global set by
+ * `electronRendererShim.ts` from the server-injected meta, so `electronAPI.getPlatform()` reports
+ * the OS the headless server runs on (linux, darwin or win32), matching the Electron app.
+ */
+export const HEADLESS_BRIDGE_PLATFORM_EXPR = 'globalThis.__MESH_CLIENT_HOST_PLATFORM__';
 
 /**
  * @param {string[]} argv
@@ -99,7 +103,7 @@ export async function buildHeadless(opts = {}) {
     outfile: path.join(outdir, 'web-bridge.js'),
     alias: { electron: './src/preload/web/electronRendererShim.ts' },
     define: {
-      'process.platform': JSON.stringify(HEADLESS_BRIDGE_PLATFORM),
+      'process.platform': HEADLESS_BRIDGE_PLATFORM_EXPR,
     },
     minify,
     sourcemap: true,

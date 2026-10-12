@@ -67,18 +67,18 @@ async function main(): Promise<void> {
       '[headless] MESH_CLIENT_WEB_AUTH=off — anyone who can reach this port has control',
     );
   }
-  console.info(
+  console.debug(
     `[headless] ${headlessIpcRegistry.invokeChannels().length} IPC channels available; ` +
       `data dir ${sanitizeLogMessage(config.dataDir)}`,
   );
   // log-injection-ok token is generated or operator-supplied config, printed once by design
-  console.info(`[headless] open ${formatHeadlessAccessUrl(config, address.port)}`);
+  console.debug(`[headless] open ${formatHeadlessAccessUrl(config, address.port)}`);
 
   let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
     shuttingDown = true;
-    console.info(`[headless] ${signal} — shutting down`);
+    console.debug(`[headless] ${signal} — shutting down`);
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
     void server.close().then(() => {

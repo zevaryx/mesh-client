@@ -19,9 +19,11 @@ import path from 'node:path';
 import WebSocket, { WebSocketServer } from 'ws';
 
 import {
+  normalizeHeadlessHostPlatform,
   parseWebBridgeClientFrame,
   serializeWebBridgeFrame,
   WEB_BRIDGE_MAX_FRAME_BYTES,
+  WEB_BRIDGE_PLATFORM_META,
   WEB_BRIDGE_SCRIPT_PATH,
   WEB_BRIDGE_TOKEN_PARAM,
   WEB_BRIDGE_WS_PATH,
@@ -44,6 +46,8 @@ export interface HeadlessWebServerOptions {
   token: string | null;
   host: string;
   port: number;
+  /** OS reported to the renderer as `getPlatform()`; defaults to this process's platform. */
+  platform?: string;
 }
 
 export interface HeadlessWebServer {
@@ -94,8 +98,10 @@ export function headlessTokenMatches(expected: string, provided: string | null):
 }
 
 /** Inject the bridge script ahead of the renderer's module entry. */
-export function injectWebBridgeScript(indexHtml: string): string {
-  const tag = `<script src="${WEB_BRIDGE_SCRIPT_PATH}"></script>`;
+export function injectWebBridgeScript(indexHtml: string, platform: string): string {
+  const tag =
+    `<meta name="${WEB_BRIDGE_PLATFORM_META}" content="${normalizeHeadlessHostPlatform(platform)}" />` +
+    `<script src="${WEB_BRIDGE_SCRIPT_PATH}"></script>`;
   const firstScript = indexHtml.indexOf('<script');
   if (firstScript === -1) return indexHtml.replace('</head>', `    ${tag}\n  </head>`);
   return `${indexHtml.slice(0, firstScript)}${tag}\n    ${indexHtml.slice(firstScript)}`;
@@ -137,6 +143,7 @@ function sendPlain(res: http.ServerResponse, status: number, body: string): void
 
 export function createHeadlessWebServer(options: HeadlessWebServerOptions): HeadlessWebServer {
   const { registry, rendererDir, bridgeScriptFile, token, host, port } = options;
+  const platform = options.platform ?? process.platform;
   const sessions = new Set<WebSocket>();
   let nextSessionId = 1;
   let indexHtmlCache: string | null = null;
@@ -144,6 +151,7 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
   const readIndexHtml = (): string => {
     indexHtmlCache ??= injectWebBridgeScript(
       fs.readFileSync(path.join(rendererDir, 'index.html'), 'utf8'),
+      platform,
     );
     return indexHtmlCache;
   };

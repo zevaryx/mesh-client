@@ -42,6 +42,7 @@ async function startServer(token: string | null = TOKEN): Promise<number> {
     token,
     host: '127.0.0.1',
     port: 0,
+    platform: 'win32',
   });
   return (await server.listen()).port;
 }
@@ -102,6 +103,7 @@ describe('headless web server', () => {
     expect(html.indexOf('<script src="/web-bridge.js"></script>')).toBeLessThan(
       html.indexOf('type="module"'),
     );
+    expect(html).toContain('content="win32"');
   });
 
   it('serves the bridge script, assets, SPA fallback and health check', async () => {
@@ -259,8 +261,18 @@ describe('helpers', () => {
   });
 
   it('injects the bridge into head when the page has no script', () => {
-    expect(injectWebBridgeScript('<html><head></head></html>')).toContain(
+    expect(injectWebBridgeScript('<html><head></head></html>', 'linux')).toContain(
       '<script src="/web-bridge.js"></script>\n  </head>',
     );
+  });
+
+  it.each(['linux', 'darwin', 'win32'])('reports the %s server platform in a meta tag', (os) => {
+    const html = injectWebBridgeScript('<head></head><script type="module"></script>', os);
+    expect(html).toContain(`<meta name="mesh-client-host-platform" content="${os}" />`);
+    expect(html.indexOf('mesh-client-host-platform')).toBeLessThan(html.indexOf('<script src='));
+  });
+
+  it('reports other Unix-likes as linux', () => {
+    expect(injectWebBridgeScript('<head></head>', 'freebsd')).toContain('content="linux"');
   });
 });

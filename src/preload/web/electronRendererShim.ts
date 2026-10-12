@@ -9,10 +9,15 @@
  * invokes in flight when the socket drops reject (the server may or may not have run them).
  * Reconnects back off from 500 ms to 10 s.
  */
+import { MS_PER_SECOND } from '../../shared/timeConstants';
 import {
   formatWebBridgeInvokeError,
+  type HeadlessHostPlatform,
+  normalizeHeadlessHostPlatform,
   parseWebBridgeServerFrame,
   serializeWebBridgeFrame,
+  WEB_BRIDGE_PLATFORM_GLOBAL,
+  WEB_BRIDGE_PLATFORM_META,
   WEB_BRIDGE_TOKEN_PARAM,
   WEB_BRIDGE_WS_PATH,
   type WebBridgeClientFrame,
@@ -37,8 +42,8 @@ export interface BridgeSocket {
 export type BridgeSocketFactory = (url: string) => BridgeSocket;
 
 const SOCKET_OPEN = 1;
-const RECONNECT_MIN_MS = 500;
-const RECONNECT_MAX_MS = 10_000;
+const RECONNECT_MIN_MS = MS_PER_SECOND / 2;
+const RECONNECT_MAX_MS = 10 * MS_PER_SECOND;
 const TOKEN_STORAGE_KEY = 'mesh-client.headless.token';
 
 interface PendingInvoke {
@@ -216,6 +221,24 @@ export function buildBridgeSocketUrl(location: Location, token: string | null): 
   const url = new URL(`${scheme}//${location.host}${WEB_BRIDGE_WS_PATH}`);
   if (token) url.searchParams.set(WEB_BRIDGE_TOKEN_PARAM, token);
   return url.toString();
+}
+
+/** Server OS from the `<meta>` the headless server injects (see `injectWebBridgeScript`). */
+export function readHeadlessHostPlatform(
+  doc: Pick<Document, 'querySelector'>,
+): HeadlessHostPlatform {
+  const meta = doc.querySelector(`meta[name="${WEB_BRIDGE_PLATFORM_META}"]`);
+  return normalizeHeadlessHostPlatform(meta?.getAttribute('content'));
+}
+
+// The bridge bundle compiles `process.platform` (preload `getPlatform()`) to this global, so it
+// must be set before the preload body runs; this module is evaluated first as its import.
+if (typeof document !== 'undefined') {
+  Object.defineProperty(globalThis, WEB_BRIDGE_PLATFORM_GLOBAL, {
+    value: readHeadlessHostPlatform(document),
+    configurable: false,
+    writable: false,
+  });
 }
 
 let sharedRenderer: WebIpcRenderer | null = null;

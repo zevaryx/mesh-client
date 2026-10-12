@@ -87,7 +87,9 @@ Electron APIs and their headless meaning, for the shim:
 | BLE (`gatt*`)                                         | Linux hosts only (host D-Bus/BlueZ passthrough); pending                              |
 | Serial                                                | Web Serial in the viewer's Chromium browser; server-side serial would be a new bridge |
 
-Open design questions: several tabs share one backend and radio (all see every push and can send); `getPlatform()` reports the server's OS (`linux`); exports and attachments that pass server file paths need upload/download flows.
+Open design questions: several tabs share one backend and radio (all see every push and can send); exports and attachments that pass server file paths need upload/download flows.
+
+`getPlatform()` reports the **server's** OS (`linux` / `darwin` / `win32`, other Unix-likes as `linux`), matching what the Electron app reports for the machine its main process runs on. The server injects `<meta name="mesh-client-host-platform">` into `index.html`; the bridge reads it into a global that `process.platform` compiles to in `web-bridge.js`.
 
 ## Key files
 

@@ -4,6 +4,7 @@ import {
   decodeWireValue,
   encodeWireValue,
   formatWebBridgeInvokeError,
+  normalizeHeadlessHostPlatform,
   parseWebBridgeClientFrame,
   parseWebBridgeServerFrame,
   serializeWebBridgeFrame,
@@ -122,5 +123,17 @@ describe('webBridgeProtocol frames', () => {
     expect(formatWebBridgeInvokeError('db:getNodes', 'boom')).toBe(
       "Error invoking remote method 'db:getNodes': Error: boom",
     );
+  });
+});
+
+describe('normalizeHeadlessHostPlatform', () => {
+  it.each(['linux', 'darwin', 'win32'])('keeps %s', (os) => {
+    expect(normalizeHeadlessHostPlatform(os)).toBe(os);
+  });
+
+  it('maps anything else to linux', () => {
+    for (const v of ['freebsd', 'openbsd', '', null, undefined, 42]) {
+      expect(normalizeHeadlessHostPlatform(v)).toBe('linux');
+    }
   });
 });

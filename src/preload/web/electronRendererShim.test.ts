@@ -10,6 +10,7 @@ import {
 import {
   type BridgeSocket,
   buildBridgeSocketUrl,
+  readHeadlessHostPlatform,
   takeHeadlessToken,
   WebIpcRenderer,
 } from './electronRendererShim';
@@ -197,5 +198,25 @@ describe('token + URL helpers', () => {
     expect(
       buildBridgeSocketUrl({ protocol: 'https:', host: 'mesh.example' } as Location, null),
     ).toBe('wss://mesh.example/ipc');
+  });
+});
+
+describe('readHeadlessHostPlatform', () => {
+  function docWith(content: string | null): Pick<Document, 'querySelector'> {
+    return {
+      querySelector: (selector: string) =>
+        content !== null && selector === 'meta[name="mesh-client-host-platform"]'
+          ? ({ getAttribute: () => content } as unknown as Element)
+          : null,
+    };
+  }
+
+  it.each(['linux', 'darwin', 'win32'])('reads %s from the server meta tag', (os) => {
+    expect(readHeadlessHostPlatform(docWith(os))).toBe(os);
+  });
+
+  it('falls back to linux when the meta is missing or unexpected', () => {
+    expect(readHeadlessHostPlatform(docWith(null))).toBe('linux');
+    expect(readHeadlessHostPlatform(docWith('aix'))).toBe('linux');
   });
 });

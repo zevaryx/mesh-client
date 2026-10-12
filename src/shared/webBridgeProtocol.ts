@@ -14,6 +14,22 @@ export const WEB_BRIDGE_WS_PATH = '/ipc';
 export const WEB_BRIDGE_TOKEN_PARAM = 'token';
 /** Script served by the headless server that defines `window.electronAPI`. */
 export const WEB_BRIDGE_SCRIPT_PATH = '/web-bridge.js';
+/** `<meta name>` the server injects into `index.html` with its `process.platform`. */
+export const WEB_BRIDGE_PLATFORM_META = 'mesh-client-host-platform';
+/** Global the bridge sets from that meta; `process.platform` in the bridge bundle reads it. */
+export const WEB_BRIDGE_PLATFORM_GLOBAL = '__MESH_CLIENT_HOST_PLATFORM__';
+
+/** Platforms the renderer branches on. `getPlatform()` reports the server's OS, not the viewer's. */
+export type HeadlessHostPlatform = 'linux' | 'darwin' | 'win32';
+
+/**
+ * Map a platform string to one the renderer knows. Other Unix-likes (freebsd, …) report `linux`,
+ * the closest match for the server-side code paths the renderer chooses between.
+ */
+export function normalizeHeadlessHostPlatform(value: unknown): HeadlessHostPlatform {
+  return value === 'darwin' || value === 'win32' ? value : 'linux';
+}
+
 /** Largest inbound bridge frame the server accepts (bytes). Matches the TCP write cap ×4 for JSON. */
 export const WEB_BRIDGE_MAX_FRAME_BYTES = 4 * 1024 * 1024;
 
