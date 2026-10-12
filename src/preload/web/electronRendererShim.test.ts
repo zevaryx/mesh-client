@@ -160,6 +160,31 @@ describe('WebIpcRenderer', () => {
     ]);
   });
 
+  it('answers browser-local channels in the page without touching the socket', async () => {
+    const sockets: FakeSocket[] = [];
+    const clip = vi.fn(() => Promise.resolve());
+    const renderer = new WebIpcRenderer({
+      url: 'ws://host/ipc?token=t',
+      createSocket: (url) => {
+        const sock = new FakeSocket(url);
+        sockets.push(sock);
+        return sock;
+      },
+      schedule: () => {},
+      localInvokes: {
+        'clipboard:writeText': clip,
+        'app:focusWindow': () => Promise.reject(new Error('blocked')),
+      },
+    });
+    sockets[0]?.open();
+    await renderer.invoke('clipboard:writeText', 'hi');
+    expect(clip).toHaveBeenCalledWith('hi');
+    await expect(renderer.invoke('app:focusWindow')).rejects.toThrow(
+      "Error invoking remote method 'app:focusWindow': Error: blocked",
+    );
+    expect(sockets[0]?.sent).toEqual([]);
+  });
+
   it('delivers events to on/once listeners and stops after off', () => {
     const { renderer, current } = setup();
     current().open();

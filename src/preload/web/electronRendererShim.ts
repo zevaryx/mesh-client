@@ -28,6 +28,7 @@ import {
   WEB_BRIDGE_WS_PATH,
   type WebBridgeClientFrame,
 } from '../../shared/webBridgeProtocol';
+import { type BrowserLocalInvoke, createBrowserLocalInvokes } from './browserLocalInvokes';
 import { installHeadlessFileTransfer } from './headlessFileTransfer';
 
 type IpcListener = (event: IpcRendererEventLike, ...args: unknown[]) => void;
@@ -51,7 +52,7 @@ export type BridgeSocketFactory = (url: string) => BridgeSocket;
 const SOCKET_OPEN = 1;
 const RECONNECT_MIN_MS = MS_PER_SECOND / 2;
 const RECONNECT_MAX_MS = 10 * MS_PER_SECOND;
-const TOKEN_STORAGE_KEY = 'mesh-client.headless.token';
+export const TOKEN_STORAGE_KEY = 'mesh-client.headless.token';
 /** Channels the desktop main process uses for sleep/wake (see `onPowerSuspend` in the preload). */
 export const BRIDGE_OUTAGE_SUSPEND_CHANNEL = 'power:suspend';
 export const BRIDGE_OUTAGE_RESUME_CHANNEL = 'power:resume';
@@ -66,6 +67,8 @@ export interface WebIpcRendererOptions {
   url: string;
   createSocket: BridgeSocketFactory;
   schedule?: (fn: () => void, ms: number) => void;
+  /** Channels answered in the page instead of on the server (`browserLocalInvokes.ts`). */
+  localInvokes?: Record<string, BrowserLocalInvoke>;
 }
 
 export class WebIpcRenderer {
@@ -167,6 +170,13 @@ export class WebIpcRenderer {
   }
 
   invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+    const local = this.options.localInvokes?.[channel];
+    if (local) {
+      return local(...args).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new Error(formatWebBridgeInvokeError(channel, message));
+      });
+    }
     const id = this.nextId++;
     return new Promise<unknown>((resolve, reject) => {
       this.pending.set(id, { channel, resolve, reject });
@@ -277,6 +287,7 @@ function getSharedRenderer(): WebIpcRenderer {
   const renderer = new WebIpcRenderer({
     url: buildBridgeSocketUrl(window.location, token),
     createSocket: (url) => new WebSocket(url) as unknown as BridgeSocket,
+    localInvokes: createBrowserLocalInvokes({ win: window, tokenStorageKey: TOKEN_STORAGE_KEY }),
   });
   // Server-side file dialogs (open → upload, save → download) are served by this tab.
   installHeadlessFileTransfer({

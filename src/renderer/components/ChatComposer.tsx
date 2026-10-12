@@ -34,6 +34,7 @@ import {
 } from '@/renderer/lib/chatMacroKeys';
 import { translateChatSendError } from '@/renderer/lib/chatSendErrorI18n';
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
+import { usesInlineEmojiPicker } from '@/renderer/lib/hostKind';
 import { useIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { nodeDisplayName } from '@/renderer/lib/nodeLongNameOrHex';
 import type { ChatMessage, MeshNode, MeshProtocol } from '@/renderer/lib/types';
@@ -299,7 +300,8 @@ export function ChatComposer({
   const iconTrigger = useIconTrigger();
   const capabilities = useRadioProvider(protocol);
   const tracksSendCadence = capabilities.composerMaxChunks <= 1;
-  const isLinux = useMemo(() => window.electronAPI.getPlatform() === 'linux', []);
+  // Inline emoji picker on Linux and in a browser tab; the OS emoji panel elsewhere.
+  const isLinux = useMemo(() => usesInlineEmojiPicker(), []);
   const limitHintId = useId();
   const counterLiveId = useId();
   const floodScopeListboxId = useId();

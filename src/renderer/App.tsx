@@ -308,6 +308,7 @@ import {
 } from './lib/firmwareCheck';
 import { applyFontScale, loadFontScale } from './lib/fontScale';
 import { latchHiddenProtocolStop, releaseHiddenProtocolStop } from './lib/hiddenProtocolStop';
+import { isWebHost } from './lib/hostKind';
 import { loadLastConnection } from './lib/lastConnectionStorage';
 import type {
   LauncherChannelItem,
@@ -4250,7 +4251,8 @@ function AppContent() {
                   <div className="shrink-0">
                     <LanguageSelector />
                   </div>
-                  <QuitButton />
+                  {/* A browser tab cannot quit the shared headless server. */}
+                  {!isWebHost() && <QuitButton />}
                 </>
               }
             />

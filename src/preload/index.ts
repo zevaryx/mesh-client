@@ -69,6 +69,7 @@ import type {
   TranslationProgress,
   TranslationRequest,
 } from '../shared/translation-types';
+import { WEB_BRIDGE_PLATFORM_GLOBAL } from '../shared/webBridgeProtocol';
 
 export type { GattBleDevice, GattBleSessionId, SerialPort };
 
@@ -1102,6 +1103,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ─── OS emoji panel ──────────────────────────────────────────────────────────
   getPlatform: () => process.platform,
+  // The web bridge sets this global before the preload runs (`electronRendererShim.ts`).
+  hostKind:
+    typeof (globalThis as Record<string, unknown>)[WEB_BRIDGE_PLATFORM_GLOBAL] === 'string'
+      ? ('web' as const)
+      : ('desktop' as const),
   showEmojiPanel: () => ipcRenderer.invoke('app:showEmojiPanel'),
 
   // ─── Microphone / camera ─────────────────────────────────────────────────────

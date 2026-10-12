@@ -68,6 +68,7 @@ import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
 import { formatDisplayTime } from '@/renderer/lib/formatDisplayTime';
 import { formatRetryCountdown } from '@/renderer/lib/formatRetryCountdown';
 import { formatShortRelativeAgo } from '@/renderer/lib/formatShortRelativeAgo';
+import { usesInlineEmojiPicker } from '@/renderer/lib/hostKind';
 import { useIconTrigger, useParentIconTrigger } from '@/renderer/lib/icons/iconMotionContext';
 import { meshcoreChannelScopeKey } from '@/renderer/lib/meshcoreChannelScope';
 import { MESHCORE_PUBLIC_CHANNEL_INDEX } from '@/renderer/lib/meshcoreConfiguredChatChannels';
@@ -263,8 +264,9 @@ import { chipClass, INPUT_CLASS } from './ui/formClasses';
 import { Menu } from './ui/Menu';
 import { ScrollStrip } from './ui/ScrollStrip';
 
+/** Inline emoji picker (Linux, or a browser tab); otherwise the OS emoji panel. */
 function chatPanelIsLinux(): boolean {
-  return window.electronAPI.getPlatform() === 'linux';
+  return usesInlineEmojiPicker();
 }
 
 /** Last-read key for the Starred list. Distinct from `ch:` / `dm:` thread watermarks. */

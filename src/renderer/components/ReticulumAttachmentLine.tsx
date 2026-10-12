@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ChatInlineImage } from '@/renderer/components/chat/ChatInlineImage';
+import { isWebHost } from '@/renderer/lib/hostKind';
 import {
   isReticulumAudioAttachment,
   isReticulumImageAttachment,
@@ -146,15 +147,18 @@ export function ReticulumAttachmentLine({
           >
             {t('chatPanel.saveAttachment', { defaultValue: 'Save…' })}
           </button>
-          <button
-            type="button"
-            className="text-sky-400 underline-offset-2 hover:underline"
-            onClick={() => {
-              void onReveal();
-            }}
-          >
-            {t('chatPanel.revealAttachment', { defaultValue: 'Show in folder' })}
-          </button>
+          {/* The file lives on the server when viewed in a browser; Save… downloads it. */}
+          {!isWebHost() && (
+            <button
+              type="button"
+              className="text-sky-400 underline-offset-2 hover:underline"
+              onClick={() => {
+                void onReveal();
+              }}
+            >
+              {t('chatPanel.revealAttachment', { defaultValue: 'Show in folder' })}
+            </button>
+          )}
         </div>
       ) : null}
     </div>

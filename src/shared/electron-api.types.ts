@@ -1238,6 +1238,11 @@ export interface ElectronAPI {
 
   // ─── OS emoji panel ──────────────────────────────────────────────────────────
   getPlatform: () => string;
+  /**
+   * `web` when the renderer runs in a browser against the headless server (no app window, tray or
+   * OS session), else `desktop`. Window-only controls hide on `web`.
+   */
+  hostKind: 'desktop' | 'web';
   showEmojiPanel: () => Promise<void>;
 
   // ─── Microphone / camera (OS privacy + Chromium media) ───────────────────────
