@@ -10,13 +10,14 @@ const SECURE_SECRETS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/secure-secrets-handlers.ts'),
   'utf-8',
 );
-/** index.ts plus the db:* / chat:outbox:* modules moved out of it (shared with headless). */
-const MAIN_DB_IPC_SOURCE = [
+/** index.ts plus the IPC modules moved out of it (shared with the headless server). */
+const MAIN_IPC_SOURCE = [
   INDEX_SOURCE,
   readFileSync(join(__dirname, 'ipc/db-meshtastic-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/db-meshcore-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/db-ipc-validation.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/chat-outbox-handlers.ts'), 'utf-8'),
+  readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8'),
 ].join('\n');
 const APP_SETTINGS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/app-settings-handlers.ts'),
@@ -34,12 +35,12 @@ describe('IPC payload size limits (source contract)', () => {
   it('defines meshcore tcp-write, http:write, and gatt to-radio limits and uses them in handlers', () => {
     expect(TCP_BRIDGE_SOURCE).toContain('export const TCP_BRIDGE_WRITE_MAX_BYTES = 256 * 1024');
     expect(TCP_BRIDGE_SOURCE).toContain('TCP_BRIDGE_DATA_MAX_BYTES');
-    expect(INDEX_SOURCE).toContain('const HTTP_WRITE_TO_RADIO_MAX_BYTES = 256 * 1024');
-    expect(INDEX_SOURCE).toContain('const GATT_TO_RADIO_MAX_BYTES = 512');
-    expect(INDEX_SOURCE).toMatch(/GATT_TO_RADIO_MAX_BYTES/);
+    expect(MAIN_IPC_SOURCE).toContain('const HTTP_WRITE_TO_RADIO_MAX_BYTES = 256 * 1024');
+    expect(MAIN_IPC_SOURCE).toContain('const GATT_TO_RADIO_MAX_BYTES = 512');
+    expect(MAIN_IPC_SOURCE).toMatch(/GATT_TO_RADIO_MAX_BYTES/);
     expect(TCP_BRIDGE_SOURCE).toMatch(/bytes\.length > TCP_BRIDGE_WRITE_MAX_BYTES/);
-    expect(INDEX_SOURCE).toMatch(/data\.length > HTTP_WRITE_TO_RADIO_MAX_BYTES/);
-    expect(INDEX_SOURCE).toMatch(/http:write: byte values must be integers 0-255/);
+    expect(MAIN_IPC_SOURCE).toMatch(/data\.length > HTTP_WRITE_TO_RADIO_MAX_BYTES/);
+    expect(MAIN_IPC_SOURCE).toMatch(/http:write: byte values must be integers 0-255/);
   });
 });
 
@@ -153,39 +154,39 @@ describe('MQTT forwarder dropped-event logs (source contract)', () => {
 
 describe('Meshtastic message DB IPC (source contract)', () => {
   it('registers db:updateMessagePacketId for optimistic packet_id → RF id (tapback reply_id)', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain("'db:updateMessagePacketId'");
-    expect(MAIN_DB_IPC_SOURCE).toMatch(/UPDATE messages SET packet_id = \? WHERE packet_id = \?/);
+    expect(MAIN_IPC_SOURCE).toContain("'db:updateMessagePacketId'");
+    expect(MAIN_IPC_SOURCE).toMatch(/UPDATE messages SET packet_id = \? WHERE packet_id = \?/);
   });
 
   it('updateMessageReceivedVia merges rx_hops with COALESCE when upgrading to both', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain("'db:updateMessageReceivedVia'");
-    expect(MAIN_DB_IPC_SOURCE).toMatch(/rx_hops = COALESCE\(\?, rx_hops\)/);
+    expect(MAIN_IPC_SOURCE).toContain("'db:updateMessageReceivedVia'");
+    expect(MAIN_IPC_SOURCE).toMatch(/rx_hops = COALESCE\(\?, rx_hops\)/);
   });
 });
 
 describe('MeshCore DB IPC (source contract)', () => {
   it('registers updateMeshcoreMessageSender with validated sender id and name', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain("'db:updateMeshcoreMessageSender'");
-    expect(MAIN_DB_IPC_SOURCE).toContain('db:updateMeshcoreMessageSender: invalid senderId');
-    expect(MAIN_DB_IPC_SOURCE).toMatch(/sender_name = @sender_name WHERE id = @id/);
-    expect(MAIN_DB_IPC_SOURCE).toMatch(/sid < 1/);
+    expect(MAIN_IPC_SOURCE).toContain("'db:updateMeshcoreMessageSender'");
+    expect(MAIN_IPC_SOURCE).toContain('db:updateMeshcoreMessageSender: invalid senderId');
+    expect(MAIN_IPC_SOURCE).toMatch(/sender_name = @sender_name WHERE id = @id/);
+    expect(MAIN_IPC_SOURCE).toMatch(/sid < 1/);
   });
 
   it('registers updateMeshcoreContactLastRf for repeater Status persistence', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain("'db:updateMeshcoreContactLastRf'");
-    expect(MAIN_DB_IPC_SOURCE).toContain('last_snr = ?,');
-    expect(MAIN_DB_IPC_SOURCE).toContain('last_rssi = ?,');
-    expect(MAIN_DB_IPC_SOURCE).toContain(
+    expect(MAIN_IPC_SOURCE).toContain("'db:updateMeshcoreContactLastRf'");
+    expect(MAIN_IPC_SOURCE).toContain('last_snr = ?,');
+    expect(MAIN_IPC_SOURCE).toContain('last_rssi = ?,');
+    expect(MAIN_IPC_SOURCE).toContain(
       'hops_away = CASE WHEN ? IS NOT NULL AND (hops_away IS NULL OR ? < hops_away) THEN ? ELSE hops_away END,',
     );
-    expect(MAIN_DB_IPC_SOURCE).toContain('last_advert = CASE WHEN ? IS NOT NULL');
+    expect(MAIN_IPC_SOURCE).toContain('last_advert = CASE WHEN ? IS NOT NULL');
   });
 
   it('saveMeshcoreContact uses UPSERT that preserves favorited on conflict', () => {
     const DATABASE_SOURCE = readFileSync(join(__dirname, '../main/database.ts'), 'utf-8');
-    expect(MAIN_DB_IPC_SOURCE).toContain("'db:saveMeshcoreContact'");
-    expect(MAIN_DB_IPC_SOURCE).toContain("'db:saveMeshcoreContactsBatch'");
-    expect(MAIN_DB_IPC_SOURCE).toContain('saveMeshcoreContactsBatch');
+    expect(MAIN_IPC_SOURCE).toContain("'db:saveMeshcoreContact'");
+    expect(MAIN_IPC_SOURCE).toContain("'db:saveMeshcoreContactsBatch'");
+    expect(MAIN_IPC_SOURCE).toContain('saveMeshcoreContactsBatch');
     expect(DATABASE_SOURCE).toContain('ON CONFLICT(node_id) DO UPDATE SET');
     expect(DATABASE_SOURCE).toContain('favorited = meshcore_contacts.favorited');
     expect(DATABASE_SOURCE).toContain(
@@ -195,14 +196,14 @@ describe('MeshCore DB IPC (source contract)', () => {
   });
 
   it('saveMeshcoreContactsBatch IPC slices large radio syncs at MESHCORE_CONTACTS_BATCH_MAX', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain('MESHCORE_CONTACTS_BATCH_MAX');
-    expect(MAIN_DB_IPC_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toContain('MESHCORE_CONTACTS_BATCH_MAX');
+    expect(MAIN_IPC_SOURCE).toMatch(
       /for \(let i = 0; i < contacts\.length; i \+= MESHCORE_CONTACTS_BATCH_MAX\)/,
     );
-    expect(MAIN_DB_IPC_SOURCE).toContain('contacts.slice(i, i + MESHCORE_CONTACTS_BATCH_MAX)');
-    expect(MAIN_DB_IPC_SOURCE).toContain('return saveMeshcoreContactsBatch(rows)');
-    expect(MAIN_DB_IPC_SOURCE).not.toContain('max 500 contacts per batch');
-    expect(MAIN_DB_IPC_SOURCE).not.toMatch(/saved \+= saveMeshcoreContactsBatch/);
+    expect(MAIN_IPC_SOURCE).toContain('contacts.slice(i, i + MESHCORE_CONTACTS_BATCH_MAX)');
+    expect(MAIN_IPC_SOURCE).toContain('return saveMeshcoreContactsBatch(rows)');
+    expect(MAIN_IPC_SOURCE).not.toContain('max 500 contacts per batch');
+    expect(MAIN_IPC_SOURCE).not.toMatch(/saved \+= saveMeshcoreContactsBatch/);
   });
 });
 
@@ -612,8 +613,8 @@ describe('Persistent app settings IPC (source contract)', () => {
   });
 
   it('registers DB-level message prune IPC for both protocols (issue #387)', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain("ipcMain.handle('db:pruneMessagesByCount'");
-    expect(MAIN_DB_IPC_SOURCE).toContain("ipcMain.handle('db:pruneMeshcoreMessagesByCount'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('db:pruneMessagesByCount'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('db:pruneMeshcoreMessagesByCount'");
   });
 });
 
@@ -678,28 +679,28 @@ describe('About dialog crash guard (source contract)', () => {
 
 describe('IPC sender validation on high-value handlers (source contract)', () => {
   it('db:saveMessage, db:getMessages validate IPC sender before executing', () => {
-    expect(MAIN_DB_IPC_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('db:saveMessage'[\s\S]*?validateIpcSender\(event\)/,
     );
-    expect(MAIN_DB_IPC_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('db:getMessages'[\s\S]*?validateIpcSender\(event\)/,
     );
   });
 
   it('db:listMeshtasticDmPeers and db:listMeshcoreDmPeers assert IPC sender', () => {
-    expect(MAIN_DB_IPC_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('db:listMeshtasticDmPeers'[\s\S]*?assertIpcSender\(event, 'db:listMeshtasticDmPeers'\)/,
     );
-    expect(MAIN_DB_IPC_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('db:listMeshcoreDmPeers'[\s\S]*?assertIpcSender\(event, 'db:listMeshcoreDmPeers'\)/,
     );
   });
 
   it('http:preflight and http:connect validate IPC sender before executing', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('http:preflight'[\s\S]*?validateIpcSender\(event\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('http:connect'[\s\S]*?validateIpcSender\(event\)/,
     );
   });
@@ -837,24 +838,24 @@ describe('Reticulum sidecar IPC handlers (source contract)', () => {
 
 describe('HTTP bridge IPC handlers (source contract)', () => {
   it('registers all four HTTP bridge handlers', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('http:preflight'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('http:connect'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('http:write'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('http:disconnect'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('http:preflight'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('http:connect'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('http:write'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('http:disconnect'");
   });
 
   it('http:connect uses an in-flight guard to prevent concurrent fetches', () => {
-    expect(INDEX_SOURCE).toContain('fetchInFlight');
-    expect(INDEX_SOURCE).toMatch(/fetchInFlight.*return/);
+    expect(MAIN_IPC_SOURCE).toContain('fetchInFlight');
+    expect(MAIN_IPC_SOURCE).toMatch(/fetchInFlight.*return/);
   });
 });
 
 describe('Host link quality IPC (source contract)', () => {
   it('forwards GATT link RSSI and registers HTTP/TCP RTT probes', () => {
-    expect(INDEX_SOURCE).toContain("webContents.send('gatt-link-rssi'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('hostLink:probeHttpRtt'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('hostLink:probeTcpRtt'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('hostLink:getSessionMeter'");
+    expect(MAIN_IPC_SOURCE).toContain("webContents.send('gatt-link-rssi'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('hostLink:probeHttpRtt'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('hostLink:probeTcpRtt'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('hostLink:getSessionMeter'");
   });
 
   it('wires live-session meters on both Meshtastic and MeshCore TCP bridges', () => {
@@ -1020,18 +1021,18 @@ describe('Native Electron call guards (source contract)', () => {
   });
 
   it('registers chat:outbox handlers with protocol, status, and payload validation', () => {
-    expect(MAIN_DB_IPC_SOURCE).toContain("ipcMain.handle('chat:outbox:list'");
-    expect(MAIN_DB_IPC_SOURCE).toContain("ipcMain.handle('chat:outbox:add'");
-    expect(MAIN_DB_IPC_SOURCE).toMatch(/'chat:outbox:updateStatus'/);
-    expect(MAIN_DB_IPC_SOURCE).toContain("ipcMain.handle('chat:outbox:remove'");
-    expect(MAIN_DB_IPC_SOURCE).toContain('OUTBOX_VALID_PROTOCOLS');
-    expect(MAIN_DB_IPC_SOURCE).toContain('OUTBOX_VALID_STATUSES');
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('chat:outbox:list'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('chat:outbox:add'");
+    expect(MAIN_IPC_SOURCE).toMatch(/'chat:outbox:updateStatus'/);
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('chat:outbox:remove'");
+    expect(MAIN_IPC_SOURCE).toContain('OUTBOX_VALID_PROTOCOLS');
+    expect(MAIN_IPC_SOURCE).toContain('OUTBOX_VALID_STATUSES');
     // payload length guard prevents oversized strings entering the DB
-    expect(MAIN_DB_IPC_SOURCE).toMatch(/e\.payload\.length === 0 \|\| e\.payload\.length > 2048/);
+    expect(MAIN_IPC_SOURCE).toMatch(/e\.payload\.length === 0 \|\| e\.payload\.length > 2048/);
     // rowToOutboxEntry maps snake_case columns to camelCase
-    expect(MAIN_DB_IPC_SOURCE).toContain('function rowToOutboxEntry(');
-    expect(MAIN_DB_IPC_SOURCE).toContain('view_key');
-    expect(MAIN_DB_IPC_SOURCE).toContain('attempt_count');
+    expect(MAIN_IPC_SOURCE).toContain('function rowToOutboxEntry(');
+    expect(MAIN_IPC_SOURCE).toContain('view_key');
+    expect(MAIN_IPC_SOURCE).toContain('attempt_count');
   });
 
   it('registers clipboard:writeText with sender validation', () => {

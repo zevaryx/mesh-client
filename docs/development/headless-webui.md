@@ -33,6 +33,7 @@ The trick on both sides is the same: **alias the `electron` module at bundle tim
 - **Origin:** browser upgrades must have `Origin` matching `Host`. Behind a reverse proxy, forward `Host` unchanged.
 - **Sender validation is kept:** authenticated sessions get a synthetic event with `senderFrame.url = mesh-client://headless-web/`, and the shim reports `app.isPackaged === true`, so `assertIpcSender` applies its packaged-build rules unchanged.
 - No TLS in the server itself; put it behind a TLS reverse proxy for anything beyond a trusted LAN. `MESH_CLIENT_WEB_AUTH=off` disables the token for isolated networks only.
+- **Network reach:** the radio bridges (`*:tcp-connect`, `http:connect`, `hostLink:probe*`) make the **server** open connections to hosts the browser names, after the same hostname validation as the desktop app. A token holder can therefore reach hosts on the server's network (radios, but also anything else listening). Treat the token like SSH access to that network; restrict egress with Docker networking if that matters.
 - Responses carry `Referrer-Policy: no-referrer` (the first URL holds the token), `X-Frame-Options: DENY`, `nosniff`. The renderer CSP is unchanged; `'self'` already allows `/web-bridge.js` and the same-origin WebSocket.
 
 ## Build and run

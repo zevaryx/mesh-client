@@ -34,13 +34,15 @@ const CHAT_OUTBOX_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/chat-outbox-handlers.ts'),
   'utf-8',
 );
-/** index.ts plus the db:* / chat:outbox:* modules moved out of it (shared with headless). */
-const MAIN_DB_IPC_SOURCE = [
+const HTTP_BRIDGE_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8');
+/** index.ts plus the IPC modules moved out of it (shared with the headless server). */
+const MAIN_IPC_SOURCE = [
   INDEX_SOURCE,
   DB_MESHTASTIC_IPC_SOURCE,
   DB_MESHCORE_IPC_SOURCE,
   DB_IPC_VALIDATION_SOURCE,
   CHAT_OUTBOX_IPC_SOURCE,
+  HTTP_BRIDGE_IPC_SOURCE,
 ].join('\n');
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
@@ -58,6 +60,7 @@ function ipcHandlerBody(channel: string, span = 400): string {
     DB_MESHTASTIC_IPC_SOURCE,
     DB_MESHCORE_IPC_SOURCE,
     CHAT_OUTBOX_IPC_SOURCE,
+    HTTP_BRIDGE_IPC_SOURCE,
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -83,14 +86,14 @@ describe('validateHttpHost (source contract)', () => {
 
   it('calls validateHttpHost in http:preflight handler', () => {
     // Ensure both handlers use the shared helper rather than ad-hoc length checks
-    const preflightIdx = INDEX_SOURCE.indexOf("ipcMain.handle('http:preflight'");
-    const connectIdx = INDEX_SOURCE.indexOf("ipcMain.handle('http:connect'");
+    const preflightIdx = MAIN_IPC_SOURCE.indexOf("ipcMain.handle('http:preflight'");
+    const connectIdx = MAIN_IPC_SOURCE.indexOf("ipcMain.handle('http:connect'");
     expect(preflightIdx).toBeGreaterThan(-1);
     expect(connectIdx).toBeGreaterThan(-1);
 
     // Extract the handler body up to the next ipcMain.handle boundary
-    const preflightBody = INDEX_SOURCE.slice(preflightIdx, preflightIdx + 300);
-    const connectBody = INDEX_SOURCE.slice(connectIdx, connectIdx + 300);
+    const preflightBody = MAIN_IPC_SOURCE.slice(preflightIdx, preflightIdx + 300);
+    const connectBody = MAIN_IPC_SOURCE.slice(connectIdx, connectIdx + 300);
 
     expect(preflightBody).toContain('validateHttpHost(');
     expect(connectBody).toContain('validateHttpHost(');
@@ -430,9 +433,9 @@ describe('tcp-bridge hostname validation (source contract)', () => {
 
 describe('hostLink:getSessionMeter validation (source contract)', () => {
   it('rejects protocols other than meshtastic/meshcore', () => {
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('hostLink:getSessionMeter'");
+    const handlerIdx = MAIN_IPC_SOURCE.indexOf("ipcMain.handle('hostLink:getSessionMeter'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 400);
+    const handlerBody = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 400);
     expect(handlerBody).toContain("assertIpcSender(event, 'hostLink:getSessionMeter')");
     expect(handlerBody).toContain("protocol !== 'meshtastic'");
     expect(handlerBody).toContain("protocol !== 'meshcore'");
@@ -551,20 +554,20 @@ describe('tak:start settings validation (source contract)', () => {
 
 describe('MeshCore clear-by-channel validation (source contract)', () => {
   it('allows Rooms channel index -2 in safeMeshcoreChannelIndex', () => {
-    const fnIdx = MAIN_DB_IPC_SOURCE.indexOf('function safeMeshcoreChannelIndex');
+    const fnIdx = MAIN_IPC_SOURCE.indexOf('function safeMeshcoreChannelIndex');
     expect(fnIdx).toBeGreaterThan(-1);
-    const body = MAIN_DB_IPC_SOURCE.slice(fnIdx, fnIdx + 350);
+    const body = MAIN_IPC_SOURCE.slice(fnIdx, fnIdx + 350);
     expect(body).toContain('n < -2');
     expect(body).not.toContain('n < -1');
     expect(body).toContain('Invalid MeshCore channel index');
   });
 
   it('db:clearMeshcoreMessagesByChannel uses safeMeshcoreChannelIndex', () => {
-    const handlerIdx = MAIN_DB_IPC_SOURCE.search(
+    const handlerIdx = MAIN_IPC_SOURCE.search(
       /ipcMain\.handle\(\s*'db:clearMeshcoreMessagesByChannel'/,
     );
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 500);
+    const body = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 500);
     expect(body).toContain('safeMeshcoreChannelIndex(channelIdx)');
     expect(body).toContain('safeMeshcoreRadioNodeId(radioNodeId)');
   });
@@ -725,8 +728,8 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('http fromradio poll uses AbortSignal.timeout', () => {
-    expect(INDEX_SOURCE).toContain('HTTP_FETCH_TIMEOUT_MS');
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toContain('HTTP_FETCH_TIMEOUT_MS');
+    expect(MAIN_IPC_SOURCE).toMatch(
       /fromradio\?all=false[\s\S]{0,400}AbortSignal\.timeout\(HTTP_FETCH_TIMEOUT_MS\)/,
     );
   });
@@ -847,10 +850,10 @@ describe('privileged IPC sender validation (source contract)', () => {
 
 describe('MeshCore message local order IPC contract', () => {
   it('validates the optional local order before saving a message', () => {
-    const validationStart = MAIN_DB_IPC_SOURCE.indexOf('function validateSaveMeshcoreMessage(');
-    const validationEnd = MAIN_DB_IPC_SOURCE.indexOf('\nfunction ', validationStart + 1);
+    const validationStart = MAIN_IPC_SOURCE.indexOf('function validateSaveMeshcoreMessage(');
+    const validationEnd = MAIN_IPC_SOURCE.indexOf('\nfunction ', validationStart + 1);
     expect(validationStart).toBeGreaterThan(-1);
-    expect(MAIN_DB_IPC_SOURCE.slice(validationStart, validationEnd)).toContain(
+    expect(MAIN_IPC_SOURCE.slice(validationStart, validationEnd)).toContain(
       'validateMeshcoreMessageLocalOrder(m.local_order)',
     );
     expect(ipcHandlerBody('db:saveMeshcoreMessage', 800)).toContain('validateSaveMeshcoreMessage(');
@@ -914,19 +917,19 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
 
   it.each(dbMutatorChannels)('%s calls validateIpcSender', (channel) => {
     // Single- or multi-line `ipcMain.handle(` (module handlers are indented one level deeper).
-    const handlerIdx = MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = MAIN_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     if (handlerIdx === -1) {
       const multilineIdx = Math.max(
         ...['  ', '    '].map((indent) =>
-          MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle(\n${indent}'${channel}'`),
+          MAIN_IPC_SOURCE.indexOf(`ipcMain.handle(\n${indent}'${channel}'`),
         ),
       );
       expect(multilineIdx).toBeGreaterThan(-1);
-      const handlerBody = MAIN_DB_IPC_SOURCE.slice(multilineIdx, multilineIdx + 400);
+      const handlerBody = MAIN_IPC_SOURCE.slice(multilineIdx, multilineIdx + 400);
       expect(handlerBody).toContain('validateIpcSender(event)');
       return;
     }
-    const handlerBody = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const handlerBody = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(handlerBody).toContain('validateIpcSender(event)');
   });
 
@@ -954,9 +957,9 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
   ] as const;
 
   it.each(dbReadChannels)('%s calls assertIpcSender', (channel) => {
-    const handlerIdx = MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = MAIN_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 400);
+    const handlerBody = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 400);
     expect(handlerBody).toContain(`assertIpcSender(event, '${channel}')`);
   });
 
@@ -965,9 +968,9 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     ['app:getLoginItem', "assertIpcSender(event, 'app:getLoginItem')"],
     ['log:device-connection', 'validateIpcSender(event)'],
   ] as const)('%s validates the IPC sender', (channel, expectedCheck) => {
-    const handlerIdx = MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = MAIN_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const body = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(body).toContain(expectedCheck);
   });
 
@@ -977,9 +980,9 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     const re = /ipcMain\.handle\(\s*\n?\s*'(db:[a-zA-Z]+)'/g;
     const missing: string[] = [];
     let m: RegExpExecArray | null;
-    while ((m = re.exec(MAIN_DB_IPC_SOURCE))) {
+    while ((m = re.exec(MAIN_IPC_SOURCE))) {
       const channel = m[1];
-      const body = MAIN_DB_IPC_SOURCE.slice(m.index, m.index + 400);
+      const body = MAIN_IPC_SOURCE.slice(m.index, m.index + 400);
       const hasCheck =
         body.includes('assertIpcSender(event') || body.includes('validateIpcSender(event)');
       if (!hasCheck) missing.push(channel);
@@ -1039,29 +1042,30 @@ describe('MQTT mutator IPC sender validation (source contract, H2)', () => {
 
 describe('HTTP fromradio response size cap (source contract, H5)', () => {
   it('defines a 1 MB response cap', () => {
-    expect(INDEX_SOURCE).toContain('const HTTP_FROMRADIO_MAX_RESPONSE_BYTES = 1 * 1024 * 1024;');
+    expect(MAIN_IPC_SOURCE).toContain('const HTTP_FROMRADIO_MAX_RESPONSE_BYTES = 1 * 1024 * 1024;');
   });
 
   it('readBoundedArrayBuffer throws ResponseSizeCapExceededError when the cap is exceeded', () => {
-    expect(INDEX_SOURCE).toContain('class ResponseSizeCapExceededError extends Error {}');
-    const fnIdx = INDEX_SOURCE.indexOf('async function readBoundedArrayBuffer(');
+    expect(MAIN_IPC_SOURCE).toContain('class ResponseSizeCapExceededError extends Error {}');
+    const fnIdx = MAIN_IPC_SOURCE.indexOf('async function readBoundedArrayBuffer(');
     expect(fnIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(fnIdx, fnIdx + 1200);
+    const body = MAIN_IPC_SOURCE.slice(fnIdx, fnIdx + 1200);
     expect(body).toContain('throw new ResponseSizeCapExceededError(');
   });
 
   it('http:connect fromradio poll uses readBoundedArrayBuffer with the cap', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /fromradio\?all=false[\s\S]{0,400}readBoundedArrayBuffer\(response, HTTP_FROMRADIO_MAX_RESPONSE_BYTES\)/,
     );
   });
 
   it('disconnects httpDevice on oversized fromradio response but keeps retrying transient errors', () => {
-    const idx = INDEX_SOURCE.indexOf(
+    const idx = MAIN_IPC_SOURCE.indexOf(
       'readBoundedArrayBuffer(response, HTTP_FROMRADIO_MAX_RESPONSE_BYTES)',
     );
     expect(idx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(idx, idx + 1000);
+    // 1200: the handler is indented one level deeper inside registerHttpBridgeIpcHandlers.
+    const body = MAIN_IPC_SOURCE.slice(idx, idx + 1200);
     expect(body).toContain('if (err instanceof ResponseSizeCapExceededError)');
     expect(body).toContain('httpDevice = null');
   });

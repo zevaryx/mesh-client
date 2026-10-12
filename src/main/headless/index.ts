@@ -22,6 +22,7 @@ import { registerChatOutboxIpcHandlers } from '../ipc/chat-outbox-handlers';
 import { registerMeshcoreDbIpcHandlers } from '../ipc/db-meshcore-handlers';
 import { registerMeshtasticDbIpcHandlers } from '../ipc/db-meshtastic-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-telemetry-handlers';
+import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
 import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
 import { registerRrcDbIpcHandlers } from '../ipc/rrc-db-handlers';
 import { registerSecureSecretsIpcHandlers } from '../ipc/secure-secrets-handlers';
@@ -48,6 +49,7 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     getMainWindow: () => (window.isDestroyed() ? null : window),
     validateHost: validateHttpHost,
   });
+  registerHttpBridgeIpcHandlers({ getMainWindow: () => (window.isDestroyed() ? null : window) });
 }
 
 async function main(): Promise<void> {
@@ -139,6 +141,7 @@ async function main(): Promise<void> {
     console.debug(`[headless] ${signal} — shutting down`);
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
+    stopHttpBridgePolling();
     void server.close().then(() => {
       // After the server stops accepting invokes, so no handler races the close.
       closeDatabase();
