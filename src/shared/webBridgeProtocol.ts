@@ -33,6 +33,51 @@ export function normalizeHeadlessHostPlatform(value: unknown): HeadlessHostPlatf
 /** Largest inbound bridge frame the server accepts (bytes). Matches the TCP write cap ×4 for JSON. */
 export const WEB_BRIDGE_MAX_FRAME_BYTES = 4 * 1024 * 1024;
 
+/**
+ * Headless file transfer (server-side `dialog.showOpenDialog` / `showSaveDialog`).
+ * Control flows over the bridge as push events; file bytes go over HTTP with the session token
+ * in an `Authorization: Bearer` header (never in a URL).
+ */
+export const WEB_BRIDGE_PICK_FILES_EVENT = 'headless:pickFiles';
+export const WEB_BRIDGE_DOWNLOAD_EVENT = 'headless:download';
+/** `POST {prefix}/upload/<requestId>?name=<file name>` — one file per request body. */
+export const WEB_BRIDGE_FILES_PATH = '/files';
+
+export interface WebBridgePickFilesRequest {
+  requestId: string;
+  title?: string;
+  multiple: boolean;
+  accept: string;
+}
+
+export interface WebBridgePickFilesCompletion {
+  canceled: boolean;
+  /** Set when the browser failed to upload; the server rejects the dialog with it. */
+  error?: string;
+}
+
+export interface WebBridgeDownloadNotice {
+  id: string;
+  fileName: string;
+  size: number;
+}
+
+/** File-name-safe base name for uploads/downloads (no paths, control chars or reserved names). */
+const UNSAFE_FILE_NAME_CHARS = new Set(['<', '>', ':', '"', '|', '?', '*']);
+
+export function sanitizeTransferFileName(name: unknown, fallback = 'file'): string {
+  if (typeof name !== 'string') return fallback;
+  const base = name.split(/[\\/]/).pop() ?? '';
+  let cleaned = '';
+  for (const ch of base) {
+    const code = ch.charCodeAt(0);
+    cleaned += code < 0x20 || code === 0x7f || UNSAFE_FILE_NAME_CHARS.has(ch) ? '_' : ch;
+  }
+  cleaned = cleaned.trim().slice(0, 200);
+  if (cleaned === '' || cleaned === '.' || cleaned === '..') return fallback;
+  return cleaned;
+}
+
 /** Renderer → server: `ipcRenderer.invoke(channel, ...args)`. */
 export interface WebBridgeInvokeFrame {
   t: 'invoke';

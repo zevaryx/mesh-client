@@ -22,6 +22,7 @@ import {
   WEB_BRIDGE_WS_PATH,
   type WebBridgeClientFrame,
 } from '../../shared/webBridgeProtocol';
+import { installHeadlessFileTransfer } from './headlessFileTransfer';
 
 type IpcListener = (event: IpcRendererEventLike, ...args: unknown[]) => void;
 
@@ -244,11 +245,25 @@ if (typeof document !== 'undefined') {
 let sharedRenderer: WebIpcRenderer | null = null;
 
 function getSharedRenderer(): WebIpcRenderer {
-  sharedRenderer ??= new WebIpcRenderer({
-    url: buildBridgeSocketUrl(window.location, takeHeadlessToken(window)),
+  if (sharedRenderer) return sharedRenderer;
+  const token = takeHeadlessToken(window);
+  const renderer = new WebIpcRenderer({
+    url: buildBridgeSocketUrl(window.location, token),
     createSocket: (url) => new WebSocket(url) as unknown as BridgeSocket,
   });
-  return sharedRenderer;
+  // Server-side file dialogs (open → upload, save → download) are served by this tab.
+  installHeadlessFileTransfer({
+    on: (channel, listener) => renderer.on(channel, listener),
+    token,
+    doc: document,
+    fetchFn: window.fetch.bind(window),
+    createObjectURL: (blob) => URL.createObjectURL(blob),
+    revokeObjectURL: (url) => {
+      URL.revokeObjectURL(url);
+    },
+  });
+  sharedRenderer = renderer;
+  return renderer;
 }
 
 /** Lazily connects on first use so importing this module in tests has no side effects. */

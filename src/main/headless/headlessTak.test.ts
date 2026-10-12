@@ -138,9 +138,11 @@ describe('TAK on the headless shim', () => {
     ).rejects.toThrow('unauthorized sender');
   });
 
-  it('reports file dialogs as unavailable instead of silently cancelling', async () => {
+  it('certificate import needs a browser session (rejects instead of silently cancelling)', async () => {
+    // Through the web server the browser serves the picker (headlessFileTransfer.test.ts);
+    // called with no bridge session there is nobody to ask.
     await expect(invoke('tak:remoteImportCredentials')).rejects.toThrow(
-      'native file dialogs are not available in headless mode',
+      'file dialogs need a browser session',
     );
   });
 });

@@ -123,3 +123,17 @@ describe('resolveHeadlessConfig secret key', () => {
     );
   });
 });
+
+describe('resolveHeadlessConfig upload limit', () => {
+  it('defaults to 64 MiB and accepts 1-1024 MiB', () => {
+    expect(resolveHeadlessConfig({}, BUNDLE_DIR).maxUploadBytes).toBe(64 * 1024 * 1024);
+    expect(
+      resolveHeadlessConfig({ MESH_CLIENT_WEB_MAX_UPLOAD_MB: '512' }, BUNDLE_DIR).maxUploadBytes,
+    ).toBe(512 * 1024 * 1024);
+    for (const bad of ['0', '2048', '1.5', 'lots']) {
+      expect(() =>
+        resolveHeadlessConfig({ MESH_CLIENT_WEB_MAX_UPLOAD_MB: bad }, BUNDLE_DIR),
+      ).toThrow('MESH_CLIENT_WEB_MAX_UPLOAD_MB');
+    }
+  });
+});

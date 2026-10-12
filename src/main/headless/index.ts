@@ -182,6 +182,7 @@ async function main(): Promise<void> {
     token: config.token,
     host: config.host,
     port: config.port,
+    maxUploadBytes: config.maxUploadBytes,
   });
   const window = new BrowserWindow(server.broadcast);
   registerHeadlessHandlers(window);

@@ -10,6 +10,8 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import { currentHeadlessCall } from './callContext';
+import { filtersToAccept } from './fileTransfer';
 import { createHeadlessSafeStorage, type HeadlessSafeStorage } from './headlessSafeStorage';
 import { type HeadlessIpcEvent, headlessIpcRegistry } from './ipcRegistry';
 
@@ -127,6 +129,10 @@ export class BrowserWindow {
     return BrowserWindow.getAllWindows()[0] ?? null;
   }
 
+  static getFocusedWindow(): BrowserWindow | null {
+    return BrowserWindow.getAllWindows()[0] ?? null;
+  }
+
   isDestroyed(): boolean {
     return this.destroyed;
   }
@@ -155,21 +161,59 @@ export const safeStorage: HeadlessSafeStorage = {
   decryptString: (encrypted) => safeStorageImpl.decryptString(encrypted),
 };
 
-/**
- * No native dialogs headless. Prompts throw, and callers already treat a dialog failure as
- * "declined" (e.g. `confirmDatabaseSchemaUpgrade` refuses the upgrade unless
- * `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE=1`), so nothing irreversible happens without the operator.
- * Error boxes go to the server log.
- */
-const NO_FILE_DIALOGS = 'native file dialogs are not available in headless mode';
+interface HeadlessDialogOptions {
+  title?: string;
+  defaultPath?: string;
+  properties?: string[];
+  filters?: unknown;
+}
 
+/** Electron dialogs accept `(options)` or `(window, options)`. */
+function dialogOptions(args: unknown[]): HeadlessDialogOptions {
+  const opts = args.length > 1 ? args[1] : args[0];
+  return opts && typeof opts === 'object' ? opts : {};
+}
+
+const NO_BROWSER_SESSION =
+  'file dialogs need a browser session (not available outside an IPC call)';
+
+/**
+ * Message prompts throw, and callers already treat a dialog failure as "declined" (e.g.
+ * `confirmDatabaseSchemaUpgrade` refuses the upgrade unless `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE=1`),
+ * so nothing irreversible happens without the operator. Error boxes go to the server log.
+ *
+ * File dialogs are served by the browser that made the IPC call (`fileTransfer.ts`): open dialogs
+ * upload the picked files to a staging dir, save dialogs return a staging path that is downloaded
+ * to the browser when the call succeeds. Folder pickers choose persistent server locations, which a
+ * browser cannot do, so they reject with a clear error rather than resolving "canceled".
+ */
 export const dialog = {
   showMessageBoxSync: (): never => {
     throw new Error('native dialogs are not available in headless mode');
   },
-  /** Rejects (never resolves "canceled"), so the renderer shows an error instead of nothing. */
-  showOpenDialog: (): Promise<never> => Promise.reject(new Error(NO_FILE_DIALOGS)),
-  showSaveDialog: (): Promise<never> => Promise.reject(new Error(NO_FILE_DIALOGS)),
+  showOpenDialog: async (
+    ...args: unknown[]
+  ): Promise<{ canceled: boolean; filePaths: string[] }> => {
+    const opts = dialogOptions(args);
+    if (opts.properties?.includes('openDirectory')) {
+      throw new Error('folder pickers are not available in headless mode');
+    }
+    const call = currentHeadlessCall();
+    if (!call) throw new Error(NO_BROWSER_SESSION);
+    const paths = await call.requestFiles({
+      ...(opts.title ? { title: opts.title } : {}),
+      multiple: opts.properties?.includes('multiSelections') === true,
+      accept: filtersToAccept(opts.filters),
+    });
+    return paths ? { canceled: false, filePaths: paths } : { canceled: true, filePaths: [] };
+  },
+  showSaveDialog: (...args: unknown[]): Promise<{ canceled: boolean; filePath: string }> => {
+    const opts = dialogOptions(args);
+    const call = currentHeadlessCall();
+    if (!call) return Promise.reject(new Error(NO_BROWSER_SESSION));
+    const name = path.basename(opts.defaultPath ?? '') || 'download';
+    return Promise.resolve({ canceled: false, filePath: call.stageDownload(name) });
+  },
   showErrorBox: (title: string, content: string): void => {
     console.error(`[headless] ${title}: ${content}`); // log-injection-ok fixed app-authored startup error text
   },
@@ -187,4 +231,8 @@ export const net = {
 export const shell = {
   openExternal: (): Promise<never> =>
     Promise.reject(new Error('opening external links is not available in headless mode')),
+  /** Revealing a file on the server's desktop means nothing to a remote viewer. */
+  showItemInFolder: (): never => {
+    throw new Error('showing files in a folder is not available in headless mode');
+  },
 };

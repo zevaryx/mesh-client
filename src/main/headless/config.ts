@@ -11,6 +11,7 @@
  * | `MESH_CLIENT_RENDERER_DIR`   | `<bundle>/../dist/renderer` | Vite renderer build                    |
  * | `MESH_CLIENT_SECRET_KEY_FILE`| unset                | File with key material for stored secrets (Docker secret) |
  * | `MESH_CLIENT_SECRET_KEY`     | unset                | Same, inline (visible in `docker inspect`; prefer the file) |
+ * | `MESH_CLIENT_WEB_MAX_UPLOAD_MB` | `64`              | Max total upload per browser file pick (1–1024 MiB) |
  *
  * Without a secret key, credentials (MeshCore identity, MQTT passwords, …) stay in memory only and
  * are lost on restart; see `headlessSafeStorage.ts`.
@@ -38,7 +39,11 @@ export interface HeadlessConfig {
   /** Key material for headless `safeStorage`; `null` keeps secrets in memory only. */
   secretKey: string | null;
   secretKeySource: 'file' | 'env' | null;
+  /** Max total bytes one browser file pick may upload. */
+  maxUploadBytes: number;
 }
+
+export const HEADLESS_DEFAULT_MAX_UPLOAD_MB = 64;
 
 export class HeadlessConfigError extends Error {
   constructor(message: string) {
@@ -106,7 +111,14 @@ export function resolveHeadlessConfig(
     );
   }
 
+  const rawUpload = env.MESH_CLIENT_WEB_MAX_UPLOAD_MB?.trim();
+  const uploadMb = rawUpload ? Number(rawUpload) : HEADLESS_DEFAULT_MAX_UPLOAD_MB;
+  if (!Number.isInteger(uploadMb) || uploadMb < 1 || uploadMb > 1024) {
+    throw new HeadlessConfigError('MESH_CLIENT_WEB_MAX_UPLOAD_MB must be an integer 1-1024');
+  }
+
   return {
+    maxUploadBytes: uploadMb * 1024 * 1024,
     secretKey,
     secretKeySource,
     dataDir: path.resolve(env.MESH_CLIENT_DATA_DIR?.trim() || 'mesh-client-data'),

@@ -22,6 +22,7 @@ import {
   normalizeHeadlessHostPlatform,
   parseWebBridgeClientFrame,
   serializeWebBridgeFrame,
+  WEB_BRIDGE_FILES_PATH,
   WEB_BRIDGE_MAX_FRAME_BYTES,
   WEB_BRIDGE_PLATFORM_META,
   WEB_BRIDGE_SCRIPT_PATH,
@@ -30,6 +31,8 @@ import {
   type WebBridgeServerFrame,
 } from '../../shared/webBridgeProtocol';
 import { sanitizeLogMessage } from '../sanitize-log-message';
+import { runInHeadlessCall } from './callContext';
+import { HeadlessFileTransfer } from './fileTransfer';
 import {
   HEADLESS_SENDER_URL,
   type HeadlessIpcEvent,
@@ -48,6 +51,18 @@ export interface HeadlessWebServerOptions {
   port: number;
   /** OS reported to the renderer as `getPlatform()`; defaults to this process's platform. */
   platform?: string;
+  /** Total bytes one browser file pick may upload (default {@link HEADLESS_DEFAULT_MAX_UPLOAD_BYTES}). */
+  maxUploadBytes?: number;
+}
+
+export const HEADLESS_DEFAULT_MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+
+/** `Authorization: Bearer <token>` for the file-transfer endpoints. */
+function bearerToken(req: http.IncomingMessage): string | null {
+  const header = req.headers.authorization;
+  if (typeof header !== 'string') return null;
+  const m = /^Bearer (.+)$/.exec(header);
+  return m?.[1] ?? null;
 }
 
 export interface HeadlessWebServer {
@@ -145,6 +160,9 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
   const { registry, rendererDir, bridgeScriptFile, token, host, port } = options;
   const platform = options.platform ?? process.platform;
   const sessions = new Set<WebSocket>();
+  const transfer = new HeadlessFileTransfer(
+    options.maxUploadBytes ?? HEADLESS_DEFAULT_MAX_UPLOAD_BYTES,
+  );
   let nextSessionId = 1;
   let indexHtmlCache: string | null = null;
 
@@ -183,11 +201,20 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
   };
 
   const server = http.createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://headless.invalid');
+    if (url.pathname.startsWith(`${WEB_BRIDGE_FILES_PATH}/`)) {
+      if (token !== null && !headlessTokenMatches(token, bearerToken(req))) {
+        req.resume();
+        sendPlain(res, 401, 'Unauthorized');
+        return;
+      }
+      if (!transfer.handleHttp(req, res, url)) sendPlain(res, 404, 'Not Found');
+      return;
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       sendPlain(res, 405, 'Method Not Allowed');
       return;
     }
-    const url = new URL(req.url ?? '/', 'http://headless.invalid');
     if (url.pathname === WEB_BRIDGE_SCRIPT_PATH) {
       serveFile(res, bridgeScriptFile);
       return;
@@ -292,11 +319,17 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
         }
         return;
       }
-      registry.invoke(frame.channel, event, frame.args).then(
+      // The call context lets the shim's file dialogs reach this session's browser.
+      const call = transfer.createCall(sessionId, (channel, payload) => {
+        sendFrame(ws, { t: 'event', channel, args: [payload] });
+      });
+      runInHeadlessCall(call.context, () => registry.invoke(frame.channel, event, frame.args)).then(
         (value) => {
+          transfer.finishCall(call, true);
           sendFrame(ws, { t: 'result', id: frame.id, value });
         },
         (err: unknown) => {
+          transfer.finishCall(call, false);
           const message = err instanceof Error ? err.message : String(err);
           console.debug(
             `[headless] invoke '${sanitizeLogMessage(frame.channel)}' failed:`,
@@ -309,6 +342,7 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
 
     ws.on('close', () => {
       sessions.delete(ws);
+      transfer.closeSession(sessionId);
       console.debug(`[headless] bridge session ${sessionId} closed (${sessions.size} active)`);
     });
     ws.on('error', (err) => {
@@ -332,6 +366,7 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
       new Promise<void>((resolve) => {
         for (const ws of sessions) ws.terminate();
         sessions.clear();
+        transfer.dispose();
         wss.close();
         server.close(() => {
           resolve();
