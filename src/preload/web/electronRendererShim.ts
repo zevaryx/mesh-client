@@ -8,6 +8,12 @@
  * Failure behavior: invokes issued while disconnected are queued and flushed on (re)connect;
  * invokes in flight when the socket drops reject (the server may or may not have run them).
  * Reconnects back off from 500 ms to 10 s.
+ *
+ * Catch-up after an outage: push events sent while the socket was down are lost, so when an
+ * established connection drops the bridge raises a local `power:suspend`, and after it reconnects
+ * (and has flushed queued calls) a `power:resume`. The renderer's existing sleep/wake recovery
+ * (`usePowerRecovery`) then bounces MQTT, reconnects radios from saved params and re-attaches the
+ * Reticulum sidecar, which re-pushes current state. The first connect raises nothing.
  */
 import { MS_PER_SECOND } from '../../shared/timeConstants';
 import {
@@ -46,6 +52,9 @@ const SOCKET_OPEN = 1;
 const RECONNECT_MIN_MS = MS_PER_SECOND / 2;
 const RECONNECT_MAX_MS = 10 * MS_PER_SECOND;
 const TOKEN_STORAGE_KEY = 'mesh-client.headless.token';
+/** Channels the desktop main process uses for sleep/wake (see `onPowerSuspend` in the preload). */
+export const BRIDGE_OUTAGE_SUSPEND_CHANNEL = 'power:suspend';
+export const BRIDGE_OUTAGE_RESUME_CHANNEL = 'power:resume';
 
 interface PendingInvoke {
   channel: string;
@@ -66,6 +75,8 @@ export class WebIpcRenderer {
   private readonly outbox: WebBridgeClientFrame[] = [];
   private readonly listeners = new Map<string, IpcListener[]>();
   private reconnectDelay = RECONNECT_MIN_MS;
+  /** An established connection dropped and `power:suspend` was raised; cleared on resume. */
+  private outage = false;
   private readonly schedule: (fn: () => void, ms: number) => void;
 
   constructor(private readonly options: WebIpcRendererOptions) {
@@ -76,10 +87,17 @@ export class WebIpcRenderer {
   private connect(): void {
     const socket = this.options.createSocket(this.options.url);
     this.socket = socket;
+    let opened = false;
     socket.onopen = () => {
+      opened = true;
       this.reconnectDelay = RECONNECT_MIN_MS;
       const queued = this.outbox.splice(0);
       for (const frame of queued) socket.send(serializeWebBridgeFrame(frame));
+      if (this.outage) {
+        this.outage = false;
+        console.debug('[web-bridge] reconnected; resyncing renderer state');
+        this.dispatch(BRIDGE_OUTAGE_RESUME_CHANNEL, []);
+      }
     };
     socket.onmessage = (event) => {
       if (typeof event.data !== 'string') return;
@@ -97,6 +115,11 @@ export class WebIpcRenderer {
         );
       }
       console.warn(`[web-bridge] disconnected; retrying in ${this.reconnectDelay} ms`);
+      // Only a drop of a live connection starts an outage; failed retries are part of it.
+      if (opened && !this.outage) {
+        this.outage = true;
+        this.dispatch(BRIDGE_OUTAGE_SUSPEND_CHANNEL, []);
+      }
       const delay = this.reconnectDelay;
       this.reconnectDelay = Math.min(this.reconnectDelay * 2, RECONNECT_MAX_MS);
       this.schedule(() => {
@@ -112,16 +135,7 @@ export class WebIpcRenderer {
       return;
     }
     if (frame.t === 'event') {
-      const list = this.listeners.get(frame.channel);
-      if (!list) return;
-      const event: IpcRendererEventLike = { sender: this };
-      for (const listener of [...list]) {
-        try {
-          listener(event, ...frame.args);
-        } catch (err) {
-          console.error(`[web-bridge] listener for ${frame.channel} threw:`, err);
-        }
-      }
+      this.dispatch(frame.channel, frame.args);
       return;
     }
     const p = this.pending.get(frame.id);
@@ -129,6 +143,19 @@ export class WebIpcRenderer {
     this.pending.delete(frame.id);
     if (frame.t === 'result') p.resolve(frame.value);
     else p.reject(new Error(formatWebBridgeInvokeError(p.channel, frame.message)));
+  }
+
+  private dispatch(channel: string, args: unknown[]): void {
+    const list = this.listeners.get(channel);
+    if (!list) return;
+    const event: IpcRendererEventLike = { sender: this };
+    for (const listener of [...list]) {
+      try {
+        listener(event, ...args);
+      } catch (err) {
+        console.error(`[web-bridge] listener for ${channel} threw:`, err);
+      }
+    }
   }
 
   private transmit(frame: WebBridgeClientFrame): void {

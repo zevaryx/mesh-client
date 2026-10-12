@@ -119,6 +119,47 @@ describe('WebIpcRenderer', () => {
     await expect(queued).resolves.toBe('ok');
   });
 
+  it('raises power:suspend when a live connection drops and power:resume after the reconnect flush', () => {
+    const { renderer, scheduled, current } = setup();
+    const log: string[] = [];
+    renderer.on('power:suspend', () => {
+      log.push('suspend');
+      // Recovery code calls into main while disconnected; the call must ride the reconnect.
+      void renderer.invoke('mqtt:powerSuspend').catch(() => undefined);
+    });
+    renderer.on('power:resume', () => {
+      log.push(
+        `resume after ${current()
+          .sent.map((f) => f.channel)
+          .join(',')}`,
+      );
+    });
+
+    current().drop(); // initial connect fails: no outage yet
+    scheduled[0]?.fn();
+    current().open(); // first successful open: nothing to resync
+    expect(log).toEqual([]);
+
+    current().drop();
+    expect(log).toEqual(['suspend']);
+    scheduled[1]?.fn();
+    current().drop(); // failed retries stay within the same outage
+    scheduled[2]?.fn();
+    expect(log).toEqual(['suspend']);
+    current().open();
+    expect(log).toEqual(['suspend', 'resume after mqtt:powerSuspend']);
+
+    current().drop();
+    scheduled[3]?.fn();
+    current().open();
+    expect(log).toEqual([
+      'suspend',
+      'resume after mqtt:powerSuspend',
+      'suspend',
+      'resume after mqtt:powerSuspend',
+    ]);
+  });
+
   it('delivers events to on/once listeners and stops after off', () => {
     const { renderer, current } = setup();
     current().open();
