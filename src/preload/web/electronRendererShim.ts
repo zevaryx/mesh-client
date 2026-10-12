@@ -24,6 +24,7 @@ import {
   serializeWebBridgeFrame,
   WEB_BRIDGE_PLATFORM_GLOBAL,
   WEB_BRIDGE_PLATFORM_META,
+  WEB_BRIDGE_TILES_SESSION_PATH,
   WEB_BRIDGE_TOKEN_PARAM,
   WEB_BRIDGE_WS_PATH,
   type WebBridgeClientFrame,
@@ -261,6 +262,29 @@ export function buildBridgeSocketUrl(location: Location, token: string | null): 
   return url.toString();
 }
 
+/**
+ * Trade the token for the HttpOnly cookie that lets `<img>` / Leaflet load `/tiles/…` (images
+ * cannot send an `Authorization` header). Failure leaves maps without a basemap; it is logged and
+ * retried on the next page load.
+ */
+export async function requestHeadlessTilesCookie(
+  fetchFn: typeof fetch,
+  token: string | null,
+): Promise<boolean> {
+  try {
+    const res = await fetchFn(WEB_BRIDGE_TILES_SESSION_PATH, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (res.ok) return true;
+    console.warn(`[web-bridge] map tile access refused (HTTP ${res.status})`);
+  } catch (err) {
+    console.warn('[web-bridge] could not request map tile access', err);
+  }
+  return false;
+}
+
 /** Server OS from the `<meta>` the headless server injects (see `injectWebBridgeScript`). */
 export function readHeadlessHostPlatform(
   doc: Pick<Document, 'querySelector'>,
@@ -300,6 +324,7 @@ function getSharedRenderer(): WebIpcRenderer {
       URL.revokeObjectURL(url);
     },
   });
+  void requestHeadlessTilesCookie(window.fetch.bind(window), token);
   sharedRenderer = renderer;
   return renderer;
 }

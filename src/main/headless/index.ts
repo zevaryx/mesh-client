@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
-import { type BrowserWindow as ElectronBrowserWindow, ipcMain } from 'electron';
+import { app, type BrowserWindow as ElectronBrowserWindow, ipcMain } from 'electron';
 
 import {
   closeDatabase,
@@ -34,6 +34,7 @@ import { registerLogIpcHandlers } from '../ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
 import { registerNotificationSoundHandlers } from '../ipc/notification-sound-handlers';
+import { registerOfflineMapsIpcHandlers } from '../ipc/offline-maps-handlers';
 import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
 import {
   IDLE_RETICULUM_STATUS,
@@ -55,6 +56,8 @@ import { withMeshtasticLinkKeeper } from '../meshtastic-backend/keptLink';
 import { mainMeshtasticLinkKeeperDeps } from '../meshtastic-backend/mainLinks';
 import { persistMeshtasticBackendRecord } from '../meshtastic-backend/persist';
 import { MQTTManager } from '../mqtt-manager';
+import { createMeshTilesProtocolHandler } from '../offline-maps/protocol';
+import { createTileCache, type TileCache } from '../offline-maps/tile-cache';
 import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
 import { sanitizeLogMessage } from '../sanitize-log-message';
 import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from '../tak/tak-server-host';
@@ -92,6 +95,8 @@ function ensureReticulumSidecarManager(): ReticulumSidecarManager {
  * radio link, then tells the tab that takes the link back to reload. `null` when disabled.
  */
 let meshtasticBackend: MeshtasticBackendHandle | null = null;
+/** Map tile cache under the data dir (same layout as the desktop app's userData). */
+let tileCache: TileCache | null = null;
 /** Stops the translation worker on shutdown (set when handlers register). */
 let disposeTranslation: (() => void) | null = null;
 
@@ -151,6 +156,11 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerBeaconIpcHandlers();
   registerNotificationSoundHandlers();
   registerFlasherHandlers();
+  // Region downloads fill the cache the web server's /tiles route reads.
+  registerOfflineMapsIpcHandlers(
+    () => pushTarget() as unknown as ElectronBrowserWindow | null,
+    () => tileCache,
+  );
   disposeTranslation = registerTranslationHandlers({
     getSetting: (key) =>
       (
@@ -248,6 +258,7 @@ async function main(): Promise<void> {
   }
 
   if (config.meshtasticBackgroundIngest) meshtasticBackend = startMeshtasticBackend();
+  tileCache = createTileCache(config.dataDir);
   const server = createHeadlessWebServer({
     registry: headlessIpcRegistry,
     rendererDir: config.rendererDir,
@@ -256,6 +267,11 @@ async function main(): Promise<void> {
     host: config.host,
     port: config.port,
     maxUploadBytes: config.maxUploadBytes,
+    // The desktop `mesh-tiles:` handler: cached tile, else fetched from the basemap and cached.
+    tileHandler: createMeshTilesProtocolHandler({
+      cache: tileCache,
+      getAppVersion: () => app.getVersion(),
+    }),
     onSessionCountChange: (count) => {
       meshtasticBackend?.setRendererPresent(count > 0);
     },

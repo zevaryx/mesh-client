@@ -43,6 +43,31 @@ export const WEB_BRIDGE_DOWNLOAD_EVENT = 'headless:download';
 /** `POST {prefix}/upload/<requestId>?name=<file name>` — one file per request body. */
 export const WEB_BRIDGE_FILES_PATH = '/files';
 
+/**
+ * Map tiles (`mesh-tiles://<basemap>/<z>/<x>/<y>.png` on the desktop app) are served at
+ * `GET /tiles/<basemap>/<z>/<x>/<y>.png` from the same server-side cache. `<img>` tags cannot send
+ * an `Authorization` header, so the bridge first trades the token for an HttpOnly cookie scoped to
+ * that path: `POST /session/tiles` with `Authorization: Bearer <token>`.
+ */
+export const WEB_BRIDGE_TILES_PATH = '/tiles';
+export const WEB_BRIDGE_TILES_SESSION_PATH = '/session/tiles';
+export const WEB_BRIDGE_TILES_COOKIE = 'mesh_client_tiles';
+const MESH_TILES_SCHEME_PREFIX = 'mesh-tiles://';
+
+/** `mesh-tiles://osm/1/2/3.png?x` → `/tiles/osm/1/2/3.png?x`; other URLs pass through. */
+export function meshTilesUrlToWebPath(url: string): string {
+  return url.startsWith(MESH_TILES_SCHEME_PREFIX)
+    ? `${WEB_BRIDGE_TILES_PATH}/${url.slice(MESH_TILES_SCHEME_PREFIX.length)}`
+    : url;
+}
+
+/** `/tiles/osm/1/2/3.png` + `?x` → `mesh-tiles://osm/1/2/3.png?x`; `null` outside the tile path. */
+export function webTilesPathToMeshTilesUrl(pathname: string, search: string): string | null {
+  const prefix = `${WEB_BRIDGE_TILES_PATH}/`;
+  if (!pathname.startsWith(prefix)) return null;
+  return `${MESH_TILES_SCHEME_PREFIX}${pathname.slice(prefix.length)}${search}`;
+}
+
 export interface WebBridgePickFilesRequest {
   requestId: string;
   title?: string;

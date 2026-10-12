@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { isWebHost, usesInlineEmojiPicker } from './hostKind';
+import { hostMeshTilesUrl, isWebHost, usesInlineEmojiPicker } from './hostKind';
 
 function stubApi(hostKind: 'desktop' | 'web', platform: string): void {
   Object.defineProperty(window, 'electronAPI', {
@@ -32,5 +32,21 @@ describe('hostKind', () => {
     expect(usesInlineEmojiPicker()).toBe(false);
     stubApi('desktop', 'win32');
     expect(usesInlineEmojiPicker()).toBe(false);
+  });
+
+  it('serves map tiles from the server tile path in a browser and mesh-tiles: on desktop', () => {
+    const url = 'mesh-tiles://osm/{z}/{x}/{y}.png';
+    expect(hostMeshTilesUrl(url)).toBe(url);
+    stubApi('web', 'linux');
+    expect(hostMeshTilesUrl(url)).toBe('/tiles/osm/{z}/{x}/{y}.png');
+  });
+
+  it('treats a missing bridge (module load in tests) as the desktop app', () => {
+    Object.defineProperty(window, 'electronAPI', {
+      value: undefined,
+      configurable: true,
+      writable: true,
+    });
+    expect(isWebHost()).toBe(false);
   });
 });

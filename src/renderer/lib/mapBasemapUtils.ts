@@ -6,6 +6,7 @@ import {
 } from '@/shared/offlineMaps/basemapRegistry';
 
 import { isDevElectronApiStub } from './devElectronApiStub';
+import { hostMeshTilesUrl } from './hostKind';
 
 export type MapBasemapId = OfflineMapBasemapId;
 
@@ -23,20 +24,20 @@ export interface MapBasemapConfig {
 export const MAP_BASEMAPS: Record<MapBasemapId, MapBasemapConfig> = {
   dark: {
     id: 'dark',
-    url: MESH_TILES_URL_TEMPLATES.dark,
+    url: hostMeshTilesUrl(MESH_TILES_URL_TEMPLATES.dark),
     attribution: BASEMAP_ATTRIBUTIONS.dark,
     isDark: true,
     tileClassName: 'mesh-basemap-dark',
   },
   osm: {
     id: 'osm',
-    url: MESH_TILES_URL_TEMPLATES.osm,
+    url: hostMeshTilesUrl(MESH_TILES_URL_TEMPLATES.osm),
     attribution: BASEMAP_ATTRIBUTIONS.osm,
     isDark: false,
   },
   'usgs-topo': {
     id: 'usgs-topo',
-    url: MESH_TILES_URL_TEMPLATES['usgs-topo'],
+    url: hostMeshTilesUrl(MESH_TILES_URL_TEMPLATES['usgs-topo']),
     attribution: BASEMAP_ATTRIBUTIONS['usgs-topo'],
     isDark: false,
     maxNativeZoom: USGS_TOPO_MAX_NATIVE_ZOOM,
@@ -53,7 +54,8 @@ export const DEFAULT_MAP_BASEMAP_ID: MapBasemapId = 'osm';
 export const MAP_MAX_ZOOM = 18;
 
 /**
- * Whether `mesh-tiles:` tiles can load. The main process serves that scheme, so on the plain-browser
+ * Whether `mesh-tiles:` tiles can load. The main process (or the headless server's `/tiles/` route,
+ * see `hostMeshTilesUrl`) serves them, so on the plain-browser
  * dev bridge every tile would fail; maps then draw without a basemap instead of broken images.
  */
 export function meshTilesAvailable(): boolean {

@@ -11,6 +11,7 @@ import {
   type BridgeSocket,
   buildBridgeSocketUrl,
   readHeadlessHostPlatform,
+  requestHeadlessTilesCookie,
   takeHeadlessToken,
   WebIpcRenderer,
 } from './electronRendererShim';
@@ -284,5 +285,39 @@ describe('readHeadlessHostPlatform', () => {
   it('falls back to linux when the meta is missing or unexpected', () => {
     expect(readHeadlessHostPlatform(docWith(null))).toBe('linux');
     expect(readHeadlessHostPlatform(docWith('aix'))).toBe('linux');
+  });
+});
+
+describe('requestHeadlessTilesCookie', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('posts the token as a bearer header, never in the URL', async () => {
+    const fetchFn = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    expect(await requestHeadlessTilesCookie(fetchFn as unknown as typeof fetch, 'tok')).toBe(true);
+    expect(fetchFn).toHaveBeenCalledWith('/session/tiles', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { Authorization: 'Bearer tok' },
+    });
+  });
+
+  it('sends no header when auth is off', async () => {
+    const fetchFn = vi.fn(() => Promise.resolve(new Response(null, { status: 204 })));
+    await requestHeadlessTilesCookie(fetchFn, null);
+    expect(fetchFn).toHaveBeenCalledWith(
+      '/session/tiles',
+      expect.objectContaining({ headers: {} }),
+    );
+  });
+
+  it('logs and reports refusal or network failure', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const refused = vi.fn(() => Promise.resolve(new Response(null, { status: 401 })));
+    expect(await requestHeadlessTilesCookie(refused as unknown as typeof fetch, 'x')).toBe(false);
+    const broken = vi.fn(() => Promise.reject(new Error('offline')));
+    expect(await requestHeadlessTilesCookie(broken as unknown as typeof fetch, 'x')).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(2);
   });
 });

@@ -10,7 +10,7 @@
  * Failure points: a malformed or oversized frame is dropped and logged (the session stays open);
  * a handler that throws becomes an `error` frame for that invoke only.
  */
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -26,9 +26,13 @@ import {
   WEB_BRIDGE_MAX_FRAME_BYTES,
   WEB_BRIDGE_PLATFORM_META,
   WEB_BRIDGE_SCRIPT_PATH,
+  WEB_BRIDGE_TILES_COOKIE,
+  WEB_BRIDGE_TILES_PATH,
+  WEB_BRIDGE_TILES_SESSION_PATH,
   WEB_BRIDGE_TOKEN_PARAM,
   WEB_BRIDGE_WS_PATH,
   type WebBridgeServerFrame,
+  webTilesPathToMeshTilesUrl,
 } from '../../shared/webBridgeProtocol';
 import { sanitizeLogMessage } from '../sanitize-log-message';
 import { runInHeadlessCall } from './callContext';
@@ -56,6 +60,11 @@ export interface HeadlessWebServerOptions {
   maxUploadBytes?: number;
   /** Called with the new count whenever a bridge session opens or closes. */
   onSessionCountChange?: (count: number) => void;
+  /**
+   * The desktop `mesh-tiles:` protocol handler (cache, then remote fetch). When set, tiles are
+   * served at `/tiles/…` to holders of the tile cookie; unset, `/tiles/…` is 404.
+   */
+  tileHandler?: (request: Request) => Promise<Response>;
 }
 
 export const HEADLESS_DEFAULT_MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
@@ -66,6 +75,32 @@ function bearerToken(req: http.IncomingMessage): string | null {
   if (typeof header !== 'string') return null;
   const m = /^Bearer (.+)$/.exec(header);
   return m?.[1] ?? null;
+}
+
+/**
+ * Tile cookie value: derived from the token rather than the token itself, so a leaked cookie only
+ * grants map tiles and cannot open a bridge session.
+ */
+export function headlessTilesCookieValue(token: string): string {
+  return createHmac('sha256', token).update('mesh-client map tiles').digest('base64url');
+}
+
+/** Value of one cookie in a `Cookie` header, or `null`. */
+export function readRequestCookie(req: http.IncomingMessage, name: string): string | null {
+  const header = req.headers.cookie;
+  if (typeof header !== 'string') return null;
+  for (const part of header.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    if (part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
+}
+
+/** Whether the browser reached us over HTTPS (directly or via a TLS-terminating proxy). */
+function isHttpsRequest(req: http.IncomingMessage): boolean {
+  if ((req.socket as { encrypted?: boolean }).encrypted === true) return true;
+  return req.headers['x-forwarded-proto'] === 'https';
 }
 
 export interface HeadlessWebServer {
@@ -203,8 +238,73 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     stream.pipe(res);
   };
 
+  const tilesCookie = token === null ? null : headlessTilesCookieValue(token);
+
+  const issueTilesCookie = (req: http.IncomingMessage, res: http.ServerResponse): void => {
+    req.resume();
+    if (req.method !== 'POST') {
+      sendPlain(res, 405, 'Method Not Allowed');
+      return;
+    }
+    if (token !== null && !headlessTokenMatches(token, bearerToken(req))) {
+      sendPlain(res, 401, 'Unauthorized');
+      return;
+    }
+    const attrs = [`Path=${WEB_BRIDGE_TILES_PATH}`, 'HttpOnly', 'SameSite=Strict'];
+    if (isHttpsRequest(req)) attrs.push('Secure');
+    res.writeHead(204, {
+      ...SECURITY_HEADERS,
+      'Cache-Control': 'no-store',
+      ...(tilesCookie === null
+        ? {}
+        : { 'Set-Cookie': `${WEB_BRIDGE_TILES_COOKIE}=${tilesCookie}; ${attrs.join('; ')}` }),
+    });
+    res.end();
+  };
+
+  const serveTile = (req: http.IncomingMessage, res: http.ServerResponse, url: URL): void => {
+    const tileHandler = options.tileHandler;
+    const meshTilesUrl = webTilesPathToMeshTilesUrl(url.pathname, url.search);
+    if (!tileHandler || meshTilesUrl === null) {
+      sendPlain(res, 404, 'Not Found');
+      return;
+    }
+    // Without the cookie the server would be an open tile proxy and reveal which areas are cached.
+    if (
+      tilesCookie !== null &&
+      !headlessTokenMatches(tilesCookie, readRequestCookie(req, WEB_BRIDGE_TILES_COOKIE))
+    ) {
+      sendPlain(res, 401, 'Unauthorized');
+      return;
+    }
+    tileHandler(new Request(meshTilesUrl)).then(
+      async (tile) => {
+        const body = Buffer.from(await tile.arrayBuffer());
+        const headers: Record<string, string> = { ...SECURITY_HEADERS };
+        const type = tile.headers.get('content-type');
+        if (type) headers['Content-Type'] = type;
+        // Private: the response depends on the cookie, so shared caches must not keep it.
+        headers['Cache-Control'] = tile.ok ? 'private, max-age=86400' : 'no-store';
+        res.writeHead(tile.status, headers);
+        res.end(req.method === 'HEAD' ? undefined : body);
+      },
+      (err: unknown) => {
+        console.warn(
+          '[headless] tile request failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+        if (!res.headersSent) sendPlain(res, 500, 'Internal Server Error');
+        else res.destroy();
+      },
+    );
+  };
+
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://headless.invalid');
+    if (url.pathname === WEB_BRIDGE_TILES_SESSION_PATH) {
+      issueTilesCookie(req, res);
+      return;
+    }
     if (url.pathname.startsWith(`${WEB_BRIDGE_FILES_PATH}/`)) {
       if (token !== null && !headlessTokenMatches(token, bearerToken(req))) {
         req.resume();
@@ -220,6 +320,10 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     }
     if (url.pathname === WEB_BRIDGE_SCRIPT_PATH) {
       serveFile(res, bridgeScriptFile);
+      return;
+    }
+    if (url.pathname.startsWith(`${WEB_BRIDGE_TILES_PATH}/`)) {
+      serveTile(req, res, url);
       return;
     }
     if (url.pathname === '/healthz') {

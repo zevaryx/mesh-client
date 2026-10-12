@@ -3,6 +3,8 @@
 import { buildRemoteTileUrl } from '@/shared/offlineMaps/basemapRegistry';
 import { latLonToTile as sharedLatLonToTile } from '@/shared/offlineMaps/tileMath';
 
+import { hostMeshTilesUrl } from './hostKind';
+
 export interface ParsedLocationMessage {
   lat: number;
   lon: number;
@@ -212,7 +214,7 @@ export function latLonToTile(lat: number, lon: number, zoom = 14): WebMercatorTi
 /** OSM tile URL for a static preview via the mesh-tiles disk cache. */
 export function buildStaticTileUrl(lat: number, lon: number, zoom = 14): string {
   const { x, y, z } = latLonToTile(lat, lon, zoom);
-  return `mesh-tiles://osm/${z}/${x}/${y}.png`;
+  return hostMeshTilesUrl(`mesh-tiles://osm/${z}/${x}/${y}.png`);
 }
 
 /** Exact remote host contacted by the OSM cache-miss path for a static chat tile. */

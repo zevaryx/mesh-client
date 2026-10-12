@@ -23,14 +23,6 @@ const ROOT = path.resolve(__dirname, '../../..');
 
 /** Not ported to headless yet, by plan step. */
 const HEADLESS_PENDING_CHANNELS: Record<string, readonly string[]> = {
-  'step 4: offline maps': [
-    'offline-maps:cancel',
-    'offline-maps:clear',
-    'offline-maps:download',
-    'offline-maps:estimate',
-    'offline-maps:status',
-  ],
-  'step 5: notifications': ['notify:message'],
   'step 6: BLE': [
     'ble-reset-pairing-retry-count',
     'bleCoexistence:acquireScan',
