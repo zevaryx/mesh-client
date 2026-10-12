@@ -4,6 +4,7 @@
  * `electron` aliased to `./electronShim`. See docs/development/headless-webui.md.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 
 // Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
 import { ipcMain } from 'electron';
@@ -26,6 +27,12 @@ import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
 import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
+import {
+  IDLE_RETICULUM_STATUS,
+  registerReticulumIpcHandlers,
+  wireReticulumSidecarBridge,
+} from '../ipc/reticulum-handlers';
+import { registerReticulumIdentityIpcHandlers } from '../ipc/reticulum-identity-handlers';
 import { registerRrcDbIpcHandlers } from '../ipc/rrc-db-handlers';
 import { registerSecureSecretsIpcHandlers } from '../ipc/secure-secrets-handlers';
 import { registerServiceAnnouncementIpcHandlers } from '../ipc/service-announcement-handlers';
@@ -33,6 +40,7 @@ import { registerTakIpcHandlers } from '../ipc/tak-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from '../ipc/tcp-bridge';
 import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
 import { MQTTManager } from '../mqtt-manager';
+import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
 import { sanitizeLogMessage } from '../sanitize-log-message';
 import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from '../tak/tak-server-host';
 import { initUpdater } from '../updater';
@@ -51,6 +59,17 @@ const pushTarget = (): BrowserWindow | null =>
 const mqttManager = new MQTTManager();
 const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
 const takServerHost = createTakServerHost({ getMainWindow: pushTarget });
+
+let reticulumSidecarManager: ReticulumSidecarManager | null = null;
+
+/** Same lazy creation as the Electron app (the sidecar binary is spawned on reticulum:start). */
+function ensureReticulumSidecarManager(): ReticulumSidecarManager {
+  if (!reticulumSidecarManager) {
+    reticulumSidecarManager = new ReticulumSidecarManager();
+    wireReticulumSidecarBridge(reticulumSidecarManager, pushTarget);
+  }
+  return reticulumSidecarManager;
+}
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {
@@ -84,6 +103,14 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   // Server location (OS / IP geolocation), not the viewer's: the server is the station.
   registerGpsIpcHandlers();
   registerServiceAnnouncementIpcHandlers({ ipcMain });
+  // BLE (RNode / LoRa GATT) is not wired headless: the sidecar's btleplug needs host BlueZ.
+  registerReticulumIpcHandlers({
+    idleStatus: IDLE_RETICULUM_STATUS,
+    ensureManager: ensureReticulumSidecarManager,
+    getManager: () => reticulumSidecarManager,
+    getMainWindow: pushTarget,
+  });
+  registerReticulumIdentityIpcHandlers({ ipcMain });
   // Reports new releases; container images update by pulling a new image.
   initUpdater(window, { releaseCheckOnly: true });
 }
@@ -105,6 +132,8 @@ async function main(): Promise<void> {
     dataDir: config.dataDir,
     version:
       typeof __MESH_CLIENT_APP_VERSION__ === 'string' ? __MESH_CLIENT_APP_VERSION__ : '0.0.0',
+    // dist-headless/.. — resources/reticulum-sidecar/<binary> is resolved under it.
+    appPath: path.resolve(__dirname, '..'),
   });
 
   configureHeadlessSafeStorage(config.secretKey);
@@ -184,7 +213,17 @@ async function main(): Promise<void> {
     meshcoreMqttAdapter.disconnect();
     takServerHost.get()?.stop();
     takServerHost.get()?.stopRemote();
-    void server.close().then(() => {
+    void server.close().then(async () => {
+      // Stop the Reticulum sidecar (it owns its own files) before closing SQLite. A failed
+      // stop is logged, not fatal: the process is exiting and the sidecar is our child.
+      try {
+        await reticulumSidecarManager?.stop({ forQuit: true });
+      } catch (err) {
+        console.warn(
+          '[headless] reticulum sidecar stop failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+      }
       // After the server stops accepting invokes, so no handler races the close.
       closeDatabase();
       process.exit(0);

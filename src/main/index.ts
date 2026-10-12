@@ -32,7 +32,6 @@ import {
   formatMeshtasticBluetoothPin,
   parseMeshtasticBluetoothPin,
 } from '../shared/meshtasticBluetoothPin';
-import type { ReticulumSidecarStatus } from '../shared/reticulum-types';
 import { MS_PER_MINUTE } from '../shared/timeConstants';
 import {
   bleCoexistenceCoordinator,
@@ -84,7 +83,11 @@ import { registerMqttIpcHandlers } from './ipc/mqtt-handlers';
 import { registerNotificationSoundHandlers } from './ipc/notification-sound-handlers';
 import { registerOfflineMapsIpcHandlers } from './ipc/offline-maps-handlers';
 import { registerReticulumDbIpcHandlers } from './ipc/reticulum-db-handlers';
-import { registerReticulumIpcHandlers, wireReticulumSidecarBridge } from './ipc/reticulum-handlers';
+import {
+  IDLE_RETICULUM_STATUS,
+  registerReticulumIpcHandlers,
+  wireReticulumSidecarBridge,
+} from './ipc/reticulum-handlers';
 import { registerReticulumIdentityIpcHandlers } from './ipc/reticulum-identity-handlers';
 import { registerRrcDbIpcHandlers } from './ipc/rrc-db-handlers';
 import { registerSecureSecretsIpcHandlers } from './ipc/secure-secrets-handlers';
@@ -245,12 +248,6 @@ const mqttManager = new MQTTManager();
 const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
 const takServerHost = createTakServerHost({ getMainWindow: () => mainWindow });
 const ensureTakServerManager = (): Promise<TakServerManager> => takServerHost.ensure();
-
-const IDLE_RETICULUM_STATUS: ReticulumSidecarStatus = {
-  running: false,
-  port: 0,
-  pid: null,
-};
 
 /** MAC address format: XX:XX:XX:XX:XX:XX */
 function isMacAddress(value: string): boolean {

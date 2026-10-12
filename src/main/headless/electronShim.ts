@@ -19,6 +19,8 @@ export type IpcMainEvent = HeadlessIpcEvent;
 interface HeadlessAppConfig {
   dataDir: string;
   version: string;
+  /** Install root (`dist-headless/..`); `resources/reticulum-sidecar/` lives under it. */
+  appPath?: string;
 }
 
 let appConfig: HeadlessAppConfig = {
@@ -58,6 +60,7 @@ interface HeadlessApp {
   getName: () => string;
   getLocale: () => string;
   getPath: (name: HeadlessPathName) => string;
+  getAppPath: () => string;
   on: () => HeadlessApp;
   whenReady: () => Promise<void>;
   quit: () => void;
@@ -70,6 +73,7 @@ export const app: HeadlessApp = {
   getName: (): string => 'Mesh Client',
   getLocale: (): string => 'en-US',
   getPath,
+  getAppPath: (): string => appConfig.appPath ?? process.cwd(),
   /** Lifecycle events (`ready`, `before-quit`, …) never fire headless; the entry owns shutdown. */
   on: () => app,
   whenReady: (): Promise<void> => Promise.resolve(),

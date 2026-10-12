@@ -10,10 +10,29 @@
 #   #   -e MESH_CLIENT_SECRET_KEY_FILE=/run/secrets/<file>   (see docs/development/headless-webui.md)
 
 #   # behind a registry mirror / Docker Hub rate limit:
-#   docker build --build-arg NODE_IMAGE=mirror.gcr.io/library/node -t mesh-client-web .
+#   docker build --build-arg NODE_IMAGE=mirror.gcr.io/library/node \
+#     --build-arg RUST_IMAGE=mirror.gcr.io/library/rust -t mesh-client-web .
 
 ARG NODE_IMAGE=node
 ARG NODE_VERSION=22.22.0
+ARG RUST_IMAGE=rust
+
+# Reticulum sidecar: same features as release CI (scripts/build-reticulum-sidecar-release.mjs).
+# rns-ble links libdbus; BLE itself only works with host BlueZ passed through (Linux hosts).
+FROM ${RUST_IMAGE}:1-bookworm AS sidecar
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libdbus-1-dev pkg-config git \
+  && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY scripts ./scripts
+COPY reticulum-sidecar ./reticulum-sidecar
+# The sidecar embeds shared JSON (interface catalog, RNode RF profiles) at compile time.
+COPY src/shared ./src/shared
+# Clones rsReticulum / rsLXMF / … at the reviewed pins and applies the repo's overlays.
+RUN bash scripts/clone-ratspeak-stack.sh
+RUN cd reticulum-sidecar \
+  && cargo build --release --features rns-stack,rns-ble,rns-rnode-tcp \
+  && strip target/release/mesh-client-reticulum
 
 FROM ${NODE_IMAGE}:${NODE_VERSION}-bookworm-slim AS build
 WORKDIR /src
@@ -34,7 +53,12 @@ ENV NODE_ENV=production \
   MESH_CLIENT_DATA_DIR=/data \
   MESH_CLIENT_WEB_HOST=0.0.0.0 \
   MESH_CLIENT_WEB_PORT=8080
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libdbus-1-3 \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
+# Where reticulum-sidecar-path.ts looks: <app.getAppPath()>/resources/reticulum-sidecar/.
+COPY --from=sidecar /src/reticulum-sidecar/target/release/mesh-client-reticulum ./resources/reticulum-sidecar/mesh-client-reticulum
 # The server bundle is self-contained: no node_modules in the runtime image.
 COPY --from=build /src/dist/renderer ./dist/renderer
 COPY --from=build /src/dist-headless/server.js /src/dist-headless/web-bridge.js ./dist-headless/

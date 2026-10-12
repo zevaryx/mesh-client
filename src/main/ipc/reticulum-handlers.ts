@@ -1,4 +1,3 @@
-import type { BrowserWindow } from 'electron';
 import { ipcMain, shell } from 'electron';
 
 import { parseGamesActionRequest } from '../../shared/games-types';
@@ -25,6 +24,7 @@ import { MS_PER_MINUTE } from '../../shared/timeConstants';
 import { parseVoiceAudioRequest, VOICE_AUDIO_API_PATH } from '../../shared/voice-types';
 import { createIpcRateLimiter } from '../ipcRateLimit';
 import { sanitizeLogMessage } from '../log-service';
+import type { RendererWindowTarget } from '../rendererPushTarget';
 import type { BlocklistExportResult, BlocklistImportFileResult } from '../reticulum-blocklist-file';
 import { readBlocklistFromFile, saveBlocklistToFile } from '../reticulum-blocklist-file';
 import {
@@ -107,11 +107,18 @@ function assertGamesSessionId(sessionId: unknown): string | { error: string } {
   return sessionId;
 }
 
+/** Status reported before the sidecar manager exists (shared by Electron and headless). */
+export const IDLE_RETICULUM_STATUS: ReticulumSidecarStatus = {
+  running: false,
+  port: 0,
+  pid: null,
+};
+
 export interface ReticulumIpcDeps {
   idleStatus: ReticulumSidecarStatus;
   ensureManager: () => ReticulumSidecarManager;
   getManager: () => ReticulumSidecarManager | null;
-  getMainWindow: () => BrowserWindow | null;
+  getMainWindow: () => RendererWindowTarget | null;
 }
 
 function parseReticulumStartOptions(opts: unknown): ReticulumSidecarStartOptions {
@@ -881,7 +888,7 @@ export function registerReticulumIpcHandlers(deps: ReticulumIpcDeps): void {
 
 export function wireReticulumSidecarBridge(
   manager: ReticulumSidecarManager,
-  getMainWindow: () => BrowserWindow | null,
+  getMainWindow: () => RendererWindowTarget | null,
 ): void {
   manager.on('event', (evt) => {
     const win = getMainWindow();

@@ -10,3 +10,8 @@ export interface RendererPushTarget {
     send: (channel: string, ...args: unknown[]) => void;
   };
 }
+
+/** A push target that can also report that its window is gone (Electron `BrowserWindow` shape). */
+export interface RendererWindowTarget extends RendererPushTarget {
+  isDestroyed: () => boolean;
+}

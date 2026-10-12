@@ -13,7 +13,7 @@ import { isNetworkClassFailure } from '@/shared/networkFailure';
 
 import { getDatabase } from './database';
 import { sanitizeLogMessage } from './log-service';
-import type { RendererPushTarget } from './rendererPushTarget';
+import type { RendererWindowTarget } from './rendererPushTarget';
 import { assertIpcSender } from './validate-ipc-sender';
 
 // electron-updater is a runtime dependency only in the packaged app path
@@ -302,9 +302,6 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
   return true;
 }
 
-/** The window updates are announced to (Electron `BrowserWindow`, or the headless window). */
-export type UpdaterWindow = RendererPushTarget & { isDestroyed: () => boolean };
-
 export interface InitUpdaterOptions {
   /**
    * Headless server: GitHub release check only (reports new versions; no electron-updater, no
@@ -313,7 +310,7 @@ export interface InitUpdaterOptions {
   releaseCheckOnly?: boolean;
 }
 
-export function initUpdater(win: UpdaterWindow, options: InitUpdaterOptions = {}): void {
+export function initUpdater(win: RendererWindowTarget, options: InitUpdaterOptions = {}): void {
   const send = (channel: string, payload?: unknown) => {
     if (win.isDestroyed()) return;
     win.webContents.send(channel, payload);
