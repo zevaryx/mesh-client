@@ -21,6 +21,27 @@ const APP_SETTINGS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/app-settings-handlers.ts'),
   'utf-8',
 );
+const DB_MESHTASTIC_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/db-meshtastic-handlers.ts'),
+  'utf-8',
+);
+const DB_MESHCORE_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/db-meshcore-handlers.ts'),
+  'utf-8',
+);
+const DB_IPC_VALIDATION_SOURCE = readFileSync(join(__dirname, 'ipc/db-ipc-validation.ts'), 'utf-8');
+const CHAT_OUTBOX_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/chat-outbox-handlers.ts'),
+  'utf-8',
+);
+/** index.ts plus the db:* / chat:outbox:* modules moved out of it (shared with headless). */
+const MAIN_DB_IPC_SOURCE = [
+  INDEX_SOURCE,
+  DB_MESHTASTIC_IPC_SOURCE,
+  DB_MESHCORE_IPC_SOURCE,
+  DB_IPC_VALIDATION_SOURCE,
+  CHAT_OUTBOX_IPC_SOURCE,
+].join('\n');
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
   'utf-8',
@@ -34,6 +55,9 @@ function ipcHandlerBody(channel: string, span = 400): string {
     GPS_IPC_SOURCE,
     SECURE_SECRETS_IPC_SOURCE,
     APP_SETTINGS_IPC_SOURCE,
+    DB_MESHTASTIC_IPC_SOURCE,
+    DB_MESHCORE_IPC_SOURCE,
+    CHAT_OUTBOX_IPC_SOURCE,
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -527,20 +551,20 @@ describe('tak:start settings validation (source contract)', () => {
 
 describe('MeshCore clear-by-channel validation (source contract)', () => {
   it('allows Rooms channel index -2 in safeMeshcoreChannelIndex', () => {
-    const fnIdx = INDEX_SOURCE.indexOf('function safeMeshcoreChannelIndex');
+    const fnIdx = MAIN_DB_IPC_SOURCE.indexOf('function safeMeshcoreChannelIndex');
     expect(fnIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(fnIdx, fnIdx + 350);
+    const body = MAIN_DB_IPC_SOURCE.slice(fnIdx, fnIdx + 350);
     expect(body).toContain('n < -2');
     expect(body).not.toContain('n < -1');
     expect(body).toContain('Invalid MeshCore channel index');
   });
 
   it('db:clearMeshcoreMessagesByChannel uses safeMeshcoreChannelIndex', () => {
-    const handlerIdx = INDEX_SOURCE.search(
+    const handlerIdx = MAIN_DB_IPC_SOURCE.search(
       /ipcMain\.handle\(\s*'db:clearMeshcoreMessagesByChannel'/,
     );
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 500);
+    const body = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 500);
     expect(body).toContain('safeMeshcoreChannelIndex(channelIdx)');
     expect(body).toContain('safeMeshcoreRadioNodeId(radioNodeId)');
   });
@@ -823,10 +847,10 @@ describe('privileged IPC sender validation (source contract)', () => {
 
 describe('MeshCore message local order IPC contract', () => {
   it('validates the optional local order before saving a message', () => {
-    const validationStart = INDEX_SOURCE.indexOf('function validateSaveMeshcoreMessage(');
-    const validationEnd = INDEX_SOURCE.indexOf('\nfunction ', validationStart + 1);
+    const validationStart = MAIN_DB_IPC_SOURCE.indexOf('function validateSaveMeshcoreMessage(');
+    const validationEnd = MAIN_DB_IPC_SOURCE.indexOf('\nfunction ', validationStart + 1);
     expect(validationStart).toBeGreaterThan(-1);
-    expect(INDEX_SOURCE.slice(validationStart, validationEnd)).toContain(
+    expect(MAIN_DB_IPC_SOURCE.slice(validationStart, validationEnd)).toContain(
       'validateMeshcoreMessageLocalOrder(m.local_order)',
     );
     expect(ipcHandlerBody('db:saveMeshcoreMessage', 800)).toContain('validateSaveMeshcoreMessage(');
@@ -889,15 +913,20 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
   ] as const;
 
   it.each(dbMutatorChannels)('%s calls validateIpcSender', (channel) => {
-    const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    // Single- or multi-line `ipcMain.handle(` (module handlers are indented one level deeper).
+    const handlerIdx = MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     if (handlerIdx === -1) {
-      const multilineIdx = INDEX_SOURCE.indexOf(`ipcMain.handle(\n  '${channel}'`);
+      const multilineIdx = Math.max(
+        ...['  ', '    '].map((indent) =>
+          MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle(\n${indent}'${channel}'`),
+        ),
+      );
       expect(multilineIdx).toBeGreaterThan(-1);
-      const handlerBody = INDEX_SOURCE.slice(multilineIdx, multilineIdx + 400);
+      const handlerBody = MAIN_DB_IPC_SOURCE.slice(multilineIdx, multilineIdx + 400);
       expect(handlerBody).toContain('validateIpcSender(event)');
       return;
     }
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const handlerBody = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(handlerBody).toContain('validateIpcSender(event)');
   });
 
@@ -925,9 +954,9 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
   ] as const;
 
   it.each(dbReadChannels)('%s calls assertIpcSender', (channel) => {
-    const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 400);
+    const handlerBody = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 400);
     expect(handlerBody).toContain(`assertIpcSender(event, '${channel}')`);
   });
 
@@ -936,9 +965,9 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     ['app:getLoginItem', "assertIpcSender(event, 'app:getLoginItem')"],
     ['log:device-connection', 'validateIpcSender(event)'],
   ] as const)('%s validates the IPC sender', (channel, expectedCheck) => {
-    const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = MAIN_DB_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const body = MAIN_DB_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(body).toContain(expectedCheck);
   });
 
@@ -948,9 +977,9 @@ describe('db mutator IPC sender validation (source contract, H3)', () => {
     const re = /ipcMain\.handle\(\s*\n?\s*'(db:[a-zA-Z]+)'/g;
     const missing: string[] = [];
     let m: RegExpExecArray | null;
-    while ((m = re.exec(INDEX_SOURCE))) {
+    while ((m = re.exec(MAIN_DB_IPC_SOURCE))) {
       const channel = m[1];
-      const body = INDEX_SOURCE.slice(m.index, m.index + 400);
+      const body = MAIN_DB_IPC_SOURCE.slice(m.index, m.index + 400);
       const hasCheck =
         body.includes('assertIpcSender(event') || body.includes('validateIpcSender(event)');
       if (!hasCheck) missing.push(channel);

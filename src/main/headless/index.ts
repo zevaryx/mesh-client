@@ -5,6 +5,9 @@
  */
 import fs from 'node:fs';
 
+// Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
+import { ipcMain } from 'electron';
+
 import {
   closeDatabase,
   getDatabase,
@@ -15,6 +18,12 @@ import {
 import { MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE_ENV } from '../fatal-startup-dialog';
 import { validateHttpHost } from '../httpHostValidation';
 import { registerAppSettingsIpcHandlers } from '../ipc/app-settings-handlers';
+import { registerChatOutboxIpcHandlers } from '../ipc/chat-outbox-handlers';
+import { registerMeshcoreDbIpcHandlers } from '../ipc/db-meshcore-handlers';
+import { registerMeshtasticDbIpcHandlers } from '../ipc/db-meshtastic-handlers';
+import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-telemetry-handlers';
+import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
+import { registerRrcDbIpcHandlers } from '../ipc/rrc-db-handlers';
 import { registerSecureSecretsIpcHandlers } from '../ipc/secure-secrets-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from '../ipc/tcp-bridge';
 import { sanitizeLogMessage } from '../sanitize-log-message';
@@ -29,6 +38,12 @@ declare const __MESH_CLIENT_APP_VERSION__: string | undefined;
 function registerHeadlessHandlers(window: BrowserWindow): void {
   registerSecureSecretsIpcHandlers({ getDatabase });
   registerAppSettingsIpcHandlers({ getDatabase });
+  registerMeshtasticDbIpcHandlers();
+  registerMeshcoreDbIpcHandlers();
+  registerChatOutboxIpcHandlers();
+  registerReticulumDbIpcHandlers({ ipcMain });
+  registerRrcDbIpcHandlers({ ipcMain });
+  registerEnvironmentTelemetryIpcHandlers({ ipcMain });
   registerTcpBridgeIpcHandlers({
     getMainWindow: () => (window.isDestroyed() ? null : window),
     validateHost: validateHttpHost,

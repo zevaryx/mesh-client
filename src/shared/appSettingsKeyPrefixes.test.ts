@@ -11,7 +11,11 @@ import {
   MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX,
 } from './appSettingsKeyPrefixes';
 
-const INDEX_SOURCE = readFileSync(join(__dirname, '../main/index.ts'), 'utf-8');
+/** The main-process allow-list lives in the shared app-settings IPC module. */
+const APP_SETTINGS_IPC_SOURCE = readFileSync(
+  join(__dirname, '../main/ipc/app-settings-handlers.ts'),
+  'utf-8',
+);
 
 describe('appSettingsKeyPrefixes', () => {
   it('exports the canonical prefixes used by renderer storage modules', () => {
@@ -23,13 +27,13 @@ describe('appSettingsKeyPrefixes', () => {
   });
 
   it('is imported by main IPC allowlist (no duplicated string literals)', () => {
-    expect(INDEX_SOURCE).toContain("from '../shared/appSettingsKeyPrefixes'");
-    expect(INDEX_SOURCE).toContain('MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).not.toMatch(
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("from '../../shared/appSettingsKeyPrefixes'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).not.toMatch(
       /const MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX = 'meshtasticRemoteAdminKey:'/,
     );
   });

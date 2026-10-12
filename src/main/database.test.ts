@@ -197,62 +197,71 @@ describe('meshcore_trace_history schema and retention', () => {
  * instead of overwriting with null/empty values.
  */
 describe('saveNode UPSERT COALESCE preservation', () => {
-  const INDEX_SOURCE = readFileSync(join(__dirname, '../main/index.ts'), 'utf-8');
+  const MESHTASTIC_DB_IPC_SOURCE = readFileSync(
+    join(__dirname, '../main/ipc/db-meshtastic-handlers.ts'),
+    'utf-8',
+  );
 
   it('uses COALESCE for long_name to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
       /long_name = COALESCE\(NULLIF\(excluded\.long_name, ''\), nodes\.long_name\)/,
     );
   });
 
   it('uses COALESCE for short_name to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
       /short_name = COALESCE\(NULLIF\(excluded\.short_name, ''\), nodes\.short_name\)/,
     );
   });
 
   it('uses COALESCE for hw_model to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
       /hw_model = COALESCE\(NULLIF\(excluded\.hw_model, ''\), nodes\.hw_model\)/,
     );
   });
 
   it('uses COALESCE for snr to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(/snr = COALESCE\(excluded\.snr, nodes\.snr\)/);
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(/snr = COALESCE\(excluded\.snr, nodes\.snr\)/);
   });
 
   it('uses COALESCE for rssi to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(/rssi = COALESCE\(excluded\.rssi, nodes\.rssi\)/);
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(/rssi = COALESCE\(excluded\.rssi, nodes\.rssi\)/);
   });
 
   it('uses COALESCE for battery to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(/battery = COALESCE\(excluded\.battery, nodes\.battery\)/);
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
+      /battery = COALESCE\(excluded\.battery, nodes\.battery\)/,
+    );
   });
 
   it('uses CASE for last_heard to only update when positive', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
       /last_heard = CASE WHEN excluded\.last_heard IS NOT NULL AND excluded\.last_heard > 0/,
     );
   });
 
   it('uses CASE for latitude to only update when non-zero', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
       /latitude = CASE WHEN excluded\.latitude IS NOT NULL AND excluded\.latitude != 0/,
     );
   });
 
   it('uses CASE for longitude to only update when non-zero', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
       /longitude = CASE WHEN excluded\.longitude IS NOT NULL AND excluded\.longitude != 0/,
     );
   });
 
   it('uses COALESCE for voltage to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(/voltage = COALESCE\(excluded\.voltage, nodes\.voltage\)/);
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
+      /voltage = COALESCE\(excluded\.voltage, nodes\.voltage\)/,
+    );
   });
 
   it('uses COALESCE for altitude to preserve existing values', () => {
-    expect(INDEX_SOURCE).toMatch(/altitude = COALESCE\(excluded\.altitude, nodes\.altitude\)/);
+    expect(MESHTASTIC_DB_IPC_SOURCE).toMatch(
+      /altitude = COALESCE\(excluded\.altitude, nodes\.altitude\)/,
+    );
   });
 });
 
@@ -405,7 +414,11 @@ describe('escapeSqlLikePattern', () => {
  * directly in this Node test environment.
  */
 describe('app_settings table + message retention defaults (schema sync)', () => {
-  const INDEX_SOURCE = readFileSync(join(__dirname, '../main/index.ts'), 'utf-8');
+  /** db:* handlers moved out of index.ts into ipc/ modules (shared with headless). */
+  const DB_IPC_HANDLERS_SOURCE = [
+    readFileSync(join(__dirname, '../main/ipc/db-meshtastic-handlers.ts'), 'utf-8'),
+    readFileSync(join(__dirname, '../main/ipc/db-meshcore-handlers.ts'), 'utf-8'),
+  ].join('\n');
   const APP_SETTINGS_IPC_SOURCE = readFileSync(
     join(__dirname, '../main/ipc/app-settings-handlers.ts'),
     'utf-8',
@@ -493,22 +506,22 @@ describe('app_settings table + message retention defaults (schema sync)', () => 
   });
 
   it('db:pruneMessagesByCount keeps the newest N rows by timestamp', () => {
-    expect(INDEX_SOURCE).toContain("'db:pruneMessagesByCount'");
-    expect(INDEX_SOURCE).toMatch(
+    expect(DB_IPC_HANDLERS_SOURCE).toContain("'db:pruneMessagesByCount'");
+    expect(DB_IPC_HANDLERS_SOURCE).toMatch(
       /DELETE FROM messages WHERE id NOT IN \(SELECT id FROM messages ORDER BY timestamp DESC, id DESC LIMIT \?\)/,
     );
   });
 
   it('db:pruneMeshcoreMessagesByCount keeps the newest N rows by timestamp', () => {
-    expect(INDEX_SOURCE).toContain("'db:pruneMeshcoreMessagesByCount'");
-    expect(INDEX_SOURCE).toMatch(
+    expect(DB_IPC_HANDLERS_SOURCE).toContain("'db:pruneMeshcoreMessagesByCount'");
+    expect(DB_IPC_HANDLERS_SOURCE).toMatch(
       /DELETE FROM meshcore_messages WHERE id NOT IN \(SELECT id FROM meshcore_messages ORDER BY timestamp DESC, id DESC LIMIT \?\)/,
     );
   });
 
   it('prune handlers reject obviously invalid maxCount inputs', () => {
     // Both prune handlers should refuse counts under the safety floor (100).
-    const matches = INDEX_SOURCE.match(/maxCount < 100 \|\| !isFinite\(maxCount\)/g);
+    const matches = DB_IPC_HANDLERS_SOURCE.match(/maxCount < 100 \|\| !isFinite\(maxCount\)/g);
     expect(matches).not.toBeNull();
     expect(matches!.length).toBeGreaterThanOrEqual(2);
   });

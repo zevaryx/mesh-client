@@ -11,7 +11,10 @@ import { runSchemaUpgrade } from './db-schema-sync';
  * executed against an in-memory schema to prove behavior (not just text shape).
  */
 const DB_SOURCE = readFileSync(join(__dirname, 'database.ts'), 'utf-8');
-const INDEX_SOURCE = readFileSync(join(__dirname, 'index.ts'), 'utf-8');
+const DB_MESHCORE_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/db-meshcore-handlers.ts'),
+  'utf-8',
+);
 
 function joinStringLiterals(expr: string): string {
   const parts: string[] = [];
@@ -28,7 +31,7 @@ function extractUpsertSql(): string {
 }
 
 function extractAdvertLastAdvertSql(): string {
-  const m = /const lastAdvertSql =([\s\S]*?);\n/.exec(INDEX_SOURCE);
+  const m = /const lastAdvertSql =([\s\S]*?);\n/.exec(DB_MESHCORE_IPC_SOURCE);
   if (!m) throw new Error('lastAdvertSql not found in db:updateMeshcoreContactAdvert');
   return joinStringLiterals(m[1]);
 }

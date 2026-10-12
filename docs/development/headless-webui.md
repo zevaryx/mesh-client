@@ -2,7 +2,7 @@
 
 Run Mesh Client as a server and use it from a browser: the React renderer is served over HTTP and talks to a Node process (no Electron) through a WebSocket. The goal is an always-on gateway image (`docker run … mesh-client-web`) for TCP/HTTP radios, MQTT and Reticulum.
 
-> **Status: early.** The bridge, server, build and image are in place, and the app shell loads in the browser with its SQLite database, app settings and encrypted secret storage. Radio data panels stay empty until the `db:*` handlers are ported; only TCP radios can connect so far (see [Porting status](#porting-status)).
+> **Status: early.** The bridge, server, build and image are in place. The app shell loads in the browser and reads and writes its SQLite database (nodes, messages, contacts, outbox, Reticulum/RRC tables), app settings and encrypted secret storage. Only TCP radios can connect so far (see [Porting status](#porting-status)).
 
 ## Architecture
 
@@ -83,18 +83,19 @@ Electron APIs and their headless meaning, for the shim:
 
 ## Porting status
 
-| Area                                                             | Status                                                                                           |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| Bridge, server, build, Docker image                              | Done                                                                                             |
-| Meshtastic / MeshCore TCP (`*:tcp-*`)                            | Done (`ipc/tcp-bridge.ts`)                                                                       |
-| Boot gate: `secureSecrets:*`, `appSettings:*`, database          | Done (`ipc/secure-secrets-handlers.ts`, `ipc/app-settings-handlers.ts`, moved out of `index.ts`) |
-| Database reads/maintenance (`db:*`, ~117 handlers in `index.ts`) | Next: move into `ipc/` modules                                                                   |
-| Heartbeat, TAK status, updater, GPS fix at startup               | Pending (TAK and updater show an error state in the status bar)                                  |
-| Meshtastic HTTP (`http:*`, `hostLink:*`)                         | Pending (handlers inline in `index.ts`)                                                          |
-| MQTT (`mqtt:*`)                                                  | Pending                                                                                          |
-| Reticulum sidecar (`reticulum:*`)                                | Pending; the image also needs the Rust sidecar binary                                            |
-| BLE (`gatt*`)                                                    | Linux hosts only (host D-Bus/BlueZ passthrough); pending                                         |
-| Serial                                                           | Web Serial in the viewer's Chromium browser; server-side serial would be a new bridge            |
+| Area                                                    | Status                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bridge, server, build, Docker image                     | Done                                                                                                                                                                                                                                                                               |
+| Meshtastic / MeshCore TCP (`*:tcp-*`)                   | Done (`ipc/tcp-bridge.ts`)                                                                                                                                                                                                                                                         |
+| Boot gate: `secureSecrets:*`, `appSettings:*`, database | Done (`ipc/secure-secrets-handlers.ts`, `ipc/app-settings-handlers.ts`, moved out of `index.ts`)                                                                                                                                                                                   |
+| SQLite `db:*` and `chat:outbox:*`                       | Done: `ipc/db-meshtastic-handlers.ts`, `ipc/db-meshcore-handlers.ts`, `ipc/chat-outbox-handlers.ts` (validators in `ipc/db-ipc-validation.ts`), moved verbatim out of `index.ts`; the existing `reticulum-db`, `rrc-db` and `environment-telemetry` modules also register headless |
+| `db:export` / `db:import`                               | Pending: use native file dialogs; need browser download/upload endpoints                                                                                                                                                                                                           |
+| Heartbeat, TAK status, updater, GPS fix at startup      | Pending (TAK and updater show an error state in the status bar)                                                                                                                                                                                                                    |
+| Meshtastic HTTP (`http:*`, `hostLink:*`)                | Pending (handlers inline in `index.ts`)                                                                                                                                                                                                                                            |
+| MQTT (`mqtt:*`)                                         | Pending                                                                                                                                                                                                                                                                            |
+| Reticulum sidecar (`reticulum:*`)                       | Pending; the image also needs the Rust sidecar binary                                                                                                                                                                                                                              |
+| BLE (`gatt*`)                                           | Linux hosts only (host D-Bus/BlueZ passthrough); pending                                                                                                                                                                                                                           |
+| Serial                                                  | Web Serial in the viewer's Chromium browser; server-side serial would be a new bridge                                                                                                                                                                                              |
 
 Open design questions: several tabs share one backend and radio (all see every push and can send); exports and attachments that pass server file paths need upload/download flows.
 
