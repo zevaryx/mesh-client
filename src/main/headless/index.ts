@@ -23,10 +23,13 @@ import { registerMeshcoreDbIpcHandlers } from '../ipc/db-meshcore-handlers';
 import { registerMeshtasticDbIpcHandlers } from '../ipc/db-meshtastic-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-telemetry-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
+import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
 import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
 import { registerRrcDbIpcHandlers } from '../ipc/rrc-db-handlers';
 import { registerSecureSecretsIpcHandlers } from '../ipc/secure-secrets-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from '../ipc/tcp-bridge';
+import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
+import { MQTTManager } from '../mqtt-manager';
 import { sanitizeLogMessage } from '../sanitize-log-message';
 import { formatHeadlessAccessUrl, HeadlessConfigError, resolveHeadlessConfig } from './config';
 import { BrowserWindow, configureHeadlessApp, configureHeadlessSafeStorage } from './electronShim';
@@ -34,6 +37,9 @@ import { headlessIpcRegistry } from './ipcRegistry';
 import { createHeadlessWebServer } from './webServer';
 
 declare const __MESH_CLIENT_APP_VERSION__: string | undefined;
+
+const mqttManager = new MQTTManager();
+const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {
@@ -50,6 +56,13 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     validateHost: validateHttpHost,
   });
   registerHttpBridgeIpcHandlers({ getMainWindow: () => (window.isDestroyed() ? null : window) });
+  registerMqttIpcHandlers({
+    mqttManager,
+    meshcoreMqttAdapter,
+    getMainWindow: () => (window.isDestroyed() ? null : window),
+    // TAK is not ported to headless yet.
+    getTakServerManager: () => null,
+  });
 }
 
 async function main(): Promise<void> {
@@ -142,6 +155,8 @@ async function main(): Promise<void> {
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
     stopHttpBridgePolling();
+    mqttManager.disconnect();
+    meshcoreMqttAdapter.disconnect();
     void server.close().then(() => {
       // After the server stops accepting invokes, so no handler races the close.
       closeDatabase();

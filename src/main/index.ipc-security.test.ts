@@ -35,6 +35,7 @@ const CHAT_OUTBOX_IPC_SOURCE = readFileSync(
   'utf-8',
 );
 const HTTP_BRIDGE_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8');
+const MQTT_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/mqtt-handlers.ts'), 'utf-8');
 /** index.ts plus the IPC modules moved out of it (shared with the headless server). */
 const MAIN_IPC_SOURCE = [
   INDEX_SOURCE,
@@ -43,6 +44,7 @@ const MAIN_IPC_SOURCE = [
   DB_IPC_VALIDATION_SOURCE,
   CHAT_OUTBOX_IPC_SOURCE,
   HTTP_BRIDGE_IPC_SOURCE,
+  MQTT_IPC_SOURCE,
 ].join('\n');
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
@@ -61,6 +63,7 @@ function ipcHandlerBody(channel: string, span = 400): string {
     DB_MESHCORE_IPC_SOURCE,
     CHAT_OUTBOX_IPC_SOURCE,
     HTTP_BRIDGE_IPC_SOURCE,
+    MQTT_IPC_SOURCE,
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -77,8 +80,10 @@ function ipcHandlerBody(channel: string, span = 400): string {
 
 describe('validateHttpHost (source contract)', () => {
   it('uses the shared validateHttpHost from httpHostValidation', () => {
-    expect(INDEX_SOURCE).toContain(
-      "import { isValidHttpHostname, validateHttpHost } from './httpHostValidation'",
+    expect(INDEX_SOURCE).toContain("import { validateHttpHost } from './httpHostValidation'");
+    // MQTT broker hostnames use isValidHttpHostname in the moved MQTT validators.
+    expect(MQTT_IPC_SOURCE).toContain(
+      "import { isValidHttpHostname } from '../httpHostValidation'",
     );
     expect(INDEX_SOURCE).not.toContain('function validateHttpHost(');
     expect(HOST_VALIDATION_SOURCE).toContain('isValidConnectHost(bareHost)');
@@ -740,9 +745,9 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('validateMqttSettings rejects invalid broker hostnames', () => {
-    const fnIdx = INDEX_SOURCE.indexOf('function validateMqttSettings(');
+    const fnIdx = MAIN_IPC_SOURCE.indexOf('function validateMqttSettings(');
     expect(fnIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(fnIdx, fnIdx + 500);
+    const body = MAIN_IPC_SOURCE.slice(fnIdx, fnIdx + 500);
     expect(body).toContain('isValidHttpHostname(s.server.trim())');
   });
 
@@ -1007,33 +1012,38 @@ describe('MQTT mutator IPC sender validation (source contract, H2)', () => {
   ] as const;
 
   it.each(mqttMutatorChannels)('%s calls assertIpcSender', (channel) => {
-    const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = MAIN_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     if (handlerIdx === -1) {
       // mqtt:updateMeshcoreToken's ipcMain.handle( call wraps the channel name onto its own
       // line — fall back to the multiline shape.
-      const multilineIdx = INDEX_SOURCE.indexOf(`ipcMain.handle(\n  '${channel}'`);
+      // (Indented one level deeper inside registerMqttIpcHandlers.)
+      const multilineIdx = Math.max(
+        ...['  ', '    '].map((indent) =>
+          MAIN_IPC_SOURCE.indexOf(`ipcMain.handle(\n${indent}'${channel}'`),
+        ),
+      );
       expect(multilineIdx).toBeGreaterThan(-1);
-      const handlerBody = INDEX_SOURCE.slice(multilineIdx, multilineIdx + 400);
+      const handlerBody = MAIN_IPC_SOURCE.slice(multilineIdx, multilineIdx + 400);
       expect(handlerBody).toContain(`assertIpcSender(event, '${channel}')`);
       return;
     }
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const handlerBody = MAIN_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(handlerBody).toContain(`assertIpcSender(event, '${channel}')`);
   });
 
   it('mqtt:updateMeshcoreToken validates token is a non-empty, length-capped string', () => {
-    const idx = INDEX_SOURCE.indexOf("'mqtt:updateMeshcoreToken'");
+    const idx = MAIN_IPC_SOURCE.indexOf("'mqtt:updateMeshcoreToken'");
     expect(idx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(idx, idx + 700);
-    expect(INDEX_SOURCE).toContain('const MQTT_MESHCORE_TOKEN_MAX_LENGTH = 8192;');
+    const body = MAIN_IPC_SOURCE.slice(idx, idx + 700);
+    expect(MAIN_IPC_SOURCE).toContain('const MQTT_MESHCORE_TOKEN_MAX_LENGTH = 8192;');
     expect(body).toContain("typeof token !== 'string' || token.length === 0");
     expect(body).toContain('token.length > MQTT_MESHCORE_TOKEN_MAX_LENGTH');
   });
 
   it('mqtt:updateMeshcoreToken validates expiresAt is a finite number', () => {
-    const idx = INDEX_SOURCE.indexOf("'mqtt:updateMeshcoreToken'");
+    const idx = MAIN_IPC_SOURCE.indexOf("'mqtt:updateMeshcoreToken'");
     expect(idx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(idx, idx + 700);
+    const body = MAIN_IPC_SOURCE.slice(idx, idx + 700);
     expect(body).toContain("typeof expiresAt !== 'number' || !Number.isFinite(expiresAt)");
   });
 });

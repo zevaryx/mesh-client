@@ -18,6 +18,7 @@ const MAIN_IPC_SOURCE = [
   readFileSync(join(__dirname, 'ipc/db-ipc-validation.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/chat-outbox-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8'),
+  readFileSync(join(__dirname, 'ipc/mqtt-handlers.ts'), 'utf-8'),
 ].join('\n');
 const APP_SETTINGS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/app-settings-handlers.ts'),
@@ -104,43 +105,43 @@ describe('GATT BLE disconnect handling (source contract)', () => {
 
 describe('MeshCore packet log IPC (source contract)', () => {
   it('validates publishMeshcorePacketLog args and wires handler', () => {
-    expect(INDEX_SOURCE).toContain('const MAX_MESHCORE_PACKET_LOG_ORIGIN = 200');
-    expect(INDEX_SOURCE).toContain('const MAX_MESHCORE_PACKET_LOG_RAW_HEX = 2048');
-    expect(INDEX_SOURCE).toContain(
+    expect(MAIN_IPC_SOURCE).toContain('const MAX_MESHCORE_PACKET_LOG_ORIGIN = 200');
+    expect(MAIN_IPC_SOURCE).toContain('const MAX_MESHCORE_PACKET_LOG_RAW_HEX = 2048');
+    expect(MAIN_IPC_SOURCE).toContain(
       'function validateMqttPublishMeshcorePacketLogArgs(args: unknown)',
     );
-    expect(INDEX_SOURCE).toMatch(/validateMqttPublishMeshcorePacketLogArgs\(args\)/);
-    expect(INDEX_SOURCE).toContain('mqtt:publishMeshcorePacketLog');
-    expect(INDEX_SOURCE).toMatch(/rawHex must be hex/);
+    expect(MAIN_IPC_SOURCE).toMatch(/validateMqttPublishMeshcorePacketLogArgs\(args\)/);
+    expect(MAIN_IPC_SOURCE).toContain('mqtt:publishMeshcorePacketLog');
+    expect(MAIN_IPC_SOURCE).toMatch(/rawHex must be hex/);
   });
 });
 
 describe('Meshtastic MQTT waypoint IPC (source contract)', () => {
   it('registers publishWaypoint handler with validation', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:publishWaypoint'");
-    expect(INDEX_SOURCE).toContain('validateMqttPublishWaypointArgs');
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:publishWaypoint'");
+    expect(MAIN_IPC_SOURCE).toContain('validateMqttPublishWaypointArgs');
   });
 });
 
 describe('MQTT forwarder dropped-event logs (source contract)', () => {
   it('sanitizes dynamic MQTT fields when mainWindow is not ready', () => {
     // Path-specific (not aggregate counts): each dropped-event branch sanitizes its payload.
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /mqtt:status dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(s\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /mqtt:error dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(msg\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /mqtt:clientId dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(id\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /mqtt:status \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(s\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /mqtt:error \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(msg\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toMatch(
       /mqtt:clientId \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(id\)/,
     );
   });
@@ -708,16 +709,16 @@ describe('IPC sender validation on high-value handlers (source contract)', () =>
 
 describe('MQTT IPC handlers (source contract)', () => {
   it('registers mqtt:connect, mqtt:disconnect handlers', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:connect'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:disconnect'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:connect'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:disconnect'");
   });
 
   it('registers mqtt:publish with payload validation', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:publish'");
-    expect(INDEX_SOURCE).toMatch(/validateMqttPublish/);
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:publishProxy'");
-    expect(INDEX_SOURCE).toContain('validateMqttPublishProxyArgs');
-    expect(INDEX_SOURCE).toContain('mqtt:publishProxy: data too long');
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:publish'");
+    expect(MAIN_IPC_SOURCE).toMatch(/validateMqttPublish/);
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:publishProxy'");
+    expect(MAIN_IPC_SOURCE).toContain('validateMqttPublishProxyArgs');
+    expect(MAIN_IPC_SOURCE).toContain('mqtt:publishProxy: data too long');
   });
 
   it('registers meshtastic XMODEM file IPC handlers', () => {
@@ -726,13 +727,13 @@ describe('MQTT IPC handlers (source contract)', () => {
   });
 
   it('registers mqtt:publishNodeInfo and mqtt:publishPosition', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:publishNodeInfo'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:publishPosition'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:publishNodeInfo'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:publishPosition'");
   });
 
   it('registers mqtt power suspend/resume handlers for sleep/wake recovery', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:powerResume'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('mqtt:powerSuspend'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:powerResume'");
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('mqtt:powerSuspend'");
   });
 
   it('registers renderer heartbeat IPC for post-resume hang detection', () => {
