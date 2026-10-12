@@ -10,6 +10,7 @@
 import os from 'node:os';
 import path from 'node:path';
 
+import { createHeadlessSafeStorage, type HeadlessSafeStorage } from './headlessSafeStorage';
 import { type HeadlessIpcEvent, headlessIpcRegistry } from './ipcRegistry';
 
 export type IpcMainInvokeEvent = HeadlessIpcEvent;
@@ -129,3 +130,33 @@ export class BrowserWindow {
     this.destroyed = true;
   }
 }
+
+let safeStorageImpl: HeadlessSafeStorage = createHeadlessSafeStorage(null);
+
+/** Set by the headless entry point from `MESH_CLIENT_SECRET_KEY(_FILE)`; `null` = no key. */
+export function configureHeadlessSafeStorage(keyMaterial: string | null): void {
+  safeStorageImpl = createHeadlessSafeStorage(keyMaterial);
+}
+
+/** Stable object (modules hold the import) delegating to the configured implementation. */
+export const safeStorage: HeadlessSafeStorage = {
+  isEncryptionAvailable: () => safeStorageImpl.isEncryptionAvailable(),
+  getSelectedStorageBackend: () => safeStorageImpl.getSelectedStorageBackend(),
+  encryptString: (plainText) => safeStorageImpl.encryptString(plainText),
+  decryptString: (encrypted) => safeStorageImpl.decryptString(encrypted),
+};
+
+/**
+ * No native dialogs headless. Prompts throw, and callers already treat a dialog failure as
+ * "declined" (e.g. `confirmDatabaseSchemaUpgrade` refuses the upgrade unless
+ * `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE=1`), so nothing irreversible happens without the operator.
+ * Error boxes go to the server log.
+ */
+export const dialog = {
+  showMessageBoxSync: (): never => {
+    throw new Error('native dialogs are not available in headless mode');
+  },
+  showErrorBox: (title: string, content: string): void => {
+    console.error(`[headless] ${title}: ${content}`); // log-injection-ok fixed app-authored startup error text
+  },
+};

@@ -25,13 +25,6 @@ import path from 'path';
 import zlib from 'zlib';
 
 import type { MQTTSettings } from '../renderer/lib/types';
-import {
-  MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX,
-  MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX,
-  MESHCORE_ROOM_LAST_POST_SETTING_PREFIX,
-  MESHCORE_ROOM_SYNC_SETTING_PREFIX,
-  MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX,
-} from '../shared/appSettingsKeyPrefixes';
 import { APP_ABOUT_TAGLINE } from '../shared/appTagline';
 import { isChannelIdentityKey } from '../shared/channelIdentityKey';
 import { clampQueryLimit } from '../shared/clampQueryLimit';
@@ -131,6 +124,7 @@ import { formatGpxTracks, GPX_EXPORT_MAX_POINTS } from './gpxExportFormat';
 import { isHarmlessSocketOptionError } from './harmlessSocketOptionError';
 import { probeHttpRttMs, probeTcpRttMs } from './host-link-rtt';
 import { isValidHttpHostname, validateHttpHost } from './httpHostValidation';
+import { registerAppSettingsIpcHandlers } from './ipc/app-settings-handlers';
 import { registerBeaconIpcHandlers } from './ipc/beacon-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from './ipc/environment-telemetry-handlers';
 import { registerFlasherHandlers } from './ipc/flasher-handlers';
@@ -143,6 +137,7 @@ import { registerReticulumDbIpcHandlers } from './ipc/reticulum-db-handlers';
 import { registerReticulumIpcHandlers, wireReticulumSidecarBridge } from './ipc/reticulum-handlers';
 import { registerReticulumIdentityIpcHandlers } from './ipc/reticulum-identity-handlers';
 import { registerRrcDbIpcHandlers } from './ipc/rrc-db-handlers';
+import { registerSecureSecretsIpcHandlers } from './ipc/secure-secrets-handlers';
 import { registerServiceAnnouncementIpcHandlers } from './ipc/service-announcement-handlers';
 import { registerTakIpcHandlers } from './ipc/tak-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from './ipc/tcp-bridge';
@@ -200,7 +195,6 @@ import {
 } from './reticulum-attachment-image';
 import { assertReticulumAttachmentPathJailed } from './reticulum-attachment-path';
 import { ReticulumSidecarManager } from './reticulum-sidecar-manager';
-import { SecureSecretStore } from './secure-secret-store';
 import {
   buildSupportBundleZip,
   defaultSupportBundleFilename,
@@ -3695,67 +3689,7 @@ const exportIpcRateLimit = createIpcRateLimiter({
   windowMs: MS_PER_MINUTE,
   label: 'export',
 });
-/** Typed secure-secret operations — max 120 / 60s for startup hydration and migrations. */
-const secureSecretIpcRateLimit = createIpcRateLimiter({
-  max: 120,
-  windowMs: MS_PER_MINUTE,
-  label: 'secureSecrets',
-});
-const secureSecretStore = new SecureSecretStore(getDatabase);
-
-ipcMain.handle('secureSecrets:status', (event) => {
-  assertIpcSender(event, 'secureSecrets:status');
-  secureSecretIpcRateLimit.checkOrThrow();
-  return secureSecretStore.status();
-});
-
-ipcMain.handle('secureSecrets:list', (event) => {
-  assertIpcSender(event, 'secureSecrets:list');
-  secureSecretIpcRateLimit.checkOrThrow();
-  return secureSecretStore.list();
-});
-
-ipcMain.handle('secureSecrets:getAll', (event) => {
-  assertIpcSender(event, 'secureSecrets:getAll');
-  secureSecretIpcRateLimit.checkOrThrow();
-  return secureSecretStore.getAll();
-});
-
-ipcMain.handle('secureSecrets:get', (event, key: unknown) => {
-  assertIpcSender(event, 'secureSecrets:get');
-  secureSecretIpcRateLimit.checkOrThrow();
-  return secureSecretStore.get(key);
-});
-
-ipcMain.handle(
-  'secureSecrets:set',
-  (event, key: unknown, value: unknown, requirePersistent?: unknown) => {
-    assertIpcSender(event, 'secureSecrets:set');
-    secureSecretIpcRateLimit.checkOrThrow();
-    return secureSecretStore.set(key, value, requirePersistent);
-  },
-);
-
-ipcMain.handle('secureSecrets:remove', (event, key: unknown) => {
-  assertIpcSender(event, 'secureSecrets:remove');
-  secureSecretIpcRateLimit.checkOrThrow();
-  secureSecretStore.remove(key);
-});
-
-ipcMain.handle('secureSecrets:migrateLegacyIdentityCiphertext', (event, ciphertext: unknown) => {
-  assertIpcSender(event, 'secureSecrets:migrateLegacyIdentityCiphertext');
-  secureSecretIpcRateLimit.checkOrThrow();
-  return secureSecretStore.migrateLegacyIdentityCiphertext(ciphertext);
-});
-
-ipcMain.handle(
-  'secureSecrets:migrateLegacyBackupCiphertext',
-  (event, protocol: unknown, id: unknown, format: unknown, ciphertext: unknown) => {
-    assertIpcSender(event, 'secureSecrets:migrateLegacyBackupCiphertext');
-    secureSecretIpcRateLimit.checkOrThrow();
-    return secureSecretStore.migrateLegacyBackupCiphertext(protocol, id, format, ciphertext);
-  },
-);
+registerSecureSecretsIpcHandlers({ getDatabase });
 
 // ─── IPC: Login item (launch at startup) ───────────────────────────
 ipcMain.handle('app:getProcessUptimeSec', (event) => {
@@ -3807,147 +3741,14 @@ ipcMain.handle('app:setLoginItem', (event, openAtLogin: unknown) => {
   }
 });
 
-// ─── IPC: Persistent app settings (SQLite-backed key/value) ────────
-// Allow-list keys to prevent arbitrary writes from a compromised renderer.
-const APP_SETTINGS_ALLOWED_KEYS: ReadonlySet<string> = new Set([
-  'meshtasticMessageRetentionEnabled',
-  'meshtasticMessageRetentionCount',
-  'meshcoreMessageRetentionEnabled',
-  'meshcoreMessageRetentionCount',
-  'reticulumMessageRetentionEnabled',
-  'reticulumMessageRetentionCount',
-  'rrcMessageRetentionEnabled',
-  'rrcMessageRetentionCount',
-  'locale',
-  'mapBasemapId',
-  'meshtasticMqttClientId',
-  'meshcoreMqttClientId',
-  'meshtasticConfigureTargetNodeNum',
-  'meshtasticLastRfSelfNodeId',
-  'meshtasticOwnNodeNumsByPublicKey',
-  'meshcoreLastSelfNodeId',
-  'storeForwardAutoFetchHistory',
-  'storeForwardHistoryProfile',
-  'reduceMotion',
-  'use24HourTime',
-  'notificationSounds',
-  'alwaysShowMessageActions',
-  'reticulumAutostart',
-  'reticulumAutoResendOnAnnounce',
-  'autoUpdateDownloadEnabled',
-  'reticulumLastSelfLxmfHash',
-  'reticulumRmapAnnounceIntervalMin',
-  'reticulumRmapReachableOn',
-  'reticulumRmapHeightMeters',
-  'reticulumRmapDiscoveryLxmfAddress',
-  'reticulumRmapDiscoveryStampValue',
-  'reticulumRmapDiscoveryEncrypt',
-  'reticulumRmapPublishIfac',
-  /** Legacy blob; prefer meshtasticRemoteAdminKey:<nodeNum> per-node keys. */
-  'meshtasticRemoteAdminKeyByNode',
-]);
-const APP_SETTINGS_MAX_VALUE_LENGTH = 256;
-
-function isAppSettingsKeyAllowed(key: string): boolean {
-  return (
-    APP_SETTINGS_ALLOWED_KEYS.has(key) ||
-    key.startsWith(MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX) ||
-    key.startsWith(MESHCORE_ROOM_SYNC_SETTING_PREFIX) ||
-    key.startsWith(MESHCORE_ROOM_LAST_POST_SETTING_PREFIX) ||
-    key.startsWith(MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX) ||
-    key.startsWith(MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX)
-  );
-}
-
-function isLegacyPlaintextCredentialKey(key: string): boolean {
-  return (
-    key.startsWith(MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX) ||
-    key.startsWith(MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX)
-  );
-}
-
-function appSettingsMaxValueLengthForKey(key: string): number {
-  if (key === 'notificationSounds') return 4096;
-  if (key === 'meshtasticOwnNodeNumsByPublicKey') return 4096;
-  if (
-    key.startsWith(MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX) ||
-    key.startsWith(MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX)
-  ) {
-    return 512;
-  }
-  return APP_SETTINGS_MAX_VALUE_LENGTH;
-}
-
 ipcMain.handle('app:rendererHeartbeat', (event, payload?: { ts?: number; hidden?: boolean }) => {
   if (!validateIpcSender(event)) return;
   if (event.sender !== mainWindow?.webContents) return;
   rendererHeartbeatWatchdog.recordHeartbeat(payload?.ts, payload?.hidden === true);
 });
 
-ipcMain.handle('appSettings:get', (event) => {
-  if (!validateIpcSender(event)) {
-    throw new Error('IPC sender validation failed');
-  }
-  try {
-    const rows = getDatabase().prepareOnce('SELECT key, value FROM app_settings').all() as {
-      key: string;
-      value: string;
-    }[];
-    const out: Record<string, string> = {};
-    for (const row of rows) {
-      if (typeof row.key === 'string' && typeof row.value === 'string') {
-        out[row.key] = row.value;
-      }
-    }
-    return out;
-  } catch (err) {
-    console.error(
-      '[IPC] appSettings:get failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-ipcMain.handle('appSettings:set', (event, key: unknown, value: unknown) => {
-  if (!validateIpcSender(event)) {
-    throw new Error('IPC sender validation failed');
-  }
-  if (typeof key !== 'string' || !isAppSettingsKeyAllowed(key)) {
-    throw new Error('appSettings:set: key not allowed');
-  }
-  if (isLegacyPlaintextCredentialKey(key)) {
-    throw new Error('appSettings:set: plaintext credentials are not allowed');
-  }
-  const maxValueLength = appSettingsMaxValueLengthForKey(key);
-  if (typeof value !== 'string' || value.length > maxValueLength) {
-    throw new Error(`appSettings:set: value must be a string under ${maxValueLength} chars`);
-  }
-  try {
-    const result = getDatabase()
-      .prepareOnce('INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)')
-      .run(key, value);
-    console.debug(`[IPC] appSettings:set: ${sanitizeLogMessage(key)} (${result.changes} rows)`);
-    return { changes: Number(result.changes) };
-  } catch (err) {
-    console.error(
-      '[IPC] appSettings:set failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-ipcMain.handle('appSettings:remove', (event, key: unknown) => {
-  if (!validateIpcSender(event)) {
-    throw new Error('IPC sender validation failed');
-  }
-  if (typeof key !== 'string' || !isAppSettingsKeyAllowed(key)) {
-    throw new Error('appSettings:remove: key not allowed');
-  }
-  const result = getDatabase().prepareOnce('DELETE FROM app_settings WHERE key = ?').run(key);
-  return { changes: Number(result.changes) };
-});
+// ─── IPC: Persistent app settings (SQLite-backed key/value) ────────
+registerAppSettingsIpcHandlers({ getDatabase });
 
 /** Notification click → bring the sender's window forward (restores from minimize / tray). */
 ipcMain.handle('app:focusWindow', (event) => {

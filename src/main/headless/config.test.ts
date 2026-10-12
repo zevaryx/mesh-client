@@ -83,3 +83,43 @@ describe('formatHeadlessAccessUrl', () => {
     expect(formatHeadlessAccessUrl(config, 1234)).toBe('http://[::1]:1234/');
   });
 });
+
+describe('resolveHeadlessConfig secret key', () => {
+  it('has no secret key by default (secrets stay in memory)', () => {
+    const config = resolveHeadlessConfig({}, BUNDLE_DIR);
+    expect(config.secretKey).toBeNull();
+    expect(config.secretKeySource).toBeNull();
+  });
+
+  it('prefers the key file over the inline env var and trims it', () => {
+    const config = resolveHeadlessConfig(
+      {
+        MESH_CLIENT_SECRET_KEY_FILE: '/run/secrets/k',
+        MESH_CLIENT_SECRET_KEY: 'inline-key-material',
+      },
+      BUNDLE_DIR,
+      (file) => (file === '/run/secrets/k' ? 'file-key-material-123\n' : ''),
+    );
+    expect(config.secretKey).toBe('file-key-material-123');
+    expect(config.secretKeySource).toBe('file');
+  });
+
+  it('reads the inline env var when no file is set', () => {
+    const config = resolveHeadlessConfig(
+      { MESH_CLIENT_SECRET_KEY: 'inline-key-material' },
+      BUNDLE_DIR,
+    );
+    expect(config).toMatchObject({ secretKey: 'inline-key-material', secretKeySource: 'env' });
+  });
+
+  it('fails clearly on an unreadable file or short key', () => {
+    expect(() =>
+      resolveHeadlessConfig({ MESH_CLIENT_SECRET_KEY_FILE: '/missing' }, BUNDLE_DIR, () => {
+        throw new Error('ENOENT');
+      }),
+    ).toThrow('MESH_CLIENT_SECRET_KEY_FILE could not be read: ENOENT');
+    expect(() => resolveHeadlessConfig({ MESH_CLIENT_SECRET_KEY: 'short' }, BUNDLE_DIR)).toThrow(
+      'secret key must be at least',
+    );
+  });
+});

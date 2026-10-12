@@ -406,6 +406,10 @@ describe('escapeSqlLikePattern', () => {
  */
 describe('app_settings table + message retention defaults (schema sync)', () => {
   const INDEX_SOURCE = readFileSync(join(__dirname, '../main/index.ts'), 'utf-8');
+  const APP_SETTINGS_IPC_SOURCE = readFileSync(
+    join(__dirname, '../main/ipc/app-settings-handlers.ts'),
+    'utf-8',
+  );
 
   it('canonical DDL creates the app_settings KV table', () => {
     expect(SCHEMA_SYNC_SOURCE).toMatch(/CREATE TABLE IF NOT EXISTS app_settings\s*\(/);
@@ -431,59 +435,61 @@ describe('app_settings table + message retention defaults (schema sync)', () => 
   });
 
   it('appSettings:get IPC handler reads from app_settings', () => {
-    expect(INDEX_SOURCE).toContain("'appSettings:get'");
-    expect(INDEX_SOURCE).toMatch(/SELECT key, value FROM app_settings/);
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'appSettings:get'");
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(/SELECT key, value FROM app_settings/);
   });
 
   it('appSettings:set IPC handler enforces an allow-list of retention keys', () => {
-    expect(INDEX_SOURCE).toContain("'appSettings:set'");
-    expect(INDEX_SOURCE).toContain('APP_SETTINGS_ALLOWED_KEYS');
-    expect(INDEX_SOURCE).toContain('meshtasticMessageRetentionEnabled');
-    expect(INDEX_SOURCE).toContain('meshtasticMessageRetentionCount');
-    expect(INDEX_SOURCE).toContain('reticulumMessageRetentionEnabled');
-    expect(INDEX_SOURCE).toContain('reticulumMessageRetentionCount');
-    expect(INDEX_SOURCE).toContain('rrcMessageRetentionEnabled');
-    expect(INDEX_SOURCE).toContain('rrcMessageRetentionCount');
-    expect(INDEX_SOURCE).toContain('meshcoreMessageRetentionEnabled');
-    expect(INDEX_SOURCE).toContain('meshcoreMessageRetentionCount');
-    expect(INDEX_SOURCE).toContain('reduceMotion');
-    expect(INDEX_SOURCE).toContain('use24HourTime');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('reticulumLastSelfLxmfHash');
-    expect(INDEX_SOURCE).toContain('reticulumRmapAnnounceIntervalMin');
-    expect(INDEX_SOURCE).toContain('reticulumRmapReachableOn');
-    expect(INDEX_SOURCE).toContain('reticulumRmapHeightMeters');
-    expect(INDEX_SOURCE).not.toContain('reticulumRmapNotAllowed');
-    expect(INDEX_SOURCE).toMatch(/key not allowed/);
-    expect(INDEX_SOURCE).toMatch(/INSERT OR REPLACE INTO app_settings\(key, value\) VALUES/);
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'appSettings:set'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('APP_SETTINGS_ALLOWED_KEYS');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('meshtasticMessageRetentionEnabled');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('meshtasticMessageRetentionCount');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reticulumMessageRetentionEnabled');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reticulumMessageRetentionCount');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('rrcMessageRetentionEnabled');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('rrcMessageRetentionCount');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('meshcoreMessageRetentionEnabled');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('meshcoreMessageRetentionCount');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reduceMotion');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('use24HourTime');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reticulumLastSelfLxmfHash');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reticulumRmapAnnounceIntervalMin');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reticulumRmapReachableOn');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('reticulumRmapHeightMeters');
+    expect(APP_SETTINGS_IPC_SOURCE).not.toContain('reticulumRmapNotAllowed');
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(/key not allowed/);
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(
+      /INSERT OR REPLACE INTO app_settings\(key, value\) VALUES/,
+    );
   });
 
   it('appSettings:set allowlists RMAP prefs for SQLite persistence', () => {
     // Source-level: Electron-bound IPC cannot be exercised here; assert write path + allowlist.
-    const allowListBlock = INDEX_SOURCE.slice(
-      INDEX_SOURCE.indexOf('APP_SETTINGS_ALLOWED_KEYS'),
-      INDEX_SOURCE.indexOf('APP_SETTINGS_MAX_VALUE_LENGTH'),
+    const allowListBlock = APP_SETTINGS_IPC_SOURCE.slice(
+      APP_SETTINGS_IPC_SOURCE.indexOf('APP_SETTINGS_ALLOWED_KEYS'),
+      APP_SETTINGS_IPC_SOURCE.indexOf('APP_SETTINGS_MAX_VALUE_LENGTH'),
     );
     expect(allowListBlock).toContain("'reticulumLastSelfLxmfHash'");
     expect(allowListBlock).toContain("'reticulumRmapAnnounceIntervalMin'");
     expect(allowListBlock).toContain("'reticulumRmapReachableOn'");
     expect(allowListBlock).toContain("'reticulumRmapHeightMeters'");
     expect(allowListBlock).not.toContain("'reticulumRmapNotAllowed'");
-    expect(INDEX_SOURCE).toMatch(
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(
       /isAppSettingsKeyAllowed\(key\)[\s\S]*?throw new Error\('appSettings:set: key not allowed'\)/,
     );
-    expect(INDEX_SOURCE).toMatch(
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(
       /\.prepareOnce\('INSERT OR REPLACE INTO app_settings\(key, value\) VALUES \(\?, \?\)'\)/,
     );
-    expect(INDEX_SOURCE).toMatch(/SELECT key, value FROM app_settings/);
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(/SELECT key, value FROM app_settings/);
   });
 
   it('appSettings:set rejects oversized values to bound DB writes', () => {
-    expect(INDEX_SOURCE).toContain('APP_SETTINGS_MAX_VALUE_LENGTH');
-    expect(INDEX_SOURCE).toContain('appSettingsMaxValueLengthForKey');
-    expect(INDEX_SOURCE).toMatch(/value\.length > maxValueLength/);
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('APP_SETTINGS_MAX_VALUE_LENGTH');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('appSettingsMaxValueLengthForKey');
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(/value\.length > maxValueLength/);
   });
 
   it('db:pruneMessagesByCount keeps the newest N rows by timestamp', () => {

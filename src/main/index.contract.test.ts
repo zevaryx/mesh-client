@@ -6,6 +6,14 @@ import { describe, expect, it } from 'vitest';
 const INDEX_SOURCE = readFileSync(join(__dirname, 'index.ts'), 'utf-8');
 const PRELOAD_SOURCE = readFileSync(join(__dirname, '../preload/index.ts'), 'utf-8');
 const TCP_BRIDGE_SOURCE = readFileSync(join(__dirname, 'ipc/tcp-bridge.ts'), 'utf-8');
+const SECURE_SECRETS_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/secure-secrets-handlers.ts'),
+  'utf-8',
+);
+const APP_SETTINGS_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/app-settings-handlers.ts'),
+  'utf-8',
+);
 
 describe('notification audio metadata CSP', () => {
   it('permits local blob metadata probes without allowing remote media', () => {
@@ -498,32 +506,32 @@ function collectRendererAppSettingsSetKeys(): string[] {
 
 describe('Persistent app settings IPC (source contract)', () => {
   it('registers appSettings:get and appSettings:set with allow-listed keys', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('appSettings:get'");
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('appSettings:set'");
-    expect(INDEX_SOURCE).toContain('APP_SETTINGS_ALLOWED_KEYS');
-    expect(INDEX_SOURCE).toMatch(/key not allowed/);
-    expect(INDEX_SOURCE).toContain("'meshtasticLastRfSelfNodeId'");
-    expect(INDEX_SOURCE).toContain("'meshcoreLastSelfNodeId'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("ipcMain.handle('appSettings:get'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("ipcMain.handle('appSettings:set'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('APP_SETTINGS_ALLOWED_KEYS');
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(/key not allowed/);
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'meshtasticLastRfSelfNodeId'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'meshcoreLastSelfNodeId'");
     // Missing allowlist entries fail silently, so pin the Reticulum keys explicitly.
-    expect(INDEX_SOURCE).toContain("'reticulumAutostart'");
-    expect(INDEX_SOURCE).toContain("'reticulumAutoResendOnAnnounce'");
-    expect(INDEX_SOURCE).toContain("'autoUpdateDownloadEnabled'");
-    expect(INDEX_SOURCE).toContain("'reticulumLastSelfLxmfHash'");
-    expect(INDEX_SOURCE).toContain("'use24HourTime'");
-    expect(INDEX_SOURCE).toContain('MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('isAppSettingsKeyAllowed');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'reticulumAutostart'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'reticulumAutoResendOnAnnounce'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'autoUpdateDownloadEnabled'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'reticulumLastSelfLxmfHash'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("'use24HourTime'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_SYNC_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_LAST_POST_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('isAppSettingsKeyAllowed');
   });
 
   it('allowlists every renderer key persisted via appSettings:set', () => {
-    const allowListStart = INDEX_SOURCE.indexOf('const APP_SETTINGS_ALLOWED_KEYS');
-    const allowListEnd = INDEX_SOURCE.indexOf('const APP_SETTINGS_MAX_VALUE_LENGTH');
+    const allowListStart = APP_SETTINGS_IPC_SOURCE.indexOf('const APP_SETTINGS_ALLOWED_KEYS');
+    const allowListEnd = APP_SETTINGS_IPC_SOURCE.indexOf('const APP_SETTINGS_MAX_VALUE_LENGTH');
     expect(allowListStart).toBeGreaterThanOrEqual(0);
     expect(allowListEnd).toBeGreaterThan(allowListStart);
-    const allowListBlock = INDEX_SOURCE.slice(allowListStart, allowListEnd);
+    const allowListBlock = APP_SETTINGS_IPC_SOURCE.slice(allowListStart, allowListEnd);
     const rmapSource = readFileSync(
       join(__dirname, '../renderer/lib/reticulum/reticulumRmapDiscovery.ts'),
       'utf-8',
@@ -553,7 +561,8 @@ describe('Persistent app settings IPC (source contract)', () => {
       (match) => {
         const name = match[1];
         const value = match[2];
-        if (!name || !value || !INDEX_SOURCE.includes(`key.startsWith(${name})`)) return [];
+        if (!name || !value || !APP_SETTINGS_IPC_SOURCE.includes(`key.startsWith(${name})`))
+          return [];
         return [value];
       },
     );
@@ -589,7 +598,9 @@ describe('Persistent app settings IPC (source contract)', () => {
   });
 
   it('gives own-node public key history a JSON-sized value limit', () => {
-    expect(INDEX_SOURCE).toMatch(/key === 'meshtasticOwnNodeNumsByPublicKey'\) return 4096/);
+    expect(APP_SETTINGS_IPC_SOURCE).toMatch(
+      /key === 'meshtasticOwnNodeNumsByPublicKey'\) return 4096/,
+    );
   });
 
   it('registers DB-level message prune IPC for both protocols (issue #387)', () => {
@@ -945,7 +956,10 @@ describe('Native Electron call guards (source contract)', () => {
 
   it('logs native IPC helper failures locally before fallback or rejection', () => {
     expect(INDEX_SOURCE).toContain("'[IPC] notify:message failed:'");
-    expect(INDEX_SOURCE).toContain('const secureSecretStore = new SecureSecretStore(getDatabase)');
+    expect(SECURE_SECRETS_IPC_SOURCE).toContain(
+      'const secureSecretStore = new SecureSecretStore(deps.getDatabase)',
+    );
+    expect(INDEX_SOURCE).toContain('registerSecureSecretsIpcHandlers({ getDatabase })');
     expect(INDEX_SOURCE).not.toContain("ipcMain.handle('storage:decrypt'");
     expect(INDEX_SOURCE).toContain("'[IPC] app:getLoginItem failed:'");
     expect(INDEX_SOURCE).toContain("'[IPC] app:setLoginItem failed:'");
@@ -1051,9 +1065,9 @@ describe('Native Electron call guards (source contract)', () => {
 describe('notification sound preferences', () => {
   it('registers the sound boundary and gives only its bounded settings blob a larger limit', () => {
     expect(INDEX_SOURCE).toContain('registerNotificationSoundHandlers();');
-    expect(INDEX_SOURCE).toContain("  'notificationSounds',");
-    expect(INDEX_SOURCE).toContain("if (key === 'notificationSounds') return 4096;");
-    expect(INDEX_SOURCE).toContain('const APP_SETTINGS_MAX_VALUE_LENGTH = 256;');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("  'notificationSounds',");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("if (key === 'notificationSounds') return 4096;");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('const APP_SETTINGS_MAX_VALUE_LENGTH = 256;');
     expect(PRELOAD_SOURCE).toContain("ipcRenderer.invoke('notificationSounds:choose')");
     expect(PRELOAD_SOURCE).toContain("ipcRenderer.invoke('notificationSounds:read', event, id)");
   });

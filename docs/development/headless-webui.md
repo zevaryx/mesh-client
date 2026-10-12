@@ -2,7 +2,7 @@
 
 Run Mesh Client as a server and use it from a browser: the React renderer is served over HTTP and talks to a Node process (no Electron) through a WebSocket. The goal is an always-on gateway image (`docker run … mesh-client-web`) for TCP/HTTP radios, MQTT and Reticulum.
 
-> **Status: early.** The bridge, server, build and image are in place. Only the TCP radio bridge is available so far. The app stops at its boot screen ("Saved settings could not be loaded") until the database, secret store and app-settings handlers are ported (see [Porting status](#porting-status)).
+> **Status: early.** The bridge, server, build and image are in place, and the app shell loads in the browser with its SQLite database, app settings and encrypted secret storage. Radio data panels stay empty until the `db:*` handlers are ported; only TCP radios can connect so far (see [Porting status](#porting-status)).
 
 ## Architecture
 
@@ -42,19 +42,26 @@ pnpm run build:headless # vite build + dist-headless/{server,web-bridge}.js
 pnpm run start:headless # http://127.0.0.1:8080/?token=… printed in the log
 
 docker build -t mesh-client-web .
-docker run --rm -p 8080:8080 -v mesh-client-data:/data mesh-client-web
+# key material for saved credentials (MeshCore identity, MQTT passwords); keep it safe
+head -c 32 /dev/urandom | base64 > mesh-secret.key
+docker run --rm -p 8080:8080 -v mesh-client-data:/data \
+  -v "$PWD/mesh-secret.key:/run/secrets/mesh-secret.key:ro" \
+  -e MESH_CLIENT_SECRET_KEY_FILE=/run/secrets/mesh-secret.key mesh-client-web
 ```
 
 The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the runtime image holds only Node, `dist/renderer` and `dist-headless/`. The image runs as `node`, keeps state in the `/data` volume and has a `/healthz` health check. Behind a Docker Hub rate limit or mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node`.
 
-| Variable                   | Default                     | Meaning                                                  |
-| -------------------------- | --------------------------- | -------------------------------------------------------- |
-| `MESH_CLIENT_DATA_DIR`     | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image) |
-| `MESH_CLIENT_WEB_HOST`     | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                    |
-| `MESH_CLIENT_WEB_PORT`     | `8080`                      | HTTP + WebSocket port                                    |
-| `MESH_CLIENT_WEB_TOKEN`    | random per start            | Session token (min 16 chars)                             |
-| `MESH_CLIENT_WEB_AUTH`     | `token`                     | `off` disables auth (isolated networks only)             |
-| `MESH_CLIENT_RENDERER_DIR` | `<bundle>/../dist/renderer` | Vite renderer build                                      |
+| Variable                            | Default                     | Meaning                                                                             |
+| ----------------------------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| `MESH_CLIENT_DATA_DIR`              | `./mesh-client-data`        | Stands in for Electron `userData` (`/data` in the image)                            |
+| `MESH_CLIENT_WEB_HOST`              | `127.0.0.1`                 | Bind address (`0.0.0.0` in the image)                                               |
+| `MESH_CLIENT_WEB_PORT`              | `8080`                      | HTTP + WebSocket port                                                               |
+| `MESH_CLIENT_WEB_TOKEN`             | random per start            | Session token (min 16 chars)                                                        |
+| `MESH_CLIENT_WEB_AUTH`              | `token`                     | `off` disables auth (isolated networks only)                                        |
+| `MESH_CLIENT_RENDERER_DIR`          | `<bundle>/../dist/renderer` | Vite renderer build                                                                 |
+| `MESH_CLIENT_SECRET_KEY_FILE`       | unset                       | File with key material (min 16 chars) for stored secrets; use a Docker secret       |
+| `MESH_CLIENT_SECRET_KEY`            | unset                       | Same, inline; visible in `docker inspect`, so prefer the file                       |
+| `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE` | unset                       | `1` allows an irreversible database schema upgrade at start (back up `/data` first) |
 
 ## Porting a handler module
 
@@ -65,27 +72,29 @@ The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the r
 
 Electron APIs and their headless meaning, for the shim:
 
-| Electron                                         | Headless                                                                       |
-| ------------------------------------------------ | ------------------------------------------------------------------------------ |
-| `app.getPath`                                    | Under `MESH_CLIENT_DATA_DIR` (`logs/`, `exports/`)                             |
-| `ipcMain`                                        | `HeadlessIpcRegistry`                                                          |
-| `webContents.send`                               | Broadcast to all bridge sessions                                               |
-| `dialog` (open/save)                             | Not ported: needs browser upload/download endpoints                            |
-| `safeStorage`                                    | Not ported: needs a key from a Docker secret / env (weaker than an OS keyring) |
-| `shell`, tray, updater, power events, spellcheck | Not applicable; drop or no-op per call site                                    |
+| Electron                                         | Headless                                                                                                                                                                                                                          |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app.getPath`                                    | Under `MESH_CLIENT_DATA_DIR` (`logs/`, `exports/`)                                                                                                                                                                                |
+| `ipcMain`                                        | `HeadlessIpcRegistry`                                                                                                                                                                                                             |
+| `webContents.send`                               | Broadcast to all bridge sessions                                                                                                                                                                                                  |
+| `dialog`                                         | Prompts throw, which callers treat as "declined" (schema upgrade refused unless `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE=1`); error boxes go to the log. File open/save still needs browser upload/download endpoints                   |
+| `safeStorage`                                    | `headlessSafeStorage.ts`: AES-256-GCM, scrypt-derived key from `MESH_CLIENT_SECRET_KEY(_FILE)`. Without a key, encryption is reported unavailable and `SecureSecretStore` keeps secrets in memory only. Weaker than an OS keyring |
+| `shell`, tray, updater, power events, spellcheck | Not applicable; drop or no-op per call site                                                                                                                                                                                       |
 
 ## Porting status
 
-| Area                                                  | Status                                                                                |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Bridge, server, build, Docker image                   | Done                                                                                  |
-| Meshtastic / MeshCore TCP (`*:tcp-*`)                 | Done (`ipc/tcp-bridge.ts`)                                                            |
-| Boot gate: `secureSecrets:*`, `db:*`, `appSettings:*` | Next: needs `database.ts` startup dialogs and `safeStorage` replaced                  |
-| Meshtastic HTTP (`http:*`, `hostLink:*`)              | Pending (handlers inline in `index.ts`)                                               |
-| MQTT (`mqtt:*`)                                       | Pending                                                                               |
-| Reticulum sidecar (`reticulum:*`)                     | Pending; the image also needs the Rust sidecar binary                                 |
-| BLE (`gatt*`)                                         | Linux hosts only (host D-Bus/BlueZ passthrough); pending                              |
-| Serial                                                | Web Serial in the viewer's Chromium browser; server-side serial would be a new bridge |
+| Area                                                             | Status                                                                                           |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| Bridge, server, build, Docker image                              | Done                                                                                             |
+| Meshtastic / MeshCore TCP (`*:tcp-*`)                            | Done (`ipc/tcp-bridge.ts`)                                                                       |
+| Boot gate: `secureSecrets:*`, `appSettings:*`, database          | Done (`ipc/secure-secrets-handlers.ts`, `ipc/app-settings-handlers.ts`, moved out of `index.ts`) |
+| Database reads/maintenance (`db:*`, ~117 handlers in `index.ts`) | Next: move into `ipc/` modules                                                                   |
+| Heartbeat, TAK status, updater, GPS fix at startup               | Pending (TAK and updater show an error state in the status bar)                                  |
+| Meshtastic HTTP (`http:*`, `hostLink:*`)                         | Pending (handlers inline in `index.ts`)                                                          |
+| MQTT (`mqtt:*`)                                                  | Pending                                                                                          |
+| Reticulum sidecar (`reticulum:*`)                                | Pending; the image also needs the Rust sidecar binary                                            |
+| BLE (`gatt*`)                                                    | Linux hosts only (host D-Bus/BlueZ passthrough); pending                                         |
+| Serial                                                           | Web Serial in the viewer's Chromium browser; server-side serial would be a new bridge            |
 
 Open design questions: several tabs share one backend and radio (all see every push and can send); exports and attachments that pass server file paths need upload/download flows.
 

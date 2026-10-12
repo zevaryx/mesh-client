@@ -13,13 +13,28 @@ const TAK_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/tak-handlers.ts'), 'utf
 const GPS_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/gps-handlers.ts'), 'utf-8');
 const TCP_BRIDGE_SOURCE = readFileSync(join(__dirname, 'ipc/tcp-bridge.ts'), 'utf-8');
 const HOST_VALIDATION_SOURCE = readFileSync(join(__dirname, 'httpHostValidation.ts'), 'utf-8');
+const SECURE_SECRETS_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/secure-secrets-handlers.ts'),
+  'utf-8',
+);
+const APP_SETTINGS_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/app-settings-handlers.ts'),
+  'utf-8',
+);
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
   'utf-8',
 );
 
 function ipcHandlerBody(channel: string, span = 400): string {
-  for (const src of [INDEX_SOURCE, TCP_BRIDGE_SOURCE, TAK_IPC_SOURCE, GPS_IPC_SOURCE]) {
+  for (const src of [
+    INDEX_SOURCE,
+    TCP_BRIDGE_SOURCE,
+    TAK_IPC_SOURCE,
+    GPS_IPC_SOURCE,
+    SECURE_SECRETS_IPC_SOURCE,
+    APP_SETTINGS_IPC_SOURCE,
+  ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
       `ipcMain.handle(\n  '${channel}'`,
@@ -727,7 +742,8 @@ describe('privileged IPC sender validation (source contract)', () => {
   it('expensive export/secret IPC channels use createIpcRateLimiter', () => {
     expect(INDEX_SOURCE).toContain('createIpcRateLimiter');
     expect(INDEX_SOURCE).toContain('exportIpcRateLimit');
-    expect(INDEX_SOURCE).toContain('secureSecretIpcRateLimit');
+    expect(SECURE_SECRETS_IPC_SOURCE).toContain('createIpcRateLimiter');
+    expect(SECURE_SECRETS_IPC_SOURCE).toContain('secureSecretIpcRateLimit');
     for (const channel of [
       'db:export',
       'db:import',
@@ -766,18 +782,25 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('appSettings permits legacy credential removal but rejects plaintext writes', () => {
-    expect(INDEX_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
-    expect(INDEX_SOURCE).toContain("from '../shared/appSettingsKeyPrefixes'");
-    expect(INDEX_SOURCE).toContain('isLegacyPlaintextCredentialKey(key)');
-    expect(INDEX_SOURCE).toContain('appSettings:set: plaintext credentials are not allowed');
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('appSettings:remove'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_REPEATER_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('MESHCORE_ROOM_CREDENTIAL_SETTING_PREFIX');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("from '../../shared/appSettingsKeyPrefixes'");
+    expect(APP_SETTINGS_IPC_SOURCE).toContain('isLegacyPlaintextCredentialKey(key)');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain(
+      'appSettings:set: plaintext credentials are not allowed',
+    );
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("ipcMain.handle('appSettings:remove'");
+  });
+
+  it('Electron main registers the shared secure-secret and app-settings handler modules', () => {
+    expect(INDEX_SOURCE).toContain('registerSecureSecretsIpcHandlers({ getDatabase })');
+    expect(INDEX_SOURCE).toContain('registerAppSettingsIpcHandlers({ getDatabase })');
   });
 
   it('appSettings:get validates IPC sender', () => {
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('appSettings:get'");
+    const handlerIdx = APP_SETTINGS_IPC_SOURCE.indexOf("ipcMain.handle('appSettings:get'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const body = APP_SETTINGS_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(body).toContain('validateIpcSender(event)');
   });
 

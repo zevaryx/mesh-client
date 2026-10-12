@@ -5,11 +5,21 @@
  */
 import fs from 'node:fs';
 
+import {
+  closeDatabase,
+  getDatabase,
+  initDatabase,
+  isDatabaseSchemaTooNewError,
+  isDatabaseSchemaUpgradeDeclinedError,
+} from '../database';
+import { MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE_ENV } from '../fatal-startup-dialog';
 import { validateHttpHost } from '../httpHostValidation';
+import { registerAppSettingsIpcHandlers } from '../ipc/app-settings-handlers';
+import { registerSecureSecretsIpcHandlers } from '../ipc/secure-secrets-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from '../ipc/tcp-bridge';
 import { sanitizeLogMessage } from '../sanitize-log-message';
 import { formatHeadlessAccessUrl, HeadlessConfigError, resolveHeadlessConfig } from './config';
-import { BrowserWindow, configureHeadlessApp } from './electronShim';
+import { BrowserWindow, configureHeadlessApp, configureHeadlessSafeStorage } from './electronShim';
 import { headlessIpcRegistry } from './ipcRegistry';
 import { createHeadlessWebServer } from './webServer';
 
@@ -17,6 +27,8 @@ declare const __MESH_CLIENT_APP_VERSION__: string | undefined;
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {
+  registerSecureSecretsIpcHandlers({ getDatabase });
+  registerAppSettingsIpcHandlers({ getDatabase });
   registerTcpBridgeIpcHandlers({
     getMainWindow: () => (window.isDestroyed() ? null : window),
     validateHost: validateHttpHost,
@@ -41,6 +53,37 @@ async function main(): Promise<void> {
     version:
       typeof __MESH_CLIENT_APP_VERSION__ === 'string' ? __MESH_CLIENT_APP_VERSION__ : '0.0.0',
   });
+
+  configureHeadlessSafeStorage(config.secretKey);
+  if (config.secretKey === null) {
+    console.warn(
+      '[headless] no MESH_CLIENT_SECRET_KEY_FILE / MESH_CLIENT_SECRET_KEY — saved credentials ' +
+        'stay in memory and are lost on restart',
+    );
+  } else {
+    console.debug(`[headless] secret storage key from ${config.secretKeySource ?? 'unknown'}`);
+  }
+
+  try {
+    initDatabase();
+  } catch (err) {
+    // Failure point: the DB is never half-migrated — initDatabase refuses an upgrade it cannot
+    // confirm and closes the handle. Exit non-zero so the container restarts visibly.
+    if (isDatabaseSchemaUpgradeDeclinedError(err)) {
+      console.error(
+        `[headless] database needs an irreversible schema upgrade; back up ${sanitizeLogMessage(config.dataDir)} ` +
+          `and restart with ${MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE_ENV}=1`,
+      );
+      process.exit(2);
+    }
+    if (isDatabaseSchemaTooNewError(err)) {
+      console.error(
+        '[headless] database was written by a newer Mesh Client; run that version or restore a backup',
+      );
+      process.exit(2);
+    }
+    throw err;
+  }
 
   if (!fs.existsSync(`${config.rendererDir}/index.html`)) {
     console.error(
@@ -82,6 +125,8 @@ async function main(): Promise<void> {
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
     void server.close().then(() => {
+      // After the server stops accepting invokes, so no handler races the close.
+      closeDatabase();
       process.exit(0);
     });
   };

@@ -9,11 +9,18 @@
  * | `MESH_CLIENT_WEB_TOKEN`      | random per start     | Session token (min 16 chars)                  |
  * | `MESH_CLIENT_WEB_AUTH`       | `token`              | `off` disables auth (isolated networks only)  |
  * | `MESH_CLIENT_RENDERER_DIR`   | `<bundle>/../dist/renderer` | Vite renderer build                    |
+ * | `MESH_CLIENT_SECRET_KEY_FILE`| unset                | File with key material for stored secrets (Docker secret) |
+ * | `MESH_CLIENT_SECRET_KEY`     | unset                | Same, inline (visible in `docker inspect`; prefer the file) |
+ *
+ * Without a secret key, credentials (MeshCore identity, MQTT passwords, …) stay in memory only and
+ * are lost on restart; see `headlessSafeStorage.ts`.
  */
 import { randomBytes } from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 
 import { parseTcpPortFromString } from '../../shared/tcpPort';
+import { HEADLESS_SECRET_KEY_MIN_LENGTH } from './headlessSafeStorage';
 
 export const HEADLESS_DEFAULT_PORT = 8080;
 export const HEADLESS_MIN_TOKEN_LENGTH = 16;
@@ -28,6 +35,9 @@ export interface HeadlessConfig {
   tokenGenerated: boolean;
   rendererDir: string;
   bridgeScriptFile: string;
+  /** Key material for headless `safeStorage`; `null` keeps secrets in memory only. */
+  secretKey: string | null;
+  secretKeySource: 'file' | 'env' | null;
 }
 
 export class HeadlessConfigError extends Error {
@@ -44,6 +54,7 @@ export class HeadlessConfigError extends Error {
 export function resolveHeadlessConfig(
   env: Record<string, string | undefined>,
   bundleDir: string,
+  readFile: (file: string) => string = (file) => fs.readFileSync(file, 'utf8'),
 ): HeadlessConfig {
   const authMode = (env.MESH_CLIENT_WEB_AUTH ?? 'token').trim().toLowerCase();
   if (authMode !== 'token' && authMode !== 'off') {
@@ -73,7 +84,31 @@ export function resolveHeadlessConfig(
     throw new HeadlessConfigError('MESH_CLIENT_WEB_PORT must be an integer 1-65535');
   }
 
+  let secretKey: string | null = null;
+  let secretKeySource: HeadlessConfig['secretKeySource'] = null;
+  const keyFile = env.MESH_CLIENT_SECRET_KEY_FILE?.trim();
+  if (keyFile) {
+    try {
+      secretKey = readFile(keyFile).trim();
+    } catch (err) {
+      throw new HeadlessConfigError(
+        `MESH_CLIENT_SECRET_KEY_FILE could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    secretKeySource = 'file';
+  } else if (env.MESH_CLIENT_SECRET_KEY?.trim()) {
+    secretKey = env.MESH_CLIENT_SECRET_KEY.trim();
+    secretKeySource = 'env';
+  }
+  if (secretKey !== null && secretKey.length < HEADLESS_SECRET_KEY_MIN_LENGTH) {
+    throw new HeadlessConfigError(
+      `secret key must be at least ${HEADLESS_SECRET_KEY_MIN_LENGTH} characters`,
+    );
+  }
+
   return {
+    secretKey,
+    secretKeySource,
     dataDir: path.resolve(env.MESH_CLIENT_DATA_DIR?.trim() || 'mesh-client-data'),
     host: env.MESH_CLIENT_WEB_HOST?.trim() || '127.0.0.1',
     port,

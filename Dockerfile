@@ -6,6 +6,8 @@
 #   docker build -t mesh-client-web .
 #   docker run --rm -p 8080:8080 -v mesh-client-data:/data mesh-client-web
 #   # open the URL printed in the log (it carries the session token)
+#   # to keep saved credentials across restarts, mount key material and set
+#   #   -e MESH_CLIENT_SECRET_KEY_FILE=/run/secrets/<file>   (see docs/development/headless-webui.md)
 
 #   # behind a registry mirror / Docker Hub rate limit:
 #   docker build --build-arg NODE_IMAGE=mirror.gcr.io/library/node -t mesh-client-web .
