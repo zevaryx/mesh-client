@@ -61,7 +61,8 @@ WORKDIR /app
 COPY --from=sidecar /src/reticulum-sidecar/target/release/mesh-client-reticulum ./resources/reticulum-sidecar/mesh-client-reticulum
 # The server bundle is self-contained: no node_modules in the runtime image.
 COPY --from=build /src/dist/renderer ./dist/renderer
-COPY --from=build /src/dist-headless/server.js /src/dist-headless/web-bridge.js ./dist-headless/
+COPY --from=build /src/dist-headless/server.js /src/dist-headless/web-bridge.js /src/dist-headless/translation-worker.js ./dist-headless/
+COPY --from=build /src/dist-headless/translation-licenses ./dist-headless/translation-licenses
 RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]

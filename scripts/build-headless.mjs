@@ -5,6 +5,8 @@
  * Emits into dist-headless/:
  *   server.js      Self-contained Node entry (`src/main/headless/index.ts`), `electron` → headless shim
  *   web-bridge.js  Browser IIFE of `src/preload/index.ts`, `electron` → WebSocket shim
+ *   translation-worker.js + translation-licenses/  Offline translation worker (as in the
+ *                  Electron main build), spawned by `translation:*` next to server.js
  *
  * The renderer itself is the normal Vite build (`pnpm run build:renderer` → dist/renderer).
  * A main-process module that imports an Electron API the shim does not provide fails this
@@ -112,6 +114,27 @@ export async function buildHeadless(opts = {}) {
     sourcemap: true,
     logLevel,
   });
+
+  // Offline translation worker: `bergamotWorker.ts` spawns `translation-worker.js` from the
+  // directory of the running bundle, as in the Electron main build.
+  await esbuild.build({
+    absWorkingDir,
+    entryPoints: ['src/main/translation/bergamotWorkerEntry.ts'],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outfile: path.join(outdir, 'translation-worker.js'),
+    minify,
+    logLevel,
+  });
+  const noticeDirectory = path.join(outdir, 'translation-licenses');
+  fs.mkdirSync(noticeDirectory, { recursive: true });
+  for (const notice of ['LICENSE-MPL-2.0.txt', 'LICENSE-fastText.txt', 'README.md']) {
+    fs.copyFileSync(
+      path.resolve(absWorkingDir, 'src/main/translation/vendor', notice),
+      path.join(noticeDirectory, notice),
+    );
+  }
 
   return { outdir };
 }

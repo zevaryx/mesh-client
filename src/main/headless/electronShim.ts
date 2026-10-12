@@ -225,6 +225,9 @@ export const dialog = {
  */
 export const net = {
   isOnline: (): boolean => true,
+  /** Electron's Chromium-stack fetch; the server uses Node's (same Request / Response API). */
+  fetch: (input: string | Request, init?: RequestInit): Promise<Response> =>
+    globalThis.fetch(input, init),
 };
 
 /** The server cannot open a browser for the viewer; callers surface this as an error. */

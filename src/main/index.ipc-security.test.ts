@@ -41,6 +41,11 @@ const FILE_DIALOG_IPC_SOURCE = readFileSync(
   'utf-8',
 );
 const TAK_SERVER_HOST_SOURCE = readFileSync(join(__dirname, 'tak/tak-server-host.ts'), 'utf-8');
+const LOG_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/log-handlers.ts'), 'utf-8');
+const CHAT_CONTENT_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/chat-content-handlers.ts'),
+  'utf-8',
+);
 /** index.ts plus the IPC modules moved out of it (shared with the headless server). */
 const MAIN_IPC_SOURCE = [
   INDEX_SOURCE,
@@ -51,6 +56,8 @@ const MAIN_IPC_SOURCE = [
   HTTP_BRIDGE_IPC_SOURCE,
   MQTT_IPC_SOURCE,
   FILE_DIALOG_IPC_SOURCE,
+  LOG_IPC_SOURCE,
+  CHAT_CONTENT_IPC_SOURCE,
 ].join('\n');
 const SERVICE_ANNOUNCEMENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/service-announcement-handlers.ts'),
@@ -71,6 +78,8 @@ function ipcHandlerBody(channel: string, span = 400): string {
     HTTP_BRIDGE_IPC_SOURCE,
     MQTT_IPC_SOURCE,
     FILE_DIALOG_IPC_SOURCE,
+    LOG_IPC_SOURCE,
+    CHAT_CONTENT_IPC_SOURCE,
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -760,9 +769,9 @@ describe('privileged IPC sender validation (source contract)', () => {
   });
 
   it('mecp:appendReceived validates entry shape', () => {
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('mecp:appendReceived'");
+    const handlerIdx = CHAT_CONTENT_IPC_SOURCE.indexOf("ipcMain.handle('mecp:appendReceived'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 500);
+    const body = CHAT_CONTENT_IPC_SOURCE.slice(handlerIdx, handlerIdx + 500);
     expect(body).toContain('isValidMecpAppendPayload');
   });
 

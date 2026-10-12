@@ -55,5 +55,12 @@ describe('build-headless', () => {
     // getPlatform() reads the server-reported platform, not a build-time constant.
     expect(bridge).toContain(HEADLESS_BRIDGE_PLATFORM_EXPR);
     expect(bridge).toContain('exposeInMainWorld');
+
+    // The offline translation worker ships next to server.js, with its license notices.
+    const worker = fs.readFileSync(path.join(outdir, 'translation-worker.js'), 'utf8');
+    expect(worker).not.toMatch(/require\(["']electron["']\)/);
+    expect(
+      fs.readFileSync(path.join(outdir, 'translation-licenses', 'LICENSE-MPL-2.0.txt'), 'utf8'),
+    ).toContain('Mozilla Public License Version 2.0');
   }, 60_000);
 });

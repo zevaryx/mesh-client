@@ -50,7 +50,6 @@ import {
   isDatabaseSchemaUpgradeDeclinedError,
 } from './database';
 import { formatDatabaseSchemaTooNewMessage, showFatalStartupError } from './fatal-startup-dialog';
-import { fetchLinkPreview } from './fetchLinkPreview';
 import {
   type GattDiscoveredDevice,
   type GattSessionProfile,
@@ -61,6 +60,7 @@ import { isHarmlessSocketOptionError } from './harmlessSocketOptionError';
 import { validateHttpHost } from './httpHostValidation';
 import { registerAppSettingsIpcHandlers } from './ipc/app-settings-handlers';
 import { registerBeaconIpcHandlers } from './ipc/beacon-handlers';
+import { registerChatContentIpcHandlers } from './ipc/chat-content-handlers';
 import { registerChatOutboxIpcHandlers } from './ipc/chat-outbox-handlers';
 import { registerMeshcoreDbIpcHandlers } from './ipc/db-meshcore-handlers';
 import { registerMeshtasticDbIpcHandlers } from './ipc/db-meshtastic-handlers';
@@ -71,6 +71,7 @@ import { registerGattPairingIpcHandlers } from './ipc/gatt-pairing-handlers';
 import { registerGeoIpcHandlers } from './ipc/geo-handlers';
 import { registerGpsIpcHandlers } from './ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers } from './ipc/http-bridge';
+import { registerLogIpcHandlers } from './ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from './ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from './ipc/mqtt-handlers';
 import { registerNotificationSoundHandlers } from './ipc/notification-sound-handlers';
@@ -89,19 +90,14 @@ import { registerTakIpcHandlers } from './ipc/tak-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from './ipc/tcp-bridge';
 import { registerTranslationHandlers } from './ipc/translation-handlers';
 import {
-  clearLogFile,
   flushLogBeforeQuit,
   formatRuntimeLogTag,
   forwardRendererConsoleMessage,
-  getLogPath,
-  getRecentLines,
   initLogFile,
-  logDeviceConnection,
   patchMainConsole,
   sanitizeLogMessage,
   setMainWindow,
 } from './log-service';
-import { appendMecpReceivedLog, isValidMecpAppendPayload } from './mecp-received-log';
 import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
 import { isDesktopMeshtasticBackendEnabled } from './meshtastic-backend/desktopBackendFlag';
 import { loadDesktopMeshtasticHost } from './meshtastic-backend/desktopHostLoader';
@@ -114,14 +110,6 @@ import { createTileCache, type TileCache } from './offline-maps/tile-cache';
 import { PermissionDecisionLogger } from './permissionDecisionLog';
 import { createRendererHeartbeatWatchdog } from './rendererHeartbeatWatchdog';
 import { resolveRendererLoadUrl } from './resolveRendererLoadUrl';
-import {
-  readReticulumAttachmentBytes,
-  takeReticulumAttachmentAudioRateToken,
-} from './reticulum-attachment-audio';
-import {
-  readReticulumAttachmentAsDataUrl,
-  takeReticulumAttachmentImageRateToken,
-} from './reticulum-attachment-image';
 import { assertReticulumAttachmentPathJailed } from './reticulum-attachment-path';
 import { ReticulumSidecarManager } from './reticulum-sidecar-manager';
 import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from './tak/tak-server-host';
@@ -2726,62 +2714,7 @@ ipcMain.handle('session:clearData', async (event) => {
 });
 
 // ─── IPC: Log panel ─────────────────────────────────────────────────
-ipcMain.handle('log:getPath', (event) => {
-  assertIpcSender(event, 'log:getPath');
-  try {
-    return getLogPath();
-  } catch (err) {
-    console.error(
-      '[IPC] log:getPath failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-ipcMain.handle('log:getRecentLines', (event) => {
-  assertIpcSender(event, 'log:getRecentLines');
-  try {
-    return getRecentLines();
-  } catch (err) {
-    console.error(
-      '[IPC] log:getRecentLines failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-ipcMain.handle('log:clear', (event) => {
-  if (!validateIpcSender(event)) {
-    throw new Error('IPC sender validation failed');
-  }
-  try {
-    clearLogFile();
-  } catch (err) {
-    console.error(
-      '[IPC] log:clear failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-ipcMain.handle('log:device-connection', (event, detail: unknown) => {
-  if (!validateIpcSender(event)) return;
-  if (typeof detail !== 'string' || detail.length > 8192) return;
-  logDeviceConnection(detail);
-});
-
-ipcMain.handle('mecp:appendReceived', async (event, entry: unknown) => {
-  if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
-  if (!isValidMecpAppendPayload(entry)) {
-    throw new Error('mecp:appendReceived: invalid entry');
-  }
-  await appendMecpReceivedLog(entry);
-  return { ok: true as const };
-});
-
+registerLogIpcHandlers();
 ipcMain.handle('chat:showItemInFolder', (event, filePath: unknown) => {
   if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
   if (typeof filePath !== 'string' || !filePath.trim()) {
@@ -2799,57 +2732,8 @@ ipcMain.handle('chat:showItemInFolder', (event, filePath: unknown) => {
   }
 });
 
-ipcMain.handle('chat:readReticulumAttachmentAsDataUrl', async (event, opts: unknown) => {
-  if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
-  if (!opts || typeof opts !== 'object') throw new Error('opts must be an object');
-  const o = opts as Record<string, unknown>;
-  if (typeof o.filePath !== 'string' || !o.filePath.trim() || o.filePath.length > 512) {
-    throw new Error('filePath must be a non-empty string');
-  }
-  // Optional mimeType on the wire is ignored — magic bytes alone decide embed MIME.
-  if (!takeReticulumAttachmentImageRateToken()) {
-    console.debug('[IPC] chat:readReticulumAttachmentAsDataUrl rate limited');
-    return { dataUrl: null };
-  }
-  try {
-    const dataUrl = await readReticulumAttachmentAsDataUrl(o.filePath);
-    return { dataUrl };
-  } catch (err) {
-    console.error(
-      '[IPC] chat:readReticulumAttachmentAsDataUrl failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-ipcMain.handle('chat:readReticulumAttachmentBytes', async (event, filePath: unknown) => {
-  if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
-  if (typeof filePath !== 'string' || !filePath.trim() || filePath.length > 512) {
-    throw new Error('filePath must be a non-empty string');
-  }
-  if (!takeReticulumAttachmentAudioRateToken()) {
-    console.debug('[IPC] chat:readReticulumAttachmentBytes rate limited');
-    return { dataBase64: null };
-  }
-  try {
-    const dataBase64 = await readReticulumAttachmentBytes(filePath);
-    return { dataBase64 };
-  } catch (err) {
-    console.error(
-      '[IPC] chat:readReticulumAttachmentBytes failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
-    throw err;
-  }
-});
-
-// ─── IPC: Chat link preview ──────────────────────────────────────────
-ipcMain.handle('chat:fetchLinkPreview', async (event, url: unknown) => {
-  if (!validateIpcSender(event)) throw new Error('chat:fetchLinkPreview: unauthorized sender');
-  if (typeof url !== 'string' || url.length === 0 || url.length > 2048) return null;
-  return await fetchLinkPreview(url);
-});
+// ─── IPC: Chat content (MECP log, attachments, link preview) ─────────
+registerChatContentIpcHandlers();
 
 // ─── IPC: Chat outbox ─────────────────────────────────────────────────
 registerChatOutboxIpcHandlers();

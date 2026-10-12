@@ -38,6 +38,7 @@ import {
   type HeadlessIpcEvent,
   type HeadlessIpcRegistry,
 } from './ipcRegistry';
+import { HeadlessSessionSender } from './sessionSender';
 
 export interface HeadlessWebServerOptions {
   registry: HeadlessIpcRegistry;
@@ -293,11 +294,14 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     sessions.add(ws);
     console.debug(`[headless] bridge session ${sessionId} opened (${sessions.size} active)`);
     options.onSessionCountChange?.(sessions.size);
+    const sender = new HeadlessSessionSender(sessionId, (channel, args) => {
+      sendFrame(ws, { t: 'event', channel, args });
+    });
     const event: HeadlessIpcEvent = {
       senderFrame: { url: HEADLESS_SENDER_URL },
-      sender: { id: sessionId },
+      sender,
       reply: (channel, ...args) => {
-        sendFrame(ws, { t: 'event', channel, args });
+        sender.send(channel, ...args);
       },
     };
 
@@ -346,6 +350,7 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     ws.on('close', () => {
       sessions.delete(ws);
       transfer.closeSession(sessionId);
+      sender.destroy();
       console.debug(`[headless] bridge session ${sessionId} closed (${sessions.size} active)`);
       options.onSessionCountChange?.(sessions.size);
     });

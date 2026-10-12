@@ -19,15 +19,21 @@ import {
 import { MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE_ENV } from '../fatal-startup-dialog';
 import { validateHttpHost } from '../httpHostValidation';
 import { registerAppSettingsIpcHandlers } from '../ipc/app-settings-handlers';
+import { registerBeaconIpcHandlers } from '../ipc/beacon-handlers';
+import { registerChatContentIpcHandlers } from '../ipc/chat-content-handlers';
 import { registerChatOutboxIpcHandlers } from '../ipc/chat-outbox-handlers';
 import { registerMeshcoreDbIpcHandlers } from '../ipc/db-meshcore-handlers';
 import { registerMeshtasticDbIpcHandlers } from '../ipc/db-meshtastic-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-telemetry-handlers';
 import { registerFileDialogIpcHandlers } from '../ipc/file-dialog-handlers';
+import { registerFlasherHandlers } from '../ipc/flasher-handlers';
+import { registerGeoIpcHandlers } from '../ipc/geo-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
+import { registerLogIpcHandlers } from '../ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
+import { registerNotificationSoundHandlers } from '../ipc/notification-sound-handlers';
 import { registerReticulumDbIpcHandlers } from '../ipc/reticulum-db-handlers';
 import {
   IDLE_RETICULUM_STATUS,
@@ -40,6 +46,8 @@ import { registerSecureSecretsIpcHandlers } from '../ipc/secure-secrets-handlers
 import { registerServiceAnnouncementIpcHandlers } from '../ipc/service-announcement-handlers';
 import { registerTakIpcHandlers } from '../ipc/tak-handlers';
 import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from '../ipc/tcp-bridge';
+import { registerTranslationHandlers } from '../ipc/translation-handlers';
+import { initLogFile, patchMainConsole, setMainWindow } from '../log-service';
 import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
 import type { MeshtasticBackendHandle } from '../meshtastic-backend/hostProtocol';
 import { startInProcessMeshtasticBackend } from '../meshtastic-backend/inProcessHost';
@@ -84,6 +92,8 @@ function ensureReticulumSidecarManager(): ReticulumSidecarManager {
  * radio link, then tells the tab that takes the link back to reload. `null` when disabled.
  */
 let meshtasticBackend: MeshtasticBackendHandle | null = null;
+/** Stops the translation worker on shutdown (set when handlers register). */
+let disposeTranslation: (() => void) | null = null;
 
 function startMeshtasticBackend(): MeshtasticBackendHandle {
   const ingest = startInProcessMeshtasticBackend({
@@ -135,6 +145,27 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   // Server location (OS / IP geolocation), not the viewer's: the server is the station.
   registerGpsIpcHandlers();
   registerServiceAnnouncementIpcHandlers({ ipcMain });
+  registerLogIpcHandlers();
+  registerChatContentIpcHandlers();
+  registerGeoIpcHandlers();
+  registerBeaconIpcHandlers();
+  registerNotificationSoundHandlers();
+  registerFlasherHandlers();
+  disposeTranslation = registerTranslationHandlers({
+    getSetting: (key) =>
+      (
+        getDatabase().prepareOnce('SELECT value FROM app_settings WHERE key = ?').get(key) as
+          { value: string } | undefined
+      )?.value,
+    setSetting: (key, value) => {
+      getDatabase()
+        .prepareOnce('INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)')
+        .run(key, value);
+    },
+    onProgress: (progress) => {
+      pushTarget()?.webContents.send('translation:packProgress', progress);
+    },
+  });
   // Typed against Electron's BrowserWindow (the dialog parent). At runtime `electron` is the shim,
   // whose dialogs ignore the parent and serve the calling browser instead; one cast, here.
   registerFileDialogIpcHandlers({
@@ -172,6 +203,10 @@ async function main(): Promise<void> {
     // dist-headless/.. — resources/reticulum-sidecar/<binary> is resolved under it.
     appPath: path.resolve(__dirname, '..'),
   });
+  // Same log file as the desktop app (<data dir>/mesh-client.log), so the Log panel works.
+  // console.* still echoes to stdout for `docker logs`.
+  patchMainConsole();
+  initLogFile();
 
   configureHeadlessSafeStorage(config.secretKey);
   if (config.secretKey === null) {
@@ -226,6 +261,7 @@ async function main(): Promise<void> {
     },
   });
   const window = new BrowserWindow(server.broadcast);
+  setMainWindow(window as unknown as ElectronBrowserWindow);
   registerHeadlessHandlers(window);
   // Same restore as the Electron app: TAK server / remote relay when saved with auto-start.
   takServerHost.autoStartFromSavedSettings();
@@ -251,6 +287,7 @@ async function main(): Promise<void> {
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
     meshtasticBackend?.dispose();
+    disposeTranslation?.();
     stopHttpBridgePolling();
     mqttManager.disconnect();
     meshcoreMqttAdapter.disconnect();

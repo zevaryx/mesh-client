@@ -203,6 +203,35 @@ describe('headless web server', () => {
     ws.close();
   });
 
+  it('gives each session a sender that pushes to that tab only and reports its close', async () => {
+    let destroyed = 0;
+    registry.handle('subscribe', (event) => {
+      const sender = event.sender as unknown as {
+        send: (channel: string, ...args: unknown[]) => void;
+        once: (name: string, fn: () => void) => void;
+      };
+      sender.once('destroyed', () => {
+        destroyed += 1;
+      });
+      sender.send('feed:update', 'only for you');
+      return 'ok';
+    });
+    const port = await startServer();
+    const caller = await openClient(port);
+    const other = await openClient(port);
+    const otherFrames: unknown[] = [];
+    other.on('message', (d: Buffer) => otherFrames.push(d.toString('utf8')));
+    const pushed = nextFrame(caller);
+    caller.send(serializeWebBridgeFrame({ t: 'invoke', id: 1, channel: 'subscribe', args: [] }));
+    expect(await pushed).toEqual({ t: 'event', channel: 'feed:update', args: ['only for you'] });
+    caller.close();
+    await vi.waitFor(() => {
+      expect(destroyed).toBe(1);
+    });
+    expect(otherFrames).toEqual([]);
+    other.close();
+  });
+
   it('broadcasts push events to every open session', async () => {
     const port = await startServer();
     const a = await openClient(port);

@@ -25,6 +25,8 @@ const MAIN_IPC_SOURCE = [
   readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/mqtt-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/file-dialog-handlers.ts'), 'utf-8'),
+  readFileSync(join(__dirname, 'ipc/log-handlers.ts'), 'utf-8'),
+  readFileSync(join(__dirname, 'ipc/chat-content-handlers.ts'), 'utf-8'),
 ].join('\n');
 const APP_SETTINGS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/app-settings-handlers.ts'),
@@ -1008,23 +1010,23 @@ describe('Native Electron call guards (source contract)', () => {
   });
 
   it('registers chat:fetchLinkPreview handler with sender validation', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('chat:fetchLinkPreview'");
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('chat:fetchLinkPreview'");
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('chat:fetchLinkPreview'[\s\S]*?validateIpcSender\(event\)/,
     );
   });
 
   it('registers chat:readReticulumAttachmentAsDataUrl with sender validation and path jail', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('chat:readReticulumAttachmentAsDataUrl'");
-    expect(INDEX_SOURCE).toMatch(
+    expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('chat:readReticulumAttachmentAsDataUrl'");
+    expect(MAIN_IPC_SOURCE).toMatch(
       /ipcMain\.handle\('chat:readReticulumAttachmentAsDataUrl'[\s\S]*?validateIpcSender\(event\)/,
     );
-    expect(INDEX_SOURCE).toContain('readReticulumAttachmentAsDataUrl');
-    expect(INDEX_SOURCE).toContain('takeReticulumAttachmentImageRateToken');
-    expect(INDEX_SOURCE).toContain('o.filePath.length > 512');
+    expect(MAIN_IPC_SOURCE).toContain('readReticulumAttachmentAsDataUrl');
+    expect(MAIN_IPC_SOURCE).toContain('takeReticulumAttachmentImageRateToken');
+    expect(MAIN_IPC_SOURCE).toContain('o.filePath.length > 512');
     // Optional mimeType on the wire is ignored — magic bytes alone decide embed MIME.
-    expect(INDEX_SOURCE).toContain('magic bytes alone decide embed MIME');
-    expect(INDEX_SOURCE).toContain('return { dataUrl }');
+    expect(MAIN_IPC_SOURCE).toContain('magic bytes alone decide embed MIME');
+    expect(MAIN_IPC_SOURCE).toContain('return { dataUrl }');
   });
 
   it('registers chat:outbox handlers with protocol, status, and payload validation', () => {
