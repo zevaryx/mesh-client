@@ -2,12 +2,13 @@
  * What the Meshtastic background ingest stores, and how live node events map onto it.
  *
  * Mirrors the renderer's live-packet paths in `meshtasticNodeSideEffects.ts` (UserPacket,
- * Position, Telemetry) and the chat-sender bump in `meshtasticIngest.ts`. NodeDB replay is not
- * mirrored: the radio only sends it during config, and config only runs when a renderer connects,
- * so the renderer handles it. Node rows are partial patches; `upsertMeshtasticNodeRow` keeps the
- * stored value for every field a patch leaves out.
+ * Position, Telemetry, and NodeDB NodeInfo from the config dump) and the chat-sender bump in
+ * `meshtasticIngest.ts`. The radio sends its NodeDB only during config, so the backend stores it
+ * when it opened the link itself (the link keeper after a restart). Node rows are partial patches;
+ * `upsertMeshtasticNodeRow` keeps the stored value for every field a patch leaves out.
  */
 import { validateCoords } from '../../renderer/lib/coordUtils';
+import { LAST_HEARD_MAX_FUTURE_SKEW_SEC } from '../../renderer/lib/nodeStatus';
 import type {
   NodeInfoEvent,
   PositionEvent,
@@ -21,6 +22,7 @@ import {
   meshtasticShortNameAfterClearingDefault,
   preferNonEmptyTrimmedString,
 } from '../../shared/nodeNameUtils';
+import { MS_PER_HOUR, MS_PER_SECOND } from '../../shared/timeConstants';
 import type { MeshtasticBackendMessageRow } from './meshtasticBackendIngest';
 
 /** `db:saveNode` patch. `last_heard` is ms; the sink keeps the newer of stored and patch. */
@@ -32,6 +34,9 @@ export interface MeshtasticBackendNodePatch {
   role?: number;
   public_key_hex?: string;
   last_heard?: number;
+  snr?: number;
+  hops_away?: number;
+  voltage?: number;
   latitude?: number;
   longitude?: number;
   altitude?: number;
@@ -42,16 +47,35 @@ export interface MeshtasticBackendNodePatch {
   num_rx_dupe?: number;
   num_packets_rx?: number;
   num_packets_tx?: number;
-  source: 'rf';
-  via_mqtt: false;
+  /** `mqtt` for MQTT-heard nodes; the sink keeps `rf` for a node the radio has heard. */
+  source: 'rf' | 'mqtt';
+  /** Set by MQTT reports and by NodeDB entries the radio marks as heard via MQTT. */
+  via_mqtt: boolean;
 }
+
+/** Same as `MESHTASTIC_CAPABILITIES.nodeStaleThresholdMs`: older NodeDB hop counts are dropped. */
+export const MESHTASTIC_NODEDB_STALE_MS = 2 * MS_PER_HOUR;
 
 export type MeshtasticBackendRecord =
   | { kind: 'message'; row: MeshtasticBackendMessageRow }
   | { kind: 'node'; node: MeshtasticBackendNodePatch }
   /** Position-history point; the sink applies the renderer's 10 m movement threshold. */
-  | { kind: 'position'; nodeId: number; latitude: number; longitude: number; recordedAt: number }
-  | { kind: 'environment'; nodeId: number; recordedAt: number; reading: EnvironmentReading };
+  | {
+      kind: 'position';
+      nodeId: number;
+      latitude: number;
+      longitude: number;
+      recordedAt: number;
+      /** How it was heard (default `rf`). */
+      source?: 'rf' | 'mqtt';
+    }
+  | {
+      kind: 'environment';
+      nodeId: number;
+      recordedAt: number;
+      reading: EnvironmentReading;
+      source?: 'rf' | 'mqtt';
+    };
 
 function nodePatch(nodeId: number, fields: Partial<MeshtasticBackendNodePatch>) {
   const node: MeshtasticBackendNodePatch = { node_id: nodeId, source: 'rf', via_mqtt: false };
@@ -85,6 +109,67 @@ export function recordsForUserPacket(info: NodeInfoEvent): MeshtasticBackendReco
       last_heard: info.lastHeardAt != null && info.lastHeardAt > 0 ? info.lastHeardAt : undefined,
     }),
   ];
+}
+
+/**
+ * NodeDB NodeInfo from the config dump (renderer: `handleNodeDbNodeInfo`). `lastHeardAt` is the
+ * radio's seconds clock; future times beyond the skew allowance count as now. The connected
+ * radio's own position is left to the renderer (static GPS), and a stale node's hop count is not
+ * stored. A valid position also becomes a history point (the sink applies the 10 m threshold).
+ */
+export function recordsForNodeDbEntry(
+  info: NodeInfoEvent,
+  myNodeNum: number,
+  now = Date.now(),
+): MeshtasticBackendRecord[] {
+  const nodeId = info.nodeId;
+  const isSelf = myNodeNum !== 0 && nodeId === myNodeNum;
+  let lastHeard = 0;
+  if ((info.lastHeardAt ?? 0) > 0) {
+    const ms = (info.lastHeardAt ?? 0) * MS_PER_SECOND;
+    lastHeard = ms > now + LAST_HEARD_MAX_FUTURE_SKEW_SEC * MS_PER_SECOND ? now : ms;
+  }
+  const stale = lastHeard > 0 && now - lastHeard > MESHTASTIC_NODEDB_STALE_MS;
+  const longName = preferNonEmptyTrimmedString(info.longName, '', { nodeId });
+  const shortName = meshtasticShortNameAfterClearingDefault(
+    longName,
+    preferNonEmptyTrimmedString(info.shortName, ''),
+    nodeId,
+  );
+  const hasFix =
+    !isSelf &&
+    info.latitude != null &&
+    info.longitude != null &&
+    validateCoords(info.latitude, info.longitude).valid;
+  const patch = nodePatch(nodeId, {
+    long_name: longName || undefined,
+    short_name: shortName || undefined,
+    hw_model: info.hwModel,
+    role: info.role,
+    public_key_hex: publicKeyHex(info.publicKey),
+    last_heard: lastHeard > 0 ? lastHeard : undefined,
+    snr: info.snr,
+    hops_away: isSelf ? (info.hopsAway ?? 0) : stale ? undefined : info.hopsAway,
+    battery: info.batteryLevel,
+    voltage: info.voltage,
+    channel_utilization: info.channelUtilization,
+    air_util_tx: info.airUtilTx,
+    ...(hasFix
+      ? { latitude: info.latitude, longitude: info.longitude, altitude: info.altitude }
+      : {}),
+  });
+  patch.node.via_mqtt = info.viaMqtt === true;
+  const records: MeshtasticBackendRecord[] = [patch];
+  if (hasFix && lastHeard > 0 && info.latitude != null && info.longitude != null) {
+    records.push({
+      kind: 'position',
+      nodeId,
+      latitude: info.latitude,
+      longitude: info.longitude,
+      recordedAt: lastHeard,
+    });
+  }
+  return records;
 }
 
 /**

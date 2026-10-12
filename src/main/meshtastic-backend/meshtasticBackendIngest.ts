@@ -20,6 +20,7 @@ import { Utils } from '@meshtastic/core';
 import { Channel, Mesh, Portnums, Telemetry } from '@meshtastic/protobufs';
 
 import {
+  decodeMeshtasticNodeInfo,
   decodeMeshtasticPosition,
   decodeMeshtasticTelemetry,
   decodeMeshtasticUserPacket,
@@ -43,6 +44,7 @@ import type { MeshtasticLinkOrigin } from './linkTarget';
 import {
   type MeshtasticBackendRecord,
   recordsForChatSender,
+  recordsForNodeDbEntry,
   recordsForPosition,
   recordsForTelemetry,
   recordsForUserPacket,
@@ -75,7 +77,8 @@ export interface MeshtasticBackendMessageRow {
   emoji?: number;
   replyId?: number;
   rxHops?: number;
-  receivedVia: 'rf';
+  receivedVia: 'rf' | 'mqtt';
+  viaStoreForward?: boolean;
   radioNodeId?: number;
   channelKey?: string;
 }
@@ -214,6 +217,19 @@ export class MeshtasticBackendIngest {
     }
   }
 
+  /**
+   * The connected radio's id and the channel key of one of its channels, for rows that arrive by
+   * another path (MQTT) but belong to this radio's channel. Empty while no link is up.
+   */
+  channelIdentity(index: number): { channelKey?: string; radioNodeId?: number } {
+    if (!this.linkUp) return {};
+    const channelKey = this.channelKeyByIndex.get(index);
+    return {
+      ...(channelKey ? { channelKey } : {}),
+      ...(this.myNodeNum !== 0 ? { radioNodeId: this.myNodeNum } : {}),
+    };
+  }
+
   /** True while the backend, not a renderer, is responsible for persisting. */
   isPersisting(): boolean {
     return !this.attached;
@@ -293,6 +309,12 @@ export class MeshtasticBackendIngest {
         break;
       case 'nodeInfo':
         if (v.value.user) this.rememberNames(v.value.num, v.value.user);
+        // Config dump: stored only while the backend owns the link (e.g. it reconnected itself).
+        for (const event of decodeMeshtasticNodeInfo(v.value)) {
+          if (event.type === 'node_info') {
+            this.persistAll(recordsForNodeDbEntry(event.payload, this.myNodeNum));
+          }
+        }
         break;
       case 'channel': {
         const ch = v.value;

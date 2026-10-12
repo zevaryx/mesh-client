@@ -23,6 +23,7 @@ export function withMeshtasticLinkKeeper(
       handle.setRendererPresent(present);
       keeper.setRendererPresent(present);
     },
+    ...(handle.channelIdentity ? { channelIdentity: handle.channelIdentity } : {}),
     dispose: () => {
       keeper.dispose();
       handle.dispose();

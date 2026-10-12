@@ -35,6 +35,7 @@ export function startInProcessMeshtasticBackend(
     setRendererPresent: (present) => {
       running.setRendererPresent(present);
     },
+    channelIdentity: (index) => running.channelIdentity(index),
     dispose: () => {
       ingest = null;
       running.dispose();

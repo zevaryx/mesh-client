@@ -284,6 +284,14 @@ export interface MqttIpcDeps {
   getMainWindow: () => RendererPushTarget | null;
   /** MQTT node updates also feed the TAK bridge when it is running. */
   getTakServerManager: () => Pick<TakServerManager, 'onNodeUpdate'> | null;
+  /**
+   * Headless: stores Meshtastic MQTT chat / node updates while no browser tab is attached
+   * (`meshtastic-backend/mqttRecords.ts`). Gets every event; it checks presence itself.
+   */
+  meshtasticBackground?: {
+    message: (message: unknown) => void;
+    nodeUpdate: (update: unknown) => void;
+  };
 }
 
 /** Forward MQTT client events and register `mqtt:*`. Channel name literals keep check:ipc-contract aligned. */
@@ -314,6 +322,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     if (mainWindow)
       mainWindow.webContents.send('mqtt:node-update', { ...n, protocol: 'meshtastic' as const });
     else console.debug('[main] mqtt:node-update dropped (mainWindow not ready)');
+    deps.meshtasticBackground?.nodeUpdate({ ...n, protocol: 'meshtastic' as const });
     deps.getTakServerManager()?.onNodeUpdate({
       ...n,
       altitude: n.altitude ?? undefined,
@@ -337,6 +346,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     const mainWindow = deps.getMainWindow();
     if (mainWindow) mainWindow.webContents.send('mqtt:message', m);
     else console.debug('[main] mqtt:message dropped (mainWindow not ready)');
+    deps.meshtasticBackground?.message(m);
   });
   mqttManager.on('brokerRaw', (payload: { topic: string; payload: Buffer; retained: boolean }) => {
     const mainWindow = deps.getMainWindow();

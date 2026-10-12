@@ -7,3 +7,4 @@
  * would get its own copies. Those arrive as injected dependencies instead.
  */
 export { createDesktopMeshtasticBackend } from './desktopBackend';
+export { createMeshtasticBackendPersist } from './persist';

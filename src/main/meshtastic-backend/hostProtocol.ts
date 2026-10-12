@@ -26,6 +26,8 @@ export type MeshtasticLinkTaps = Record<MeshtasticLinkKind, TcpBridgeTap>;
 export interface MeshtasticBackendHandle {
   taps: MeshtasticLinkTaps;
   setRendererPresent: (present: boolean) => void;
+  /** Channel identity of the connected radio (in-process host only; see the ingest). */
+  channelIdentity?: (index: number) => { channelKey?: string; radioNodeId?: number };
   dispose: () => void;
 }
 

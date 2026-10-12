@@ -57,6 +57,7 @@ describe('MQTT on the headless shim', () => {
   const pushes: { channel: string; args: unknown[] }[] = [];
   const mqttManager = new MQTTManager();
   const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
+  const background = { message: vi.fn(), nodeUpdate: vi.fn() };
 
   beforeAll(async () => {
     vi.spyOn(console, 'debug').mockImplementation(() => {});
@@ -102,6 +103,7 @@ describe('MQTT on the headless shim', () => {
       meshcoreMqttAdapter,
       getMainWindow: () => window,
       getTakServerManager: () => null,
+      meshtasticBackground: background,
     });
   });
 
@@ -167,6 +169,19 @@ describe('MQTT on the headless shim', () => {
     await expect(
       invoke('mqtt:publish', { text: 'x', from: 0, channel: 0, publishJsonMirror: false }),
     ).rejects.toThrow('from must be a positive node id');
+  });
+
+  it('hands Meshtastic chat and node updates to the background store as well', () => {
+    const chat = { sender_id: 0x22222222, payload: 'hi', channel: 0, timestamp: 1, packetId: 3 };
+    mqttManager.emit('message', chat);
+    mqttManager.emit('nodeUpdate', { node_id: 0x22222222, last_heard: 1 });
+    expect(background.message).toHaveBeenCalledWith(chat);
+    expect(background.nodeUpdate).toHaveBeenCalledWith({
+      node_id: 0x22222222,
+      last_heard: 1,
+      protocol: 'meshtastic',
+    });
+    expect(pushes.some((p) => p.channel === 'mqtt:message')).toBe(true);
   });
 
   it('refuses untrusted senders', async () => {

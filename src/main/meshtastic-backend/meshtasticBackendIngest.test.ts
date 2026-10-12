@@ -54,7 +54,28 @@ function setup() {
   const activeTimers = () => timers.filter((t) => !t.cleared);
   const ofKind = <K extends MeshtasticBackendRecord['kind']>(kind: K) =>
     records.filter((r): r is Extract<MeshtasticBackendRecord, { kind: K }> => r.kind === kind);
-  return { ingest, rows, records, ofKind, writes, caughtUp, feed, activeTimers };
+  /** Feed the config dump and wait until the stream framer has decoded it. */
+  const feedConfig = async (): Promise<void> => {
+    feed(...configDump());
+    await new Promise((r) => setTimeout(r, 10));
+  };
+  /** Feed the config dump, then forget what it stored (its NodeDB entry), for packet-only checks. */
+  const feedConfigAndReset = async (): Promise<void> => {
+    await feedConfig();
+    records.length = 0;
+  };
+  return {
+    ingest,
+    rows,
+    records,
+    ofKind,
+    writes,
+    caughtUp,
+    feed,
+    feedConfig,
+    feedConfigAndReset,
+    activeTimers,
+  };
 }
 
 describe('MeshtasticBackendIngest', () => {
@@ -181,7 +202,7 @@ describe('MeshtasticBackendIngest', () => {
     const t = setup();
     t.ingest.setRendererPresent(true);
     t.ingest.linkOpened();
-    t.feed(...configDump());
+    await t.feedConfig(); // decoded while the renderer still owns the link: nothing stored
     t.ingest.setRendererPresent(false);
     t.feed(textPacket({ from: ALICE, to: BROADCAST, id: 20, text: 'while away' }));
     await vi.waitFor(() => {
@@ -199,6 +220,20 @@ describe('MeshtasticBackendIngest', () => {
     expect(t.ingest.isPersisting()).toBe(false);
     // Two messages, each with a last-heard bump for its sender.
     expect(t.caughtUp).toEqual([4]);
+  });
+
+  it('reports the connected radio channel identity for rows from other paths', async () => {
+    const t = setup();
+    expect(t.ingest.channelIdentity(0)).toEqual({});
+    t.ingest.linkOpened();
+    await t.feedConfig();
+    expect(t.ingest.channelIdentity(0)).toEqual({
+      channelKey: computeChannelIdentityKey('meshtastic', 'Ops', PSK),
+      radioNodeId: ME,
+    });
+    expect(t.ingest.channelIdentity(3)).toEqual({ radioNodeId: ME });
+    t.ingest.linkClosed();
+    expect(t.ingest.channelIdentity(0)).toEqual({});
   });
 
   it('survives junk bytes on the stream', async () => {
@@ -273,7 +308,7 @@ describe('MeshtasticBackendIngest', () => {
     it("stores peer positions with a history point, but never the radio's own position", async () => {
       const t = setup();
       t.ingest.linkOpened();
-      t.feed(...configDump()); // learns ME as the connected radio
+      await t.feedConfigAndReset(); // learns ME as the connected radio
       t.feed(
         positionFrame(BOB, 397_392_000, -1_049_903_000),
         positionFrame(ME, 400_000_000, -1_050_000_000),
@@ -300,7 +335,7 @@ describe('MeshtasticBackendIngest', () => {
     it('stores battery, own radio stats and environment readings (deduplicated)', async () => {
       const t = setup();
       t.ingest.linkOpened();
-      t.feed(...configDump());
+      await t.feedConfigAndReset();
       const env = create(Telemetry.EnvironmentMetricsSchema, { temperature: 21.5 });
       t.feed(
         telemetryFrame(BOB, {
@@ -328,6 +363,45 @@ describe('MeshtasticBackendIngest', () => {
         channel_utilization: 12.5,
         num_packets_rx: 40,
       });
+    });
+
+    it('stores the NodeDB from the config dump of a link the backend opened', async () => {
+      const t = setup();
+      t.ingest.setRendererPresent(true); // a tab is open, but the keeper opened this link
+      t.ingest.linkOpened('tcp', 'backend');
+      const heardSec = Math.floor(Date.now() / 1000) - 30;
+      t.feed(
+        frame({ case: 'myInfo', value: create(Mesh.MyNodeInfoSchema, { myNodeNum: ME }) }),
+        frame({
+          case: 'nodeInfo',
+          value: create(Mesh.NodeInfoSchema, {
+            num: BOB,
+            lastHeard: heardSec,
+            snr: 5.25,
+            hopsAway: 1,
+            user: create(Mesh.UserSchema, { longName: 'Bob Relay', shortName: 'BOB' }),
+            position: create(Mesh.PositionSchema, {
+              latitudeI: 397_392_000,
+              longitudeI: -1_049_903_000,
+            }),
+          }),
+        }),
+      );
+      await vi.waitFor(() => {
+        expect(t.ofKind('position')).toHaveLength(1);
+      });
+      expect(t.ofKind('node').map((r) => r.node)).toEqual([
+        expect.objectContaining({
+          node_id: BOB,
+          long_name: 'Bob Relay',
+          short_name: 'BOB',
+          snr: 5.25,
+          hops_away: 1,
+          last_heard: heardSec * 1000,
+          latitude: 39.7392,
+          longitude: -104.9903,
+        }),
+      ]);
     });
 
     it('stores nothing for these packets while a renderer owns the link', async () => {

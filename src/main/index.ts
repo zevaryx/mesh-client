@@ -102,7 +102,7 @@ import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
 import { isDesktopMeshtasticBackendEnabled } from './meshtastic-backend/desktopBackendFlag';
 import { loadDesktopMeshtasticHost } from './meshtastic-backend/desktopHostLoader';
 import { mainMeshtasticLinkKeeperDeps } from './meshtastic-backend/mainLinks';
-import { persistMeshtasticBackendRecord } from './meshtastic-backend/persist';
+import { mainMeshtasticBackendPersistDb } from './meshtastic-backend/mainPersist';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { MQTTManager } from './mqtt-manager';
 import { createMeshTilesProtocolHandler } from './offline-maps/protocol';
@@ -2179,20 +2179,25 @@ gattSidecarProxy.on(
 // ─── Meshtastic background ingest (opt-in) ─────────────────────────
 // Stores Meshtastic TCP chat, nodes, positions and telemetry in a utilityProcess while the
 // window's renderer is not decoding.
-const meshtasticDesktopBackend = isDesktopMeshtasticBackendEnabled()
-  ? (loadDesktopMeshtasticHost()?.createDesktopMeshtasticBackend(
-      {
-        persist: (record) => {
-          persistMeshtasticBackendRecord(record);
-        },
-        onCaughtUp: (count) => {
-          console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
-          sendMeshtasticBackendCaughtUp(mainWindow, { count });
-        },
-      },
-      mainMeshtasticLinkKeeperDeps(),
-    ) ?? null)
+const meshtasticDesktopHost = isDesktopMeshtasticBackendEnabled()
+  ? loadDesktopMeshtasticHost()
   : null;
+// The sink logic ships in the host bundle; the database stays this bundle's singleton.
+const persistMeshtasticBackendRecord =
+  meshtasticDesktopHost?.createMeshtasticBackendPersist(mainMeshtasticBackendPersistDb()) ?? null;
+const meshtasticDesktopBackend =
+  meshtasticDesktopHost?.createDesktopMeshtasticBackend(
+    {
+      persist: (record) => {
+        persistMeshtasticBackendRecord?.(record);
+      },
+      onCaughtUp: (count) => {
+        console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
+        sendMeshtasticBackendCaughtUp(mainWindow, { count });
+      },
+    },
+    mainMeshtasticLinkKeeperDeps(),
+  ) ?? null;
 
 gattSidecarProxy.on('connected', ({ sessionId }: { sessionId: GattSessionProfile }) => {
   mainWindow?.webContents.send('gatt-connected', { sessionId });

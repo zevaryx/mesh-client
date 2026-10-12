@@ -54,7 +54,9 @@ import type { MeshtasticBackendHandle } from '../meshtastic-backend/hostProtocol
 import { startInProcessMeshtasticBackend } from '../meshtastic-backend/inProcessHost';
 import { withMeshtasticLinkKeeper } from '../meshtastic-backend/keptLink';
 import { mainMeshtasticLinkKeeperDeps } from '../meshtastic-backend/mainLinks';
-import { persistMeshtasticBackendRecord } from '../meshtastic-backend/persist';
+import { mainMeshtasticBackendPersistDb } from '../meshtastic-backend/mainPersist';
+import { createMeshtasticMqttBackground } from '../meshtastic-backend/mqttRecords';
+import { createMeshtasticBackendPersist } from '../meshtastic-backend/persist';
 import { MQTTManager } from '../mqtt-manager';
 import { createMeshTilesProtocolHandler } from '../offline-maps/protocol';
 import { createTileCache, type TileCache } from '../offline-maps/tile-cache';
@@ -95,6 +97,12 @@ function ensureReticulumSidecarManager(): ReticulumSidecarManager {
  * radio link, then tells the tab that takes the link back to reload. `null` when disabled.
  */
 let meshtasticBackend: MeshtasticBackendHandle | null = null;
+/** Background-ingest sink (RF and MQTT records) on the server's database. */
+const persistMeshtasticBackendRecord = createMeshtasticBackendPersist(
+  mainMeshtasticBackendPersistDb(),
+);
+/** Browser tabs connected right now (bridge sessions). */
+let attachedTabs = 0;
 /** Map tile cache under the data dir (same layout as the desktop app's userData). */
 let tileCache: TileCache | null = null;
 /** Stops the translation worker on shutdown (set when handlers register). */
@@ -140,6 +148,20 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     meshcoreMqttAdapter,
     getMainWindow: pushTarget,
     getTakServerManager: () => takServerHost.get(),
+    // MQTT chat / nodes are stored here while no tab is open (the tabs store them otherwise).
+    ...(meshtasticBackend
+      ? {
+          meshtasticBackground: createMeshtasticMqttBackground({
+            isRendererPresent: () => attachedTabs > 0,
+            persist: (record) => {
+              persistMeshtasticBackendRecord(record);
+            },
+            ...(meshtasticBackend.channelIdentity
+              ? { channelIdentity: meshtasticBackend.channelIdentity }
+              : {}),
+          }),
+        }
+      : {}),
   });
   registerTakIpcHandlers({
     idleTakStatus: IDLE_TAK_STATUS,
@@ -273,6 +295,7 @@ async function main(): Promise<void> {
       getAppVersion: () => app.getVersion(),
     }),
     onSessionCountChange: (count) => {
+      attachedTabs = count;
       meshtasticBackend?.setRendererPresent(count > 0);
     },
   });

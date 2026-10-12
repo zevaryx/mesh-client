@@ -27,7 +27,11 @@ const { startInProcessMeshtasticBackend } = await import('../meshtastic-backend/
 const { withMeshtasticLinkKeeper } = await import('../meshtastic-backend/keptLink');
 const { mainMeshtasticLinkKeeperDeps } = await import('../meshtastic-backend/mainLinks');
 const { MESHTASTIC_LINK_TARGET_SETTING } = await import('../meshtastic-backend/linkTargetStore');
-const { persistMeshtasticBackendRecord } = await import('../meshtastic-backend/persist');
+const { createMeshtasticBackendPersist } = await import('../meshtastic-backend/persist');
+const { mainMeshtasticBackendPersistDb } = await import('../meshtastic-backend/mainPersist');
+const persistMeshtasticBackendRecord = createMeshtasticBackendPersist(
+  mainMeshtasticBackendPersistDb(),
+);
 const { serializeWebBridgeFrame, parseWebBridgeServerFrame } =
   await import('../../shared/webBridgeProtocol');
 const { ALICE, BROADCAST, configDump, textPacket } =

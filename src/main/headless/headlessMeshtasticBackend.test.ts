@@ -25,7 +25,11 @@ const { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } =
 const { sendMeshtasticBackendCaughtUp } = await import('../ipc/meshtastic-backend-push');
 const { validateHttpHost } = await import('../httpHostValidation');
 const { startInProcessMeshtasticBackend } = await import('../meshtastic-backend/inProcessHost');
-const { persistMeshtasticBackendRecord } = await import('../meshtastic-backend/persist');
+const { createMeshtasticBackendPersist } = await import('../meshtastic-backend/persist');
+const { mainMeshtasticBackendPersistDb } = await import('../meshtastic-backend/mainPersist');
+const persistMeshtasticBackendRecord = createMeshtasticBackendPersist(
+  mainMeshtasticBackendPersistDb(),
+);
 const { parseWebBridgeServerFrame, serializeWebBridgeFrame } =
   await import('../../shared/webBridgeProtocol');
 const { computeChannelIdentityKey } = await import('../../shared/channelIdentityKey');
