@@ -8,7 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildMainProcess, parseEsbuildMainBuildArgs } from './esbuild-main-build.mjs';
 
 /** Keep the minified main outfile under esbuild's 1mb advisory (and well below). */
-// 640 -> 644 KiB for the Meshtastic background-ingest desktop host (utilityProcess wiring, ~2.5 KB).
+// 640 -> 644 KiB for the Meshtastic background-ingest wiring; the opt-in desktop host itself is a
+// separate bundle (meshtastic-backend-host.js) so it does not count against this budget.
 const MAIN_BUNDLE_SIZE_BUDGET_BYTES = 644 * 1024;
 
 describe('esbuild-main-build', () => {
@@ -71,6 +72,11 @@ describe('esbuild-main-build', () => {
       const backendWorker = fs.readFileSync(path.join(tempDir, 'meshtastic-backend.js'), 'utf8');
       expect(backendWorker).toContain('parentPort');
       expect(backendWorker).not.toMatch(/require\(["']electron["']\)/);
+      // The opt-in desktop host must not carry its own copy of main-process singletons.
+      const host = fs.readFileSync(path.join(tempDir, 'meshtastic-backend-host.js'), 'utf8');
+      expect(host).toContain('utilityProcess');
+      expect(host).not.toContain('CREATE TABLE');
+      expect(host).not.toContain('mesh-client.log');
       const noticeDirectory = path.join(tempDir, 'translation-licenses');
       expect(fs.readFileSync(path.join(noticeDirectory, 'LICENSE-fastText.txt'), 'utf8')).toContain(
         'Copyright (c) 2016-present, Facebook, Inc.',

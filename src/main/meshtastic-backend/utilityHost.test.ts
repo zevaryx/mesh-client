@@ -1,15 +1,17 @@
 // @vitest-environment node
 import { EventEmitter } from 'node:events';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import type { BrowserWindow } from 'electron';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('electron', () => ({ utilityProcess: { fork: vi.fn() } }));
 
-import {
-  createDesktopMeshtasticBackend,
-  isDesktopMeshtasticBackendEnabled,
-} from './desktopBackend';
+import { createDesktopMeshtasticBackend } from './desktopBackend';
+import { isDesktopMeshtasticBackendEnabled } from './desktopBackendFlag';
+import { loadDesktopMeshtasticHost } from './desktopHostLoader';
 import {
   createMeshtasticLinkTaps,
   type MeshtasticBackendCommand,
@@ -53,7 +55,7 @@ describe('startUtilityMeshtasticBackend', () => {
     handle.taps.tcp.onClose();
     expect(child.sent).toEqual([
       { t: 'present', value: true },
-      { t: 'open', kind: 'tcp' },
+      { t: 'open', kind: 'tcp', origin: 'renderer' },
       { t: 'data', bytes: new Uint8Array([1, 2]) },
       { t: 'close', kind: 'tcp' },
     ]);
@@ -107,13 +109,14 @@ describe('createDesktopMeshtasticBackend', () => {
     const inner: MeshtasticBackendHandle = {
       taps: {
         tcp: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
-        http: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
+        http: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn(), onUserDisconnect: vi.fn() },
         ble: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
       },
       setRendererPresent: (p) => present.push(p),
       dispose: vi.fn(),
     };
-    const desktop = createDesktopMeshtasticBackend(deps(), () => inner);
+    const keeperDeps = { connect: vi.fn(), loadTarget: () => null, saveTarget: vi.fn() };
+    const desktop = createDesktopMeshtasticBackend(deps(), keeperDeps, () => inner);
     desktop.taps.tcp.onData(new Uint8Array([1])); // before start: dropped
     expect(inner.taps.tcp.onData).not.toHaveBeenCalled();
 
@@ -131,8 +134,44 @@ describe('createDesktopMeshtasticBackend', () => {
     desktop.taps.ble.onData(new Uint8Array([2]));
     expect(inner.taps.ble.onData).toHaveBeenCalledWith(new Uint8Array([2]));
     expect(inner.taps.tcp.onData).not.toHaveBeenCalled();
+    // Link info and explicit disconnects reach the keeper behind the forwarding taps.
+    const write = vi.fn();
+    const info = {
+      origin: 'renderer' as const,
+      target: { kind: 'tcp' as const, host: 'radio', port: 4403 },
+    };
+    desktop.taps.tcp.onOpen(write, info);
+    expect(inner.taps.tcp.onOpen).toHaveBeenCalledWith(write, info);
+    desktop.taps.http.onUserDisconnect?.();
+    expect(inner.taps.http.onUserDisconnect).toHaveBeenCalled();
+    // BLE packets from the sidecar GATT proxy reach the BLE tap.
+    const proxy = Object.assign(new EventEmitter(), { toRadio: vi.fn() });
+    desktop.attachGatt(proxy);
+    proxy.emit('fromRadio', { sessionId: 'meshtastic', bytes: new Uint8Array([3]) });
+    expect(inner.taps.ble.onData).toHaveBeenCalledWith(new Uint8Array([3]));
     desktop.dispose();
     expect(inner.dispose).toHaveBeenCalled();
+  });
+});
+
+describe('loadDesktopMeshtasticHost', () => {
+  it('returns null (and warns) when the host bundle was not built, and loads it when present', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-backend-host-'));
+    try {
+      expect(loadDesktopMeshtasticHost(dir)).toBeNull();
+      expect(warn).toHaveBeenCalledWith(
+        '[meshtastic-backend] meshtastic-backend-host.js not built; disabled',
+      );
+      fs.writeFileSync(
+        path.join(dir, 'meshtastic-backend-host.js'),
+        'exports.createDesktopMeshtasticBackend = () => "loaded";',
+      );
+      expect(loadDesktopMeshtasticHost(dir)?.createDesktopMeshtasticBackend).toBeTypeOf('function');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      warn.mockRestore();
+    }
   });
 });
 
@@ -149,8 +188,8 @@ describe('createMeshtasticLinkTaps', () => {
     links.write(new Uint8Array([9]));
     links.taps.http.onClose(); // stale close: ignored
     expect(sent).toEqual([
-      { t: 'open', kind: 'http' },
-      { t: 'open', kind: 'tcp' },
+      { t: 'open', kind: 'http', origin: 'renderer' },
+      { t: 'open', kind: 'tcp', origin: 'renderer' },
       { t: 'data', bytes: new Uint8Array([2]) },
     ]);
     expect(tcpWrite).toHaveBeenCalledWith(new Uint8Array([9]));

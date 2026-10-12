@@ -43,6 +43,8 @@ import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from 
 import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
 import type { MeshtasticBackendHandle } from '../meshtastic-backend/hostProtocol';
 import { startInProcessMeshtasticBackend } from '../meshtastic-backend/inProcessHost';
+import { withMeshtasticLinkKeeper } from '../meshtastic-backend/keptLink';
+import { mainMeshtasticLinkKeeperDeps } from '../meshtastic-backend/mainLinks';
 import { persistMeshtasticBackendRecord } from '../meshtastic-backend/persist';
 import { MQTTManager } from '../mqtt-manager';
 import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
@@ -84,7 +86,7 @@ function ensureReticulumSidecarManager(): ReticulumSidecarManager {
 let meshtasticBackend: MeshtasticBackendHandle | null = null;
 
 function startMeshtasticBackend(): MeshtasticBackendHandle {
-  return startInProcessMeshtasticBackend({
+  const ingest = startInProcessMeshtasticBackend({
     persist: (record) => {
       persistMeshtasticBackendRecord(record);
     },
@@ -93,6 +95,8 @@ function startMeshtasticBackend(): MeshtasticBackendHandle {
       sendMeshtasticBackendCaughtUp(pushTarget(), { count });
     },
   });
+  // Reconnects TCP / HTTP to the last radio a tab used, e.g. after a server restart.
+  return withMeshtasticLinkKeeper(ingest, mainMeshtasticLinkKeeperDeps());
 }
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */

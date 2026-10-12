@@ -375,4 +375,26 @@ describe('MeshtasticBackendIngest', () => {
       expect(t.activeTimers()).toEqual([]);
     });
   });
+
+  describe('links the backend opens itself', () => {
+    it('requests the config dump in the link format and keeps ownership with a tab present', () => {
+      const t = setup();
+      t.ingest.setRendererPresent(true);
+      t.ingest.linkOpened('tcp', 'backend');
+      expect(t.ingest.isPersisting()).toBe(true); // the tab is not decoding this socket
+      const framed = t.writes[0];
+      expect(framed?.subarray(0, 2)).toEqual(new Uint8Array([0x94, 0xc3]));
+      const toRadio = fromBinary(Mesh.ToRadioSchema, framed?.subarray(4) ?? new Uint8Array());
+      expect(toRadio.payloadVariant.case).toBe('wantConfigId');
+      expect(t.activeTimers()).toHaveLength(1); // and keeps it alive
+
+      t.ingest.linkOpened('http', 'backend');
+      const raw = fromBinary(Mesh.ToRadioSchema, t.writes[1] ?? new Uint8Array());
+      expect(raw.payloadVariant.case).toBe('wantConfigId');
+
+      t.ingest.linkOpened('tcp', 'renderer'); // the tab's runtime connects: hand over
+      expect(t.ingest.isPersisting()).toBe(false);
+      expect(t.writes).toHaveLength(2);
+    });
+  });
 });

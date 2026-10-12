@@ -4,11 +4,12 @@
  * directly, so the shapes double as documentation of the boundary.
  */
 import type { TcpBridgeTap } from '../ipc/tcp-bridge';
+import type { MeshtasticLinkOrigin } from './linkTarget';
 import type { MeshtasticBackendIngest, MeshtasticLinkKind } from './meshtasticBackendIngest';
 import type { MeshtasticBackendRecord } from './meshtasticBackendRecords';
 
 export type MeshtasticBackendCommand =
-  | { t: 'open'; kind: MeshtasticLinkKind }
+  | { t: 'open'; kind: MeshtasticLinkKind; origin: MeshtasticLinkOrigin }
   | { t: 'data'; bytes: Uint8Array }
   | { t: 'close'; kind: MeshtasticLinkKind }
   | { t: 'present'; value: boolean };
@@ -40,7 +41,7 @@ export function applyMeshtasticBackendCommand(
 ): void {
   switch (cmd.t) {
     case 'open':
-      ingest.linkOpened(cmd.kind);
+      ingest.linkOpened(cmd.kind, cmd.origin);
       break;
     case 'data':
       ingest.pushBytes(cmd.bytes);
@@ -64,6 +65,7 @@ export function isMeshtasticBackendCommand(v: unknown): v is MeshtasticBackendCo
   if (!isRecord(v)) return false;
   switch (v.t) {
     case 'open':
+      return LINK_KINDS.includes(v.kind) && (v.origin === 'renderer' || v.origin === 'backend');
     case 'close':
       return LINK_KINDS.includes(v.kind);
     case 'data':
@@ -115,9 +117,9 @@ export function createMeshtasticLinkTaps(send: (cmd: MeshtasticBackendCommand) =
 } {
   let current: { kind: MeshtasticLinkKind; write: (frame: Uint8Array) => void } | null = null;
   const tapFor = (kind: MeshtasticLinkKind): TcpBridgeTap => ({
-    onOpen: (write) => {
+    onOpen: (write, info) => {
       current = { kind, write };
-      send({ t: 'open', kind });
+      send({ t: 'open', kind, origin: info?.origin ?? 'renderer' });
     },
     onData: (bytes) => {
       if (current?.kind === kind) send({ t: 'data', bytes });

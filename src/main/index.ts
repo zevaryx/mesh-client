@@ -103,11 +103,9 @@ import {
 } from './log-service';
 import { appendMecpReceivedLog, isValidMecpAppendPayload } from './mecp-received-log';
 import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
-import {
-  createDesktopMeshtasticBackend,
-  isDesktopMeshtasticBackendEnabled,
-} from './meshtastic-backend/desktopBackend';
-import { attachMeshtasticGattTap } from './meshtastic-backend/gattTap';
+import { isDesktopMeshtasticBackendEnabled } from './meshtastic-backend/desktopBackendFlag';
+import { loadDesktopMeshtasticHost } from './meshtastic-backend/desktopHostLoader';
+import { mainMeshtasticLinkKeeperDeps } from './meshtastic-backend/mainLinks';
 import { persistMeshtasticBackendRecord } from './meshtastic-backend/persist';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { MQTTManager } from './mqtt-manager';
@@ -2194,15 +2192,18 @@ gattSidecarProxy.on(
 // Stores Meshtastic TCP chat, nodes, positions and telemetry in a utilityProcess while the
 // window's renderer is not decoding.
 const meshtasticDesktopBackend = isDesktopMeshtasticBackendEnabled()
-  ? createDesktopMeshtasticBackend({
-      persist: (record) => {
-        persistMeshtasticBackendRecord(record);
+  ? (loadDesktopMeshtasticHost()?.createDesktopMeshtasticBackend(
+      {
+        persist: (record) => {
+          persistMeshtasticBackendRecord(record);
+        },
+        onCaughtUp: (count) => {
+          console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
+          sendMeshtasticBackendCaughtUp(mainWindow, { count });
+        },
       },
-      onCaughtUp: (count) => {
-        console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
-        sendMeshtasticBackendCaughtUp(mainWindow, { count });
-      },
-    })
+      mainMeshtasticLinkKeeperDeps(),
+    ) ?? null)
   : null;
 
 gattSidecarProxy.on('connected', ({ sessionId }: { sessionId: GattSessionProfile }) => {
@@ -2224,9 +2225,7 @@ gattSidecarProxy.on(
   },
 );
 // Opt-in Meshtastic background ingest also sees the BLE session (desktop only).
-if (meshtasticDesktopBackend) {
-  attachMeshtasticGattTap(gattSidecarProxy, meshtasticDesktopBackend.taps.ble);
-}
+meshtasticDesktopBackend?.attachGatt(gattSidecarProxy);
 gattSidecarProxy.on(
   'issue',
   (payload: { sessionId?: GattSessionProfile; code: string; message: string }) => {

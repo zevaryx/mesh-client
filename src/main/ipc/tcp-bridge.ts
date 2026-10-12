@@ -17,6 +17,7 @@ import {
   resetLiveSessionMeter,
 } from '../live-session-meter';
 import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
+import type { MeshtasticLinkInfo } from '../meshtastic-backend/linkTarget';
 import { meshtasticTcpWriteErrorIsNoSocket } from '../meshtasticTcpWriteResult';
 import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender } from '../validate-ipc-sender';
@@ -35,12 +36,21 @@ export const TCP_BRIDGE_KEEPALIVE_INITIAL_DELAY_MS = 30_000;
 /**
  * Main-process observer of the active socket (Meshtastic background ingest). Sees exactly what
  * the renderer sees; `write` targets the socket that was active at open and no-ops once replaced.
+ * `onUserDisconnect` marks a renderer's explicit disconnect (the link keeper stops reconnecting).
  */
 export interface TcpBridgeTap {
-  onOpen: (write: (bytes: Uint8Array) => void) => void;
+  onOpen: (write: (bytes: Uint8Array) => void, info?: MeshtasticLinkInfo) => void;
   onData: (chunk: Uint8Array) => void;
   onClose: () => void;
+  onUserDisconnect?: () => void;
 }
+
+/**
+ * Passed instead of an IPC event when the main process itself opens a link (background-ingest
+ * link keeper). A renderer cannot produce this object over IPC, so `assertIpcSender` still
+ * guards every renderer call.
+ */
+export const MAIN_PROCESS_ORIGIN: unique symbol = Symbol('mesh-client.main-process-origin');
 
 export interface TcpBridgeDeps {
   protocol: TcpBridgeProtocol;
@@ -51,7 +61,11 @@ export interface TcpBridgeDeps {
 }
 
 export interface TcpBridgeHandlers {
-  connect: (event: IpcMainInvokeEvent, host: string, port: number) => Promise<void>;
+  connect: (
+    event: IpcMainInvokeEvent | typeof MAIN_PROCESS_ORIGIN,
+    host: string,
+    port: number,
+  ) => Promise<void>;
   write: (
     event: IpcMainInvokeEvent,
     bytes: number[],
@@ -77,8 +91,13 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
   const dataChannel = `${protocol}:tcp-data`;
   const disconnectedChannel = `${protocol}:tcp-disconnected`;
 
-  const connect = (event: IpcMainInvokeEvent, host: string, port: number): Promise<void> => {
-    assertIpcSender(event, connectChannel);
+  const connect = (
+    event: IpcMainInvokeEvent | typeof MAIN_PROCESS_ORIGIN,
+    host: string,
+    port: number,
+  ): Promise<void> => {
+    if (event !== MAIN_PROCESS_ORIGIN) assertIpcSender(event, connectChannel);
+    const origin = event === MAIN_PROCESS_ORIGIN ? 'backend' : 'renderer';
     return new Promise<void>((resolve, reject) => {
       let settled = false;
       const p = port;
@@ -127,11 +146,14 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
         );
         resetLiveSessionMeter(protocol);
         if (tap && activeSocket === socket) {
-          tap.onOpen((bytes) => {
-            if (activeSocket === socket && !socket.destroyed && !socket.writableEnded) {
-              socket.write(bytes);
-            }
-          });
+          tap.onOpen(
+            (bytes) => {
+              if (activeSocket === socket && !socket.destroyed && !socket.writableEnded) {
+                socket.write(bytes);
+              }
+            },
+            { origin, target: { kind: 'tcp', host, port: p } },
+          );
         }
         if (!settled) {
           settled = true;
@@ -268,6 +290,8 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
       prev.destroy();
       tap?.onClose();
     }
+    // An explicit renderer disconnect, even with no socket: stop any background reconnect.
+    tap?.onUserDisconnect?.();
   };
 
   const destroyForQuit = (logLabel: string): void => {
@@ -287,6 +311,15 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
 }
 
 const registeredBridges: TcpBridgeHandlers[] = [];
+let registeredMeshtasticBridge: TcpBridgeHandlers | null = null;
+
+/** Open the Meshtastic TCP link from the main process (background-ingest link keeper). */
+export function connectMeshtasticTcpFromMain(host: string, port: number): Promise<void> {
+  if (!registeredMeshtasticBridge) {
+    return Promise.reject(new Error('meshtastic:tcp bridge not registered'));
+  }
+  return registeredMeshtasticBridge.connect(MAIN_PROCESS_ORIGIN, host, port);
+}
 
 /** Register both protocol bridges. Channel name literals keep check:ipc-contract aligned. */
 export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void {
@@ -312,6 +345,7 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
   ipcMain.handle('meshtastic:tcp-disconnect', meshtastic.disconnect);
 
   registeredBridges.push(meshcore, meshtastic);
+  registeredMeshtasticBridge = meshtastic;
 }
 
 /** Destroy both protocol sockets on quit / will-quit. */

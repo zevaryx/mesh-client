@@ -96,6 +96,20 @@ export async function buildMainProcess(opts = {}) {
     logLevel: 'info',
   });
 
+  // Opt-in desktop host for that worker, loaded only with MESH_CLIENT_MESHTASTIC_BACKEND=on so
+  // the default index.js does not carry it. Main-process singletons are injected, not bundled.
+  await esbuild.build({
+    absWorkingDir,
+    entryPoints: ['src/main/meshtastic-backend/desktopHostEntry.ts'],
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    outfile: path.join(path.dirname(outfile), 'meshtastic-backend-host.js'),
+    external: [...MAIN_ESBUILD_EXTERNALS],
+    minify,
+    logLevel: 'info',
+  });
+
   const noticeDirectory = path.resolve(
     absWorkingDir,
     path.dirname(outfile),

@@ -11,6 +11,7 @@ import { probeHttpRttMs, probeTcpRttMs } from '../host-link-rtt';
 import { validateHttpHost } from '../httpHostValidation';
 import { snapshotLiveSessionMeter } from '../live-session-meter';
 import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
+import type { MeshtasticLinkOrigin } from '../meshtastic-backend/linkTarget';
 import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
 import type { TcpBridgeTap } from './tcp-bridge';
@@ -103,6 +104,15 @@ export interface HttpBridgeIpcDeps {
 
 /** Background-ingest tap of the registered bridge (one per process, like `httpDevice`). */
 let httpTap: TcpBridgeTap | undefined;
+let startMeshtasticHttpFromMain: ((host: string, tls: boolean) => Promise<void>) | null = null;
+
+/** Start the Meshtastic HTTP link from the main process (background-ingest link keeper). */
+export function connectMeshtasticHttpFromMain(host: string, tls: boolean): Promise<void> {
+  if (!startMeshtasticHttpFromMain) {
+    return Promise.reject(new Error('http bridge not registered'));
+  }
+  return startMeshtasticHttpFromMain(host, tls);
+}
 
 /** End the current poll loop, telling the tap the link is gone. */
 function stopHttpDevice(): void {
@@ -155,12 +165,12 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     return snapshotLiveSessionMeter(protocol);
   });
 
-  ipcMain.handle('http:connect', async (event, host: unknown, tls: unknown) => {
-    if (!validateIpcSender(event)) throw new Error('http:connect: unauthorized sender');
-    validateHttpHost(host);
-    if (typeof tls !== 'boolean') {
-      throw new Error('Invalid tls');
-    }
+  /** Preflight, then poll `fromradio` until replaced or disconnected. */
+  const startHttpLink = async (
+    host: string,
+    tls: boolean,
+    origin: MeshtasticLinkOrigin,
+  ): Promise<void> => {
     stopHttpDevice();
     await httpPreflight(host, tls);
     const intervalId = setInterval(() => {
@@ -210,18 +220,31 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
       })();
     }, HTTP_FETCH_INTERVAL_MS);
     httpDevice = { host, tls, intervalId, fetchInFlight: false };
-    httpTap?.onOpen((bytes) => {
-      if (httpDevice?.intervalId !== intervalId) return;
-      httpWriteToRadio(host, tls, bytes).catch((err: unknown) => {
-        console.debug(
-          '[IPC] http background-ingest write failed:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-        );
-      });
-    });
+    httpTap?.onOpen(
+      (bytes) => {
+        if (httpDevice?.intervalId !== intervalId) return;
+        httpWriteToRadio(host, tls, bytes).catch((err: unknown) => {
+          console.debug(
+            '[IPC] http background-ingest write failed:',
+            sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          );
+        });
+      },
+      { origin, target: { kind: 'http', host, tls } },
+    );
     logDeviceConnection(
       `transport=http stack=meshtastic host=${sanitizeLogMessage(host)} tls=${tls}`,
     );
+  };
+  startMeshtasticHttpFromMain = (host, tls) => startHttpLink(host, tls, 'backend');
+
+  ipcMain.handle('http:connect', async (event, host: unknown, tls: unknown) => {
+    if (!validateIpcSender(event)) throw new Error('http:connect: unauthorized sender');
+    validateHttpHost(host);
+    if (typeof tls !== 'boolean') {
+      throw new Error('Invalid tls');
+    }
+    await startHttpLink(host, tls, 'renderer');
   });
 
   ipcMain.handle('http:write', async (event, data: number[]) => {
@@ -246,5 +269,7 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
       console.debug('[IPC] http:disconnect');
       stopHttpDevice();
     }
+    // An explicit renderer disconnect: stop any background reconnect.
+    httpTap?.onUserDisconnect?.();
   });
 }

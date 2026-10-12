@@ -9,21 +9,16 @@
 import type { BrowserWindow } from 'electron';
 
 import type { TcpBridgeTap } from '../ipc/tcp-bridge';
+import { attachMeshtasticGattTap, type GattProxyLike } from './gattTap';
 import type {
   MeshtasticBackendHandle,
   MeshtasticBackendHostDeps,
   MeshtasticLinkTaps,
 } from './hostProtocol';
+import { withMeshtasticLinkKeeper } from './keptLink';
+import type { MeshtasticLinkKeeperDeps } from './linkKeeper';
 import type { MeshtasticLinkKind } from './meshtasticBackendIngest';
 import { startUtilityMeshtasticBackend } from './utilityHost';
-
-export const MESHTASTIC_BACKEND_ENV = 'MESH_CLIENT_MESHTASTIC_BACKEND';
-
-export function isDesktopMeshtasticBackendEnabled(
-  env: Record<string, string | undefined> = process.env,
-): boolean {
-  return env[MESHTASTIC_BACKEND_ENV]?.trim().toLowerCase() === 'on';
-}
 
 export interface DesktopMeshtasticBackend {
   taps: MeshtasticLinkTaps;
@@ -31,32 +26,47 @@ export interface DesktopMeshtasticBackend {
   start: () => void;
   /** Track whether `win`'s renderer is loaded and decoding. */
   watchWindow: (win: BrowserWindow) => void;
+  /** Feed the Meshtastic BLE session of the sidecar GATT proxy. */
+  attachGatt: (proxy: GattProxyLike) => void;
   dispose: () => void;
 }
 
+/**
+ * `keeperDeps` comes from the main bundle (it opens links through the registered bridges and
+ * stores the target in SQLite), because this module ships in a separately loaded bundle.
+ */
 export function createDesktopMeshtasticBackend(
   deps: MeshtasticBackendHostDeps,
-  startHost: (
-    deps: MeshtasticBackendHostDeps,
-  ) => MeshtasticBackendHandle = startUtilityMeshtasticBackend,
+  keeperDeps: MeshtasticLinkKeeperDeps,
+  startHost: (deps: MeshtasticBackendHostDeps) => MeshtasticBackendHandle = (hostDeps) =>
+    withMeshtasticLinkKeeper(startUtilityMeshtasticBackend(hostDeps), keeperDeps),
 ): DesktopMeshtasticBackend {
   let handle: MeshtasticBackendHandle | null = null;
   let present = false;
   const forward = (kind: MeshtasticLinkKind): TcpBridgeTap => ({
-    onOpen: (write) => handle?.taps[kind].onOpen(write),
+    onOpen: (write, info) => handle?.taps[kind].onOpen(write, info),
     onData: (chunk) => handle?.taps[kind].onData(chunk),
     onClose: () => handle?.taps[kind].onClose(),
+    onUserDisconnect: () => handle?.taps[kind].onUserDisconnect?.(),
   });
+  const taps: MeshtasticLinkTaps = {
+    tcp: forward('tcp'),
+    http: forward('http'),
+    ble: forward('ble'),
+  };
   const setPresent = (value: boolean): void => {
     present = value;
     handle?.setRendererPresent(value);
   };
   return {
-    taps: { tcp: forward('tcp'), http: forward('http'), ble: forward('ble') },
+    taps,
     start: () => {
       if (handle) return;
       handle = startHost(deps);
       handle.setRendererPresent(present);
+    },
+    attachGatt: (proxy) => {
+      attachMeshtasticGattTap(proxy, taps.ble);
     },
     watchWindow: (win) => {
       const wc = win.webContents;

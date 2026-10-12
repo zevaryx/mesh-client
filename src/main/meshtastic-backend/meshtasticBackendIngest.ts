@@ -39,6 +39,7 @@ import {
 import { isMeshtasticBroadcastNodeNum } from '../../shared/nodeNameUtils';
 import { MESHTASTIC_TAPBACK_DATA_EMOJI_FLAG } from '../../shared/reactionEmoji';
 import { MS_PER_SECOND } from '../../shared/timeConstants';
+import type { MeshtasticLinkOrigin } from './linkTarget';
 import {
   type MeshtasticBackendRecord,
   recordsForChatSender,
@@ -108,6 +109,18 @@ export function frameMeshtasticToRadio(payload: Uint8Array): Uint8Array {
   return frame;
 }
 
+/**
+ * `want_config_id` ToRadio: asks the radio for its config dump and starts the packet stream.
+ * Renderers send this through `@meshtastic/core`; links the backend opens itself need it too.
+ */
+export function meshtasticWantConfigFrame(nonce: number, raw = false): Uint8Array {
+  const toRadio = create(Mesh.ToRadioSchema, {
+    payloadVariant: { case: 'wantConfigId', value: nonce >>> 0 },
+  });
+  const bytes = toBinary(Mesh.ToRadioSchema, toRadio);
+  return raw ? bytes : frameMeshtasticToRadio(bytes);
+}
+
 /** Heartbeat ToRadio, framed for the stream API unless `raw` (BLE writes bare protobufs). */
 export function meshtasticHeartbeatFrame(raw = false): Uint8Array {
   const toRadio = create(Mesh.ToRadioSchema, {
@@ -146,21 +159,30 @@ export class MeshtasticBackendIngest {
       });
   }
 
-  /** A new link connected: drop per-link state; the radio re-sends it during config. */
-  linkOpened(kind: MeshtasticLinkKind = 'tcp'): void {
+  /**
+   * A new link connected: drop per-link state; the radio re-sends it during config. A link the
+   * backend opened itself (`origin: 'backend'`) stays the backend's even if a renderer is present,
+   * and gets a config request so the radio starts streaming.
+   */
+  linkOpened(kind: MeshtasticLinkKind = 'tcp', origin: MeshtasticLinkOrigin = 'renderer'): void {
     if (kind === 'tcp') this.resetFramer();
     else this.closeFramer();
     this.linkKind = kind;
     this.linkUp = true;
     this.myNodeNum = 0;
     this.channelKeyByIndex.clear();
-    if (this.rendererPresent && !this.attached) {
+    if (origin === 'backend') {
+      this.attached = false;
+    } else if (this.rendererPresent && !this.attached) {
       this.attached = true;
       const count = this.persistedWhileDetached;
       this.persistedWhileDetached = 0;
       if (count > 0) this.notifyCaughtUp(count);
     }
     this.syncHeartbeat();
+    if (origin === 'backend') {
+      this.send(meshtasticWantConfigFrame(Math.floor(Math.random() * 0xffffffff), kind !== 'tcp'));
+    }
   }
 
   /** A link closed. A late close from a link already replaced by another kind is ignored. */
@@ -252,7 +274,7 @@ export class MeshtasticBackendIngest {
     try {
       this.sinks.writeToRadio(frame);
     } catch (err) {
-      console.warn('[meshtastic-backend] heartbeat write failed', err);
+      console.warn('[meshtastic-backend] write to radio failed', err);
     }
   }
 
