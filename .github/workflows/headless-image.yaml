@@ -1,0 +1,231 @@
+name: Headless image
+
+# Builds the headless web UI image (Dockerfile), checks its size, runs it and drives it with a
+# real browser (scripts/headless-smoke.mjs). On main and release tags it then publishes a
+# linux/amd64 + linux/arm64 image to GHCR, each architecture built on its own native runner.
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+
+on:
+  pull_request:
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - src/**
+      - reticulum-sidecar/**
+      - scripts/build-headless.mjs
+      - scripts/clone-ratspeak-stack.sh
+      - scripts/headless-smoke.mjs
+      - package.json
+      - pnpm-lock.yaml
+      - .github/workflows/headless-image.yaml
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: headless-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    name: Build and browser smoke test (linux/amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      # Raise deliberately (with the reason in the commit) when the image legitimately grows.
+      IMAGE_SIZE_BUDGET_MB: '600'
+    steps:
+      # actions/checkout v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      # docker/setup-buildx-action v4.4.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - name: Build image
+        # docker/build-push-action v7.4.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: mesh-client-web:ci
+          cache-from: type=gha,scope=headless-linux-amd64
+          cache-to: type=gha,mode=max,scope=headless-linux-amd64
+
+      - name: Check image size
+        run: |
+          bytes=$(docker image inspect mesh-client-web:ci --format '{{.Size}}')
+          mib=$((bytes / 1024 / 1024))
+          echo "### Headless image: ${mib} MiB (budget ${IMAGE_SIZE_BUDGET_MB} MiB)" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$mib" -gt "$IMAGE_SIZE_BUDGET_MB" ]; then
+            echo "::error::headless image is ${mib} MiB, over the ${IMAGE_SIZE_BUDGET_MB} MiB budget"
+            exit 1
+          fi
+
+      - name: Start container
+        run: |
+          token="$(openssl rand -hex 24)"
+          echo "::add-mask::$token"
+          echo "SMOKE_TOKEN=$token" >> "$GITHUB_ENV"
+          docker run -d --name mesh-smoke -p 127.0.0.1:8080:8080 \
+            -e MESH_CLIENT_WEB_TOKEN="$token" mesh-client-web:ci
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/healthz > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          echo "::error::headless server did not become healthy"
+          docker logs mesh-smoke 2>&1 | sed "s/$token/***/g"
+          exit 1
+
+      - uses: ./.github/actions/setup-node-pnpm
+
+      - name: Browser smoke test
+        run: >-
+          node scripts/headless-smoke.mjs --url http://127.0.0.1:8080 --token "$SMOKE_TOKEN"
+          --browser "$(command -v google-chrome)" --screenshot headless-smoke.png
+
+      - name: Collect container log
+        if: always()
+        run: docker logs mesh-smoke 2>&1 | sed "s/${SMOKE_TOKEN:-unset}/***/g" > headless-container.log || true
+
+      - name: Upload smoke artifacts
+        if: failure()
+        # actions/upload-artifact v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: headless-smoke-${{ github.run_id }}
+          path: |
+            headless-smoke.png
+            headless-container.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  build-arch:
+    name: Build ${{ matrix.platform }}
+    needs: smoke
+    if: github.event_name != 'pull_request'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      # actions/checkout v6.1.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+
+      - name: Image name
+        run: |
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mesh-client-web" >> "$GITHUB_ENV"
+          echo "ARCH=${PLATFORM#linux/}" >> "$GITHUB_ENV"
+        env:
+          PLATFORM: ${{ matrix.platform }}
+
+      # docker/login-action v4.6.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/setup-buildx-action v4.4.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - name: Build and push by digest
+        id: build
+        # docker/build-push-action v7.4.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=headless-${{ env.ARCH }}
+          cache-to: type=gha,mode=max,scope=headless-${{ env.ARCH }}
+
+      - name: Record digest
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      # actions/upload-artifact v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: headless-digest-${{ env.ARCH }}
+          path: digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish multi-arch image
+    needs: build-arch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      # actions/download-artifact v7.0.0
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          path: digests
+          pattern: headless-digest-*
+          merge-multiple: true
+
+      - name: Image name
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/mesh-client-web" >> "$GITHUB_ENV"
+
+      # docker/login-action v4.6.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # docker/setup-buildx-action v4.4.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069
+
+      - name: Tags
+        id: meta
+        # docker/metadata-action v6.2.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Create manifest list
+        working-directory: digests
+        run: |
+          # shellcheck disable=SC2046
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE}@sha256:%s " *)
+
+      - name: Inspect
+        run: docker buildx imagetools inspect "${IMAGE}:${VERSION}"
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}

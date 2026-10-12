@@ -6,19 +6,20 @@ Mesh-Client uses GitHub Actions for continuous integration and deployment.
 
 ## Workflows
 
-| Workflow                    | Trigger                                      | Purpose                                                                          |
-| --------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------- |
-| `ci.yaml`                   | Push/PR/`merge_group`/`workflow_dispatch`    | Lint, typecheck, build, policy scanners, Flatpak manifest validation             |
-| `tests.yaml`                | Push/PR/`merge_group`/`workflow_dispatch`    | Vitest coverage + merge; Reticulum sidecar `llvm-cov` when sidecar paths change  |
-| `buttonmash.yaml`           | PR/`merge_group`/`workflow_dispatch`         | Browser-based chaos testing of the Vite renderer                                 |
-| `e2e.yaml`                  | Daily on `main` + manual `workflow_dispatch` | Playwright Electron E2E (unpackaged build, 3-OS) + Release preflight; no PR gate |
-| `build.yaml`                | Manual `workflow_dispatch`                   | Native 3-OS packaging smoke build (+ schema compare vs last official)            |
-| `reticulum-sidecar.yaml`    | Path-filtered push/PR to `main`              | Sidecar fmt + Clippy (ubuntu); multi-OS matrix build/test                        |
-| `release.yaml`              | Version tags (`v*`)                          | Build & publish releases (AppImage/deb/rpm)                                      |
-| `flatpak.yaml`              | Version tags (`v*`), manual                  | Build Flatpak (+ schema compare vs last official); publish to release on tags    |
-| `cut-release.yaml`          | Manual `workflow_dispatch` on `main`         | **Primary** release cut via protected `release-cut` / `RELEASE_CUT_TOKEN`        |
-| `docs.yml`                  | Push to `main`                               | Deploy MkDocs to GitHub Pages                                                    |
-| `third-party-licenses.yaml` | Path-filtered push to `main`                 | Regenerate licenses and open a documentation PR using license-only automation    |
+| Workflow                    | Trigger                                             | Purpose                                                                                  |
+| --------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `ci.yaml`                   | Push/PR/`merge_group`/`workflow_dispatch`           | Lint, typecheck, build, policy scanners, Flatpak manifest validation                     |
+| `tests.yaml`                | Push/PR/`merge_group`/`workflow_dispatch`           | Vitest coverage + merge; Reticulum sidecar `llvm-cov` when sidecar paths change          |
+| `buttonmash.yaml`           | PR/`merge_group`/`workflow_dispatch`                | Browser-based chaos testing of the Vite renderer                                         |
+| `e2e.yaml`                  | Daily on `main` + manual `workflow_dispatch`        | Playwright Electron E2E (unpackaged build, 3-OS) + Release preflight; no PR gate         |
+| `build.yaml`                | Manual `workflow_dispatch`                          | Native 3-OS packaging smoke build (+ schema compare vs last official)                    |
+| `reticulum-sidecar.yaml`    | Path-filtered push/PR to `main`                     | Sidecar fmt + Clippy (ubuntu); multi-OS matrix build/test                                |
+| `release.yaml`              | Version tags (`v*`)                                 | Build & publish releases (AppImage/deb/rpm)                                              |
+| `flatpak.yaml`              | Version tags (`v*`), manual                         | Build Flatpak (+ schema compare vs last official); publish to release on tags            |
+| `cut-release.yaml`          | Manual `workflow_dispatch` on `main`                | **Primary** release cut via protected `release-cut` / `RELEASE_CUT_TOKEN`                |
+| `docs.yml`                  | Push to `main`                                      | Deploy MkDocs to GitHub Pages                                                            |
+| `headless-image.yaml`       | Path-filtered PR, push to `main`, `v*` tags, manual | Headless web UI image: size budget + browser smoke; multi-arch GHCR publish (not on PRs) |
+| `third-party-licenses.yaml` | Path-filtered push to `main`                        | Regenerate licenses and open a documentation PR using license-only automation            |
 
 ---
 
@@ -137,6 +138,20 @@ Triggered by pushing a version tag (e.g., `v1.2.3`):
 Linux packaging smoke (`verify-linux-packaging.mjs`) asserts `.deb` **Description** metadata is ASCII-only. See [Release Process](release-process.md).
 
 See [Release Process](release-process.md) for the maintainer workflow.
+
+---
+
+## Headless image (`headless-image.yaml`)
+
+Builds the [headless web UI](development/headless-webui.md) Docker image.
+
+**Triggers:** pull requests that touch the image's inputs (`Dockerfile`, `src/**`, the sidecar, build scripts, manifests), pushes to `main`, version tags (`v*`) and manual `workflow_dispatch`.
+
+1. **`smoke`** (every run): builds `linux/amd64` with the GitHub Actions layer cache, fails when the image exceeds `IMAGE_SIZE_BUDGET_MB` (the size is written to the job summary), starts it with a random token, and runs `scripts/headless-smoke.mjs` in the runner's Chrome. The smoke checks `/healthz`, that `/tiles` and `/files` refuse requests without the token, that the app loads and strips `?token=`, reports `hostKind === 'web'`, answers a few IPC calls, and that no channel comes back "No handler registered". On failure it uploads a screenshot and the container log (token redacted).
+2. **`build-arch`** (not on PRs): builds `linux/amd64` on `ubuntu-24.04` and `linux/arm64` on `ubuntu-24.04-arm` (native runners, no QEMU), each pushed by digest with SBOM and provenance.
+3. **`publish`**: merges the digests into one multi-arch tag set on `ghcr.io/<owner>/mesh-client-web`: `edge` from `main`, `X.Y.Z` and `X.Y` from tags, and `sha-<commit>`.
+
+Run the smoke locally against any running server: `node scripts/headless-smoke.mjs --url http://127.0.0.1:8080 --token <token> [--browser <chromium>]`.
 
 ---
 

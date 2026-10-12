@@ -512,6 +512,23 @@ After running `xattr`, check Privacy & Security again (scroll to the bottom); th
 
 See [Troubleshooting; macOS: File is damaged…](docs/troubleshooting.md#macos-file-is-damaged-and-cannot-be-opened), [macOS: Library not loaded: Squirrel.framework…](docs/troubleshooting.md#macos-library-not-loaded-squirrelframework-after-zip-extract), and [this explanation for a similar Electron app](https://github.com/jeffvli/feishin/issues/104#issuecomment-1553914730).
 
+**Web UI in Docker (preview):** run Mesh Client on an always-on machine (home server, NAS, Raspberry Pi 4/5) and use it from a browser. The server keeps the radio connected and stores Meshtastic messages while no browser is open. Images for x86_64 and arm64 are published to `ghcr.io/colorado-mesh/mesh-client-web` (`edge` from `main`, version tags from releases):
+
+```bash
+openssl rand -hex 24 > mesh-web-token              # the access token (keep it private)
+head -c 32 /dev/urandom | base64 > mesh-secret.key # encrypts saved credentials
+docker run -d --name mesh-client-web --restart unless-stopped \
+  -p 8080:8080 -v mesh-client-data:/data \
+  -v "$PWD/mesh-web-token:/run/secrets/mesh-web-token:ro" \
+  -v "$PWD/mesh-secret.key:/run/secrets/mesh-secret.key:ro" \
+  -e MESH_CLIENT_WEB_TOKEN_FILE=/run/secrets/mesh-web-token \
+  -e MESH_CLIENT_SECRET_KEY_FILE=/run/secrets/mesh-secret.key \
+  ghcr.io/colorado-mesh/mesh-client-web:edge
+docker logs mesh-client-web # prints the http://…/?token=… link
+```
+
+The container runs as uid 1000, which must be able to read both files. Radios connect over TCP / Wi-Fi or HTTP (Meshtastic, MeshCore), MQTT, and Reticulum TCP / UDP interfaces; USB serial works through the browser's Web Serial (Chromium-based browsers, over HTTPS or on `localhost`); Bluetooth is not supported yet. Beyond a trusted home network, put it behind an HTTPS reverse proxy. Configuration, security model and proxy examples: [Headless web UI](docs/development/headless-webui.md).
+
 **Building from source / development setup:** see [docs/development-environment.md](docs/development-environment.md) for complete shared requirements, clone/install steps, test harness setup, and detailed macOS/Windows/Linux instructions.
 
 <!-- docs-site:install:end -->
