@@ -39,8 +39,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      # Raise deliberately (with the reason in the commit) when the image legitimately grows.
-      IMAGE_SIZE_BUDGET_MB: '600'
+      # About 20% over the measured size (379 MiB, linux/amd64). Raise deliberately, with the
+      # reason in the commit, when the image legitimately grows.
+      IMAGE_SIZE_BUDGET_MB: '450'
     steps:
       # actions/checkout v6.1.0
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
