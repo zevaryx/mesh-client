@@ -118,6 +118,11 @@ export class BrowserWindow {
     return BrowserWindow.windows.filter((w) => !w.destroyed);
   }
 
+  /** Every bridge session belongs to the one headless window. */
+  static fromWebContents(): BrowserWindow | null {
+    return BrowserWindow.getAllWindows()[0] ?? null;
+  }
+
   isDestroyed(): boolean {
     return this.destroyed;
   }
@@ -152,11 +157,30 @@ export const safeStorage: HeadlessSafeStorage = {
  * `MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE=1`), so nothing irreversible happens without the operator.
  * Error boxes go to the server log.
  */
+const NO_FILE_DIALOGS = 'native file dialogs are not available in headless mode';
+
 export const dialog = {
   showMessageBoxSync: (): never => {
     throw new Error('native dialogs are not available in headless mode');
   },
+  /** Rejects (never resolves "canceled"), so the renderer shows an error instead of nothing. */
+  showOpenDialog: (): Promise<never> => Promise.reject(new Error(NO_FILE_DIALOGS)),
+  showSaveDialog: (): Promise<never> => Promise.reject(new Error(NO_FILE_DIALOGS)),
   showErrorBox: (title: string, content: string): void => {
     console.error(`[headless] ${title}: ${content}`); // log-injection-ok fixed app-authored startup error text
   },
+};
+
+/**
+ * Electron reports OS network state. Headless always says online; a real outage surfaces as the
+ * fetch failure callers already handle (e.g. the updater classifies it as offline).
+ */
+export const net = {
+  isOnline: (): boolean => true,
+};
+
+/** The server cannot open a browser for the viewer; callers surface this as an error. */
+export const shell = {
+  openExternal: (): Promise<never> =>
+    Promise.reject(new Error('opening external links is not available in headless mode')),
 };

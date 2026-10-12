@@ -45,6 +45,9 @@ describe('build-headless', () => {
     // Self-contained: ws is bundled, not required from node_modules at runtime.
     expect(server).not.toMatch(/require\(["']ws["']\)/);
     expect(server).toContain('meshtastic:tcp-connect');
+    // electron-updater is aliased to a stub that throws, so its code never ships headless.
+    expect(server).toContain('electron-updater is not available in headless builds');
+    expect(server).not.toContain('checkForUpdatesAndNotify');
 
     const bridge = fs.readFileSync(path.join(outdir, 'web-bridge.js'), 'utf8');
     expect(bridge).not.toMatch(/require\(["']electron["']\)/);

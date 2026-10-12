@@ -42,6 +42,8 @@ RUN mkdir -p /data && chown node:node /data
 USER node
 VOLUME ["/data"]
 EXPOSE 8080
+# TAK server (off until started in the app; publish with -p 8089:8089 when used).
+EXPOSE 8089
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.MESH_CLIENT_WEB_PORT||8080)+'/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
 CMD ["node", "dist-headless/server.js"]

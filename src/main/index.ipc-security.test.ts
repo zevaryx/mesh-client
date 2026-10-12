@@ -36,6 +36,7 @@ const CHAT_OUTBOX_IPC_SOURCE = readFileSync(
 );
 const HTTP_BRIDGE_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/http-bridge.ts'), 'utf-8');
 const MQTT_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/mqtt-handlers.ts'), 'utf-8');
+const TAK_SERVER_HOST_SOURCE = readFileSync(join(__dirname, 'tak/tak-server-host.ts'), 'utf-8');
 /** index.ts plus the IPC modules moved out of it (shared with the headless server). */
 const MAIN_IPC_SOURCE = [
   INDEX_SOURCE,
@@ -525,7 +526,8 @@ describe('GPS/TAK IPC sender validation (source contract)', () => {
 
 describe('tak:start settings validation (source contract)', () => {
   it('defines validateTakSettings before the tak:start handler', () => {
-    const validatorIdx = INDEX_SOURCE.indexOf('function validateTakSettings(');
+    // Shared by Electron and the headless server via tak/tak-server-host.ts.
+    const validatorIdx = TAK_SERVER_HOST_SOURCE.indexOf('export function validateTakSettings(');
     const handlerIdx = TAK_IPC_SOURCE.indexOf("ipcMain.handle('tak:start'");
     expect(validatorIdx).toBeGreaterThan(-1);
     expect(handlerIdx).toBeGreaterThan(-1);
@@ -547,9 +549,9 @@ describe('tak:start settings validation (source contract)', () => {
   });
 
   it('validateTakSettings checks port range 1024-65535', () => {
-    const fnIdx = INDEX_SOURCE.indexOf('function validateTakSettings(');
+    const fnIdx = TAK_SERVER_HOST_SOURCE.indexOf('export function validateTakSettings(');
     expect(fnIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(fnIdx, fnIdx + 600);
+    const body = TAK_SERVER_HOST_SOURCE.slice(fnIdx, fnIdx + 600);
     expect(body).toContain('1024');
     expect(body).toContain('65535');
   });

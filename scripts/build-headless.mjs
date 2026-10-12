@@ -83,7 +83,10 @@ export async function buildHeadless(opts = {}) {
     format: 'cjs',
     outfile: path.join(outdir, 'server.js'),
     external: HEADLESS_SERVER_EXTERNALS,
-    alias: { electron: './src/main/headless/electronShim.ts' },
+    alias: {
+      electron: './src/main/headless/electronShim.ts',
+      'electron-updater': './src/main/headless/electronUpdaterUnavailable.ts',
+    },
     define: {
       __MESH_CLIENT_APP_VERSION__: JSON.stringify(String(pkg.version ?? '0.0.0')),
       __MESH_CLIENT_BUILD_INFO__: JSON.stringify(process.env.MESH_CLIENT_BUILD_INFO ?? ''),

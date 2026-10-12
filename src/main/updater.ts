@@ -1,4 +1,4 @@
-import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import { app, ipcMain, net, shell } from 'electron';
 import type { AppUpdater } from 'electron-updater';
 
@@ -13,6 +13,7 @@ import { isNetworkClassFailure } from '@/shared/networkFailure';
 
 import { getDatabase } from './database';
 import { sanitizeLogMessage } from './log-service';
+import type { RendererPushTarget } from './rendererPushTarget';
 import { assertIpcSender } from './validate-ipc-sender';
 
 // electron-updater is a runtime dependency only in the packaged app path
@@ -301,13 +302,26 @@ function registerElectronUpdaterHandlers(send: SendFn): boolean {
   return true;
 }
 
-export function initUpdater(win: BrowserWindow): void {
+/** The window updates are announced to (Electron `BrowserWindow`, or the headless window). */
+export type UpdaterWindow = RendererPushTarget & { isDestroyed: () => boolean };
+
+export interface InitUpdaterOptions {
+  /**
+   * Headless server: GitHub release check only (reports new versions; no electron-updater, no
+   * download / install). Container images are updated by pulling a new image.
+   */
+  releaseCheckOnly?: boolean;
+}
+
+export function initUpdater(win: UpdaterWindow, options: InitUpdaterOptions = {}): void {
   const send = (channel: string, payload?: unknown) => {
     if (win.isDestroyed()) return;
     win.webContents.send(channel, payload);
   };
 
-  if (app.isPackaged) {
+  if (options.releaseCheckOnly) {
+    registerGithubReleaseApiHandlers(send, false);
+  } else if (app.isPackaged) {
     const ok = registerElectronUpdaterHandlers(send);
     if (!ok) {
       console.warn('[updater] falling back to GitHub Releases API (packaged build)');

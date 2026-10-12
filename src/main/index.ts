@@ -33,7 +33,6 @@ import {
   parseMeshtasticBluetoothPin,
 } from '../shared/meshtasticBluetoothPin';
 import type { ReticulumSidecarStatus } from '../shared/reticulum-types';
-import type { TAKServerStatus, TAKSettings } from '../shared/tak-types';
 import { MS_PER_MINUTE } from '../shared/timeConstants';
 import {
   bleCoexistenceCoordinator,
@@ -137,7 +136,7 @@ import {
   defaultSupportBundleFilename,
   isSupportBundleMode,
 } from './support-bundle';
-import { canAutoConnectTakRemote, loadTakRemoteSettings } from './tak/remote-settings';
+import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from './tak/tak-server-host';
 import type { TakServerManager } from './tak-server-manager';
 import { updateUnreadAppBadge } from './unreadAppBadge';
 import { getCheckNowFromMenu, initUpdater } from './updater';
@@ -244,9 +243,8 @@ function isWindowStateOnScreen(state: WindowState): boolean {
 
 const mqttManager = new MQTTManager();
 const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
-
-/** TAK status before the lazy-loaded `TakServerManager` module is imported. */
-const IDLE_TAK_STATUS: TAKServerStatus = { running: false, port: 8089, clientCount: 0 };
+const takServerHost = createTakServerHost({ getMainWindow: () => mainWindow });
+const ensureTakServerManager = (): Promise<TakServerManager> => takServerHost.ensure();
 
 const IDLE_RETICULUM_STATUS: ReticulumSidecarStatus = {
   running: false,
@@ -260,9 +258,6 @@ function isMacAddress(value: string): boolean {
   if (parts.length !== 6) return false;
   return parts.every((part) => /^[0-9A-Fa-f]{2}$/.test(part));
 }
-
-let takServerManager: TakServerManager | null = null;
-let takServerManagerLoadPromise: Promise<TakServerManager> | null = null;
 
 let reticulumSidecarManager: ReticulumSidecarManager | null = null;
 
@@ -296,49 +291,6 @@ bleCoexistenceCoordinator.setGattProxy(gattSidecarProxy);
       gattSidecarProxy.setPort(status.port, mgr.getAuthTokenForLocalProxy());
     }
   });
-}
-
-function attachTakForwarders(manager: TakServerManager): void {
-  manager.on('status', (status) => {
-    if (mainWindow) mainWindow.webContents.send('tak:status', status);
-    else console.debug('[main] tak:status dropped (mainWindow not ready)');
-  });
-  manager.on('client-connected', (client) => {
-    if (mainWindow) mainWindow.webContents.send('tak:clientConnected', client);
-    else console.debug('[main] tak:clientConnected dropped (mainWindow not ready)');
-  });
-  manager.on('client-disconnected', (clientId) => {
-    if (mainWindow) mainWindow.webContents.send('tak:clientDisconnected', clientId);
-    else console.debug('[main] tak:clientDisconnected dropped (mainWindow not ready)');
-  });
-  manager.on('remote-status', (status) => {
-    if (mainWindow) mainWindow.webContents.send('tak:remoteStatus', status);
-    else console.debug('[main] tak:remoteStatus dropped (mainWindow not ready)');
-  });
-  manager.on('client-updated', (client) => {
-    if (mainWindow) mainWindow.webContents.send('tak:clientUpdated', client);
-    else console.debug('[main] tak:clientUpdated dropped (mainWindow not ready)');
-  });
-  // Dropped while the window is down: a chat message must not be sent on the mesh late.
-  manager.on('client-chat', (message) => {
-    if (mainWindow) mainWindow.webContents.send('tak:inboundChat', message);
-    else console.debug('[main] tak:inboundChat dropped (mainWindow not ready)');
-  });
-  // The renderer re-reads tak:getContacts on mount, so a dropped batch is recovered there.
-  manager.on('contacts', (update) => {
-    if (mainWindow) mainWindow.webContents.send('tak:contacts', update);
-  });
-}
-
-async function ensureTakServerManager(): Promise<TakServerManager> {
-  if (takServerManager) return takServerManager;
-  takServerManagerLoadPromise ??= import('./tak-server-manager').then((mod) => {
-    const manager = new mod.TakServerManager();
-    attachTakForwarders(manager);
-    takServerManager = manager;
-    return manager;
-  });
-  return takServerManagerLoadPromise;
 }
 
 /** Max bytes per BLE write IPC (DoS guard). */
@@ -422,8 +374,8 @@ async function shutdownAppResources(): Promise<void> {
   if (shutdownDone) return;
   isQuitting = true;
   try {
-    takServerManager?.stop();
-    takServerManager?.stopRemote();
+    takServerHost.get()?.stop();
+    takServerHost.get()?.stopRemote();
   } catch (err) {
     console.debug(
       '[main] TAK server stop during shutdown (ignored):',
@@ -591,20 +543,6 @@ process.on('unhandledRejection', (reason) => {
 
 // ─── IPC validation helpers (main process boundary) ───────────────────
 // db:* validators live in ipc/db-ipc-validation.ts.
-function validateTakSettings(settings: unknown): asserts settings is TAKSettings {
-  if (!settings || typeof settings !== 'object')
-    throw new Error('tak:start: settings must be an object');
-  const s = settings as Record<string, unknown>;
-  if (typeof s.enabled !== 'boolean') throw new Error('tak:start: enabled must be boolean');
-  const port = Number(s.port);
-  if (!Number.isInteger(port) || port < 1024 || port > 65535)
-    throw new Error('tak:start: port must be an integer 1024–65535');
-  if (typeof s.serverName !== 'string' || s.serverName.length === 0 || s.serverName.length > 256)
-    throw new Error('tak:start: serverName must be a non-empty string ≤ 256 chars');
-  if (typeof s.requireClientCert !== 'boolean')
-    throw new Error('tak:start: requireClientCert must be boolean');
-  if (typeof s.autoStart !== 'boolean') throw new Error('tak:start: autoStart must be boolean');
-}
 
 // Enable Web Serial at the process level (LoRa BLE uses sidecar btleplug, not Web Bluetooth).
 app.commandLine.appendSwitch('enable-blink-features', 'Serial');
@@ -2521,7 +2459,7 @@ registerMqttIpcHandlers({
   mqttManager,
   meshcoreMqttAdapter,
   getMainWindow: () => mainWindow,
-  getTakServerManager: () => takServerManager,
+  getTakServerManager: () => takServerHost.get(),
 });
 
 registerGeoIpcHandlers();
@@ -3279,7 +3217,7 @@ registerHttpBridgeIpcHandlers({ getMainWindow: () => mainWindow });
 registerTakIpcHandlers({
   idleTakStatus: IDLE_TAK_STATUS,
   ensureTakServerManager,
-  getTakServerManager: () => takServerManager,
+  getTakServerManager: () => takServerHost.get(),
   validateTakSettings,
 });
 
@@ -3375,62 +3313,7 @@ void app
 
       initDatabase();
 
-      // Auto-restore TAK server if auto-start is enabled
-      const takSettingsPath = path.join(app.getPath('userData'), 'tak-settings.json');
-      try {
-        if (fs.existsSync(takSettingsPath)) {
-          const raw: unknown = JSON.parse(fs.readFileSync(takSettingsPath, 'utf-8'));
-          // Backfill autoStart for settings files saved before the field was added.
-          if (
-            raw != null &&
-            typeof raw === 'object' &&
-            typeof (raw as Record<string, unknown>).autoStart !== 'boolean'
-          ) {
-            (raw as Record<string, unknown>).autoStart = false;
-          }
-          const saved = raw;
-          validateTakSettings(saved);
-          if (saved.autoStart) {
-            void ensureTakServerManager()
-              .then((m) => m.start(saved))
-              .catch((e: unknown) => {
-                console.error(
-                  '[TAK] Auto-start failed:',
-                  sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-                );
-              });
-          }
-        }
-      } catch (e: unknown) {
-        console.warn(
-          '[TAK] Settings restore failed:',
-          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-        );
-      }
-
-      // Reconnect the remote TAK relay when it was saved with autoConnect. An unverified or
-      // unencrypted relay is only started by hand, so a hand-edited settings file cannot make it
-      // connect at launch.
-      try {
-        const remoteSettings = loadTakRemoteSettings();
-        if (remoteSettings?.autoConnect && canAutoConnectTakRemote(remoteSettings)) {
-          void ensureTakServerManager()
-            .then((m) => {
-              m.startRemote(remoteSettings);
-            })
-            .catch((e: unknown) => {
-              console.error(
-                '[TAK] Remote relay auto-connect failed:',
-                sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-              );
-            });
-        }
-      } catch (e: unknown) {
-        console.warn(
-          '[TAK] Remote relay settings restore failed:',
-          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-        );
-      }
+      takServerHost.autoStartFromSavedSettings();
 
       // Force the dock icon in development on macOS
       if (!app.isPackaged && process.platform === 'darwin') {
@@ -3579,8 +3462,8 @@ app.on('will-quit', (event) => {
       }),
     ]);
     try {
-      takServerManager?.stop();
-      takServerManager?.stopRemote();
+      takServerHost.get()?.stop();
+      takServerHost.get()?.stopRemote();
     } catch (err) {
       console.debug(
         '[main] TAK server stop during will-quit (ignored):',
