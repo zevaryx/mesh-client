@@ -1,7 +1,7 @@
 /**
  * Feed the Meshtastic BLE session (sidecar GATT) into the background ingest. The sidecar does
  * the GATT reads itself and the main process forwards each FromRadio, so this sees the same
- * packets the renderer does. Desktop only: the headless server does not run BLE.
+ * packets the renderer does. Used by the desktop host and the headless server.
  */
 import type { TcpBridgeTap } from '../ipc/tcp-bridge';
 

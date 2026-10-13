@@ -527,7 +527,7 @@ docker run -d --name mesh-client-web --restart unless-stopped \
 docker logs mesh-client-web # prints the http://…/?token=… link
 ```
 
-The container runs as uid 1000, which must be able to read both files. Radios connect over TCP / Wi-Fi or HTTP (Meshtastic, MeshCore), MQTT, and Reticulum TCP / UDP interfaces; USB serial works through the browser's Web Serial (Chromium-based browsers, over HTTPS or on `localhost`); Bluetooth is not supported yet. Beyond a trusted home network, put it behind an HTTPS reverse proxy. Configuration, security model and proxy examples: [Headless web UI](docs/development/headless-webui.md).
+The container runs as uid 1000, which must be able to read both files. Radios connect over TCP / Wi-Fi or HTTP (Meshtastic, MeshCore), MQTT, and Reticulum TCP / UDP interfaces; USB serial radios plugged into the server show up in the usual port picker (pass the device in with `--device`); Bluetooth works on Linux hosts that pass their BlueZ D-Bus socket through. Beyond a trusted home network, put it behind an HTTPS reverse proxy. Configuration, security model and proxy examples: [Headless web UI](docs/development/headless-webui.md).
 
 **Building from source / development setup:** see [docs/development-environment.md](docs/development-environment.md) for complete shared requirements, clone/install steps, test harness setup, and detailed macOS/Windows/Linux instructions.
 

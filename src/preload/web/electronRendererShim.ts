@@ -31,6 +31,7 @@ import {
 } from '../../shared/webBridgeProtocol';
 import { type BrowserLocalInvoke, createBrowserLocalInvokes } from './browserLocalInvokes';
 import { installHeadlessFileTransfer } from './headlessFileTransfer';
+import { createWebSerialPolyfill, type WebSerialPolyfill } from './webSerialPolyfill';
 
 type IpcListener = (event: IpcRendererEventLike, ...args: unknown[]) => void;
 
@@ -70,6 +71,8 @@ export interface WebIpcRendererOptions {
   schedule?: (fn: () => void, ms: number) => void;
   /** Channels answered in the page instead of on the server (`browserLocalInvokes.ts`). */
   localInvokes?: Record<string, BrowserLocalInvoke>;
+  /** Sends handled in the page instead of on the server (the serial port picker's answer). */
+  localSends?: Record<string, (...args: unknown[]) => void>;
 }
 
 export class WebIpcRenderer {
@@ -192,7 +195,17 @@ export class WebIpcRenderer {
   }
 
   send(channel: string, ...args: unknown[]): void {
+    const local = this.options.localSends?.[channel];
+    if (local) {
+      local(...args);
+      return;
+    }
     this.transmit({ t: 'send', channel, args });
+  }
+
+  /** Raise an event for this page's listeners only (nothing goes to the server). */
+  emitLocal(channel: string, args: unknown[]): void {
+    this.dispatch(channel, args);
   }
 
   on(channel: string, listener: IpcListener): this {
@@ -304,6 +317,23 @@ if (typeof document !== 'undefined') {
 }
 
 let sharedRenderer: WebIpcRenderer | null = null;
+let webSerial: WebSerialPolyfill | null = null;
+
+/** The server's serial ports as `navigator.serial` (`webSerialPolyfill.ts`). */
+function getWebSerial(): WebSerialPolyfill {
+  webSerial ??= createWebSerialPolyfill(
+    {
+      invoke: (channel, ...args) => getSharedRenderer().invoke(channel, ...args),
+      on: (channel, listener) => getSharedRenderer().on(channel, listener),
+      removeListener: (channel, listener) => getSharedRenderer().removeListener(channel, listener),
+      emitLocal: (channel, args) => {
+        getSharedRenderer().emitLocal(channel, args);
+      },
+    },
+    window.localStorage,
+  );
+  return webSerial;
+}
 
 function getSharedRenderer(): WebIpcRenderer {
   if (sharedRenderer) return sharedRenderer;
@@ -312,6 +342,7 @@ function getSharedRenderer(): WebIpcRenderer {
     url: buildBridgeSocketUrl(window.location, token),
     createSocket: (url) => new WebSocket(url) as unknown as BridgeSocket,
     localInvokes: createBrowserLocalInvokes({ win: window, tokenStorageKey: TOKEN_STORAGE_KEY }),
+    localSends: getWebSerial().localSends,
   });
   // Server-side file dialogs (open → upload, save → download) are served by this tab.
   installHeadlessFileTransfer({
@@ -351,5 +382,12 @@ export const ipcRenderer = {
 export const contextBridge = {
   exposeInMainWorld: (key: string, api: unknown): void => {
     Object.defineProperty(window, key, { value: api, configurable: false, writable: false });
+    // Serial ports are the server's, so the renderer's Web Serial code reaches the radio there.
+    if (key === 'electronAPI') {
+      Object.defineProperty(navigator, 'serial', {
+        value: getWebSerial().serial,
+        configurable: true,
+      });
+    }
   },
 };

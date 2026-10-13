@@ -42,6 +42,11 @@ const FILE_DIALOG_IPC_SOURCE = readFileSync(
 );
 const TAK_SERVER_HOST_SOURCE = readFileSync(join(__dirname, 'tak/tak-server-host.ts'), 'utf-8');
 const LOG_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/log-handlers.ts'), 'utf-8');
+const BLUETOOTHCTL_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/bluetoothctl-handlers.ts'),
+  'utf-8',
+);
+const GATT_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/gatt-handlers.ts'), 'utf-8');
 const CHAT_CONTENT_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/chat-content-handlers.ts'),
   'utf-8',
@@ -80,6 +85,8 @@ function ipcHandlerBody(channel: string, span = 400): string {
     FILE_DIALOG_IPC_SOURCE,
     LOG_IPC_SOURCE,
     CHAT_CONTENT_IPC_SOURCE,
+    GATT_IPC_SOURCE,
+    BLUETOOTHCTL_IPC_SOURCE,
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -274,13 +281,13 @@ describe('secure-secret IPC contract (source contract)', () => {
 
 describe('bluetooth-pair input validation (source contract)', () => {
   it('validates MAC address format with isMacAddress', () => {
-    expect(INDEX_SOURCE).toContain('function isMacAddress(value: string): boolean');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('function isMacAddress(value: string): boolean');
   });
 
   it('applies isMacAddress in bluetooth-pair handler', () => {
-    const handlerIdx = INDEX_SOURCE.indexOf("ipcMain.handle('bluetooth-pair'");
+    const handlerIdx = BLUETOOTHCTL_IPC_SOURCE.indexOf("ipcMain.handle('bluetooth-pair'");
     expect(handlerIdx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 600);
+    const body = BLUETOOTHCTL_IPC_SOURCE.slice(handlerIdx, handlerIdx + 600);
     expect(body).toContain('isMacAddress(macAddress)');
   });
 });
@@ -299,9 +306,9 @@ describe('bluetooth IPC sender validation (source contract, H1)', () => {
   ] as const;
 
   it.each(bluetoothChannels)('%s calls assertIpcSender', (channel) => {
-    const handlerIdx = INDEX_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
+    const handlerIdx = BLUETOOTHCTL_IPC_SOURCE.indexOf(`ipcMain.handle('${channel}'`);
     expect(handlerIdx).toBeGreaterThan(-1);
-    const handlerBody = INDEX_SOURCE.slice(handlerIdx, handlerIdx + 300);
+    const handlerBody = BLUETOOTHCTL_IPC_SOURCE.slice(handlerIdx, handlerIdx + 300);
     expect(handlerBody).toContain(`assertIpcSender(event, '${channel}')`);
   });
 
@@ -328,14 +335,14 @@ describe('bluetooth IPC sender validation (source contract, H1)', () => {
 
 describe('bluetoothctl timeout hardening (source contract, H4)', () => {
   it('defines 5s timeouts for stop-scan and get-info', () => {
-    expect(INDEX_SOURCE).toContain('const BLUETOOTH_STOP_SCAN_TIMEOUT_MS = 5_000;');
-    expect(INDEX_SOURCE).toContain('const BLUETOOTH_GET_INFO_TIMEOUT_MS = 5_000;');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('const BLUETOOTH_STOP_SCAN_TIMEOUT_MS = 5_000;');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('const BLUETOOTH_GET_INFO_TIMEOUT_MS = 5_000;');
   });
 
   it('bluetooth-stop-scan kills the process and settles the promise on timeout', () => {
-    const idx = INDEX_SOURCE.indexOf("ipcMain.handle('bluetooth-stop-scan'");
+    const idx = BLUETOOTHCTL_IPC_SOURCE.indexOf("ipcMain.handle('bluetooth-stop-scan'");
     expect(idx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(idx, idx + 1200);
+    const body = BLUETOOTHCTL_IPC_SOURCE.slice(idx, idx + 1200);
     expect(body).toContain('BLUETOOTH_STOP_SCAN_TIMEOUT_MS');
     expect(body).toContain('proc.kill()');
     // Must not leave the returned Promise pending forever — timeout resolves it.
@@ -343,9 +350,9 @@ describe('bluetoothctl timeout hardening (source contract, H4)', () => {
   });
 
   it('bluetooth-get-info kills the process and resolves on timeout', () => {
-    const idx = INDEX_SOURCE.indexOf("ipcMain.handle('bluetooth-get-info'");
+    const idx = BLUETOOTHCTL_IPC_SOURCE.indexOf("ipcMain.handle('bluetooth-get-info'");
     expect(idx).toBeGreaterThan(-1);
-    const body = INDEX_SOURCE.slice(idx, idx + 1500);
+    const body = BLUETOOTHCTL_IPC_SOURCE.slice(idx, idx + 1500);
     expect(body).toContain('BLUETOOTH_GET_INFO_TIMEOUT_MS');
     expect(body).toContain('proc.kill()');
     expect(body).toMatch(/setTimeout\(\(\) => \{[\s\S]*?proc\.kill\(\);[\s\S]*?finish\(/);

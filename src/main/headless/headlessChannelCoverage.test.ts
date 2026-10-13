@@ -21,39 +21,8 @@ import {
 
 const ROOT = path.resolve(__dirname, '../../..');
 
-/** Not ported to headless yet, by plan step. */
-const HEADLESS_PENDING_CHANNELS: Record<string, readonly string[]> = {
-  'step 6: BLE': [
-    'ble-reset-pairing-retry-count',
-    'bleCoexistence:acquireScan',
-    'bleCoexistence:assertCanConnect',
-    'bleCoexistence:getState',
-    'bleCoexistence:register',
-    'bleCoexistence:releaseScan',
-    'bleCoexistence:suspendForReticulumBleConnect',
-    'bleCoexistence:unregister',
-    'bluetooth-cancel-pairing',
-    'bluetooth-connect',
-    'bluetooth-get-info',
-    'bluetooth-pair',
-    'bluetooth-provide-pin',
-    'bluetooth-start-scan',
-    'bluetooth-stop-scan',
-    'bluetooth-unpair',
-    'bluetooth-untrust',
-    'gatt:clear-bond-recovery-exclusive',
-    'gatt:connect',
-    'gatt:disconnect',
-    'gatt:is-connected',
-    'gatt:pair',
-    'gatt:pair-state',
-    'gatt:release-ble-central',
-    'gatt:start-scan',
-    'gatt:stop-scan',
-    'gatt:to-radio',
-    'gatt:unpair',
-  ],
-};
+/** Not ported to headless yet, by plan step (none left). */
+const HEADLESS_PENDING_CHANNELS: Record<string, readonly string[]> = {};
 
 async function headlessHandledChannels(): Promise<Set<string>> {
   const result = await esbuild.build({

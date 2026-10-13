@@ -46,6 +46,11 @@ export const HEADLESS_DROPPED_SEND_CHANNELS = [
   'device-disconnected',
   'serial-port-selected',
   'serial-port-cancelled',
+  // Electron's Web Bluetooth pairing prompt (setBluetoothPairingHandler); LoRa BLE pairs through
+  // the sidecar or bluetoothctl instead, so there is never a pending prompt to answer.
+  'bluetooth-provide-pin',
+  'bluetooth-cancel-pairing',
+  'ble-reset-pairing-retry-count',
 ] as const;
 
 export const HEADLESS_QUIT_UNAVAILABLE =

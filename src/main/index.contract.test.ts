@@ -27,7 +27,13 @@ const MAIN_IPC_SOURCE = [
   readFileSync(join(__dirname, 'ipc/file-dialog-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/log-handlers.ts'), 'utf-8'),
   readFileSync(join(__dirname, 'ipc/chat-content-handlers.ts'), 'utf-8'),
+  readFileSync(join(__dirname, 'ipc/gatt-handlers.ts'), 'utf-8'),
 ].join('\n');
+const BLUETOOTHCTL_IPC_SOURCE = readFileSync(
+  join(__dirname, 'ipc/bluetoothctl-handlers.ts'),
+  'utf-8',
+);
+const GATT_IPC_SOURCE = readFileSync(join(__dirname, 'ipc/gatt-handlers.ts'), 'utf-8');
 const APP_SETTINGS_IPC_SOURCE = readFileSync(
   join(__dirname, 'ipc/app-settings-handlers.ts'),
   'utf-8',
@@ -55,12 +61,15 @@ describe('IPC payload size limits (source contract)', () => {
 
 describe('GATT BLE disconnect handling (source contract)', () => {
   it('routes gatt:to-radio through the tested disconnect-race handler', () => {
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('gatt:to-radio'");
-    expect(INDEX_SOURCE).toContain('await writeGattToRadio(gattSidecarProxy, sessionId, buf)');
+    expect(GATT_IPC_SOURCE).toContain("ipcMain.handle('gatt:to-radio'");
+    expect(GATT_IPC_SOURCE).toContain('await writeGattToRadio(gattSidecarProxy, sessionId, buf)');
+    expect(INDEX_SOURCE).toMatch(
+      /registerGattIpcHandlers\(\{[\s\S]{0,120}isQuitting: \(\) => isQuitting/,
+    );
   });
 
   it('registers Windows in-app pairing IPC serialized with GATT scans', () => {
-    expect(INDEX_SOURCE).toMatch(
+    expect(GATT_IPC_SOURCE).toMatch(
       /registerGattPairingIpcHandlers\(\{[\s\S]{0,200}bleCoexistenceCoordinator\.withScan\('gatt', operation\)/,
     );
   });
@@ -84,19 +93,19 @@ describe('GATT BLE disconnect handling (source contract)', () => {
   });
 
   it('returns scan_busy from gattSidecarProxy.startScan without throwing', () => {
-    expect(INDEX_SOURCE).toContain('gattSidecarProxy.startScan');
-    const start = INDEX_SOURCE.indexOf("ipcMain.handle('gatt:start-scan'");
-    const end = INDEX_SOURCE.indexOf("ipcMain.handle('gatt:stop-scan'");
-    const handler = INDEX_SOURCE.slice(start, end);
+    expect(GATT_IPC_SOURCE).toContain('gattSidecarProxy.startScan');
+    const start = GATT_IPC_SOURCE.indexOf("ipcMain.handle('gatt:start-scan'");
+    const end = GATT_IPC_SOURCE.indexOf("ipcMain.handle('gatt:stop-scan'");
+    const handler = GATT_IPC_SOURCE.slice(start, end);
     expect(handler).toContain("bleCoexistenceCoordinator.withScan('gatt'");
     expect(handler).toContain('gattSidecarProxy.startScan(sessionId)');
     expect(handler).toContain("code: 'scan_busy'");
   });
 
   it('returns scan_busy from bleCoexistence:acquireScan without throwing', () => {
-    const start = INDEX_SOURCE.indexOf("ipcMain.handle('bleCoexistence:acquireScan'");
-    const end = INDEX_SOURCE.indexOf("ipcMain.handle('bleCoexistence:releaseScan'");
-    const handler = INDEX_SOURCE.slice(start, end);
+    const start = GATT_IPC_SOURCE.indexOf("ipcMain.handle('bleCoexistence:acquireScan'");
+    const end = GATT_IPC_SOURCE.indexOf("ipcMain.handle('bleCoexistence:releaseScan'");
+    const handler = GATT_IPC_SOURCE.slice(start, end);
     expect(handler).toContain('BleScanBusyError');
     expect(handler).toContain("code: 'scan_busy'");
     expect(handler).toContain('ok: false as const');
@@ -104,8 +113,8 @@ describe('GATT BLE disconnect handling (source contract)', () => {
   });
 
   it('invalidates GATT proxy port when shared sidecar process exits', () => {
-    expect(INDEX_SOURCE).toContain('gattSidecarProxy.invalidateAfterSidecarExit()');
-    expect(INDEX_SOURCE).toMatch(
+    expect(GATT_IPC_SOURCE).toContain('gattSidecarProxy.invalidateAfterSidecarExit()');
+    expect(GATT_IPC_SOURCE).toMatch(
       /mgr\.on\('status'[\s\S]{0,200}!\(status\.processRunning \?\? status\.running\)[\s\S]{0,120}invalidateAfterSidecarExit/,
     );
   });
@@ -147,9 +156,15 @@ describe('MQTT forwarder dropped-event logs (source contract)', () => {
   });
 
   it('sanitizes Linux bluetoothctl spawn-error log paths', () => {
-    expect(INDEX_SOURCE).toMatch(/bluetooth-unpair error:',\s*sanitizeLogMessage\(msg\)/);
-    expect(INDEX_SOURCE).toMatch(/bluetooth-start-scan error:',\s*sanitizeLogMessage\(msg\)/);
-    expect(INDEX_SOURCE).toMatch(/bluetooth-connect error:',\s*sanitizeLogMessage\(msg\)/);
+    expect(BLUETOOTHCTL_IPC_SOURCE).toMatch(
+      /bluetooth-unpair error:',\s*sanitizeLogMessage\(msg\)/,
+    );
+    expect(BLUETOOTHCTL_IPC_SOURCE).toMatch(
+      /bluetooth-start-scan error:',\s*sanitizeLogMessage\(msg\)/,
+    );
+    expect(BLUETOOTHCTL_IPC_SOURCE).toMatch(
+      /bluetooth-connect error:',\s*sanitizeLogMessage\(msg\)/,
+    );
   });
 });
 
@@ -851,7 +866,7 @@ describe('HTTP bridge IPC handlers (source contract)', () => {
 
 describe('Host link quality IPC (source contract)', () => {
   it('forwards GATT link RSSI and registers HTTP/TCP RTT probes', () => {
-    expect(MAIN_IPC_SOURCE).toContain("webContents.send('gatt-link-rssi'");
+    expect(GATT_IPC_SOURCE).toContain("['linkRssi', 'gatt-link-rssi']");
     expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('hostLink:probeHttpRtt'");
     expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('hostLink:probeTcpRtt'");
     expect(MAIN_IPC_SOURCE).toContain("ipcMain.handle('hostLink:getSessionMeter'");
@@ -909,9 +924,9 @@ describe('Native crash observability (source contract)', () => {
   });
 
   it('uses shared Meshtastic Bluetooth PIN helpers in bluetooth-pair IPC', () => {
-    expect(INDEX_SOURCE).toContain("from '../shared/meshtasticBluetoothPin'");
-    expect(INDEX_SOURCE).toContain('formatMeshtasticBluetoothPin');
-    expect(INDEX_SOURCE).toContain('parseMeshtasticBluetoothPin');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain("from '../../shared/meshtasticBluetoothPin'");
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('formatMeshtasticBluetoothPin');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('parseMeshtasticBluetoothPin');
   });
 });
 
@@ -1043,9 +1058,9 @@ describe('Native Electron call guards (source contract)', () => {
   });
 
   it('bounds bluetooth-start-scan with a 15 s timeout', () => {
-    expect(INDEX_SOURCE).toContain('BLUETOOTH_START_SCAN_TIMEOUT_MS = 15_000');
-    expect(INDEX_SOURCE).toContain("ipcMain.handle('bluetooth-start-scan'");
-    expect(INDEX_SOURCE).toContain('bluetooth-start-scan: timed out after 15 s');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('BLUETOOTH_START_SCAN_TIMEOUT_MS = 15_000');
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain("ipcMain.handle('bluetooth-start-scan'");
+    expect(BLUETOOTHCTL_IPC_SOURCE).toContain('bluetooth-start-scan: timed out after 15 s');
   });
 
   it('reads meshcore import JSON via fs.promises.readFile', () => {

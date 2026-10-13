@@ -48,14 +48,24 @@ RUN pnpm install --frozen-lockfile --ignore-scripts
 COPY . .
 RUN pnpm run build:headless
 
+# bluetoothctl only (Linux PIN pairing through the host's BlueZ). The bluez package would also add
+# udev, a D-Bus daemon and bluetoothd, none of which run in the container.
+FROM ${NODE_IMAGE}:${NODE_VERSION}-bookworm-slim AS bluez
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends bluez \
+  && rm -rf /var/lib/apt/lists/*
+
 FROM ${NODE_IMAGE}:${NODE_VERSION}-bookworm-slim AS runtime
 ENV NODE_ENV=production \
   MESH_CLIENT_DATA_DIR=/data \
   MESH_CLIENT_WEB_HOST=0.0.0.0 \
   MESH_CLIENT_WEB_PORT=8080
+# libdbus for the sidecar's BLE (btleplug talks to the host's BlueZ over the system D-Bus); glib and
+# readline for bluetoothctl. No Bluetooth service runs in the container.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends libdbus-1-3 \
+  && apt-get install -y --no-install-recommends libdbus-1-3 libglib2.0-0 libreadline8 \
   && rm -rf /var/lib/apt/lists/*
+COPY --from=bluez /usr/bin/bluetoothctl /usr/bin/bluetoothctl
 WORKDIR /app
 # Where reticulum-sidecar-path.ts looks: <app.getAppPath()>/resources/reticulum-sidecar/.
 COPY --from=sidecar /src/reticulum-sidecar/target/release/mesh-client-reticulum ./resources/reticulum-sidecar/mesh-client-reticulum

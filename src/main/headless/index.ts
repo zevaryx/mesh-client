@@ -18,9 +18,11 @@ import {
   isDatabaseSchemaUpgradeDeclinedError,
 } from '../database';
 import { MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE_ENV } from '../fatal-startup-dialog';
+import { gattSidecarProxy } from '../gatt-sidecar-proxy';
 import { validateHttpHost } from '../httpHostValidation';
 import { registerAppSettingsIpcHandlers } from '../ipc/app-settings-handlers';
 import { registerBeaconIpcHandlers } from '../ipc/beacon-handlers';
+import { registerBluetoothctlIpcHandlers } from '../ipc/bluetoothctl-handlers';
 import { registerChatContentIpcHandlers } from '../ipc/chat-content-handlers';
 import { registerChatOutboxIpcHandlers } from '../ipc/chat-outbox-handlers';
 import { registerMeshcoreDbIpcHandlers } from '../ipc/db-meshcore-handlers';
@@ -28,6 +30,7 @@ import { registerMeshtasticDbIpcHandlers } from '../ipc/db-meshtastic-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from '../ipc/environment-telemetry-handlers';
 import { registerFileDialogIpcHandlers } from '../ipc/file-dialog-handlers';
 import { registerFlasherHandlers } from '../ipc/flasher-handlers';
+import { registerGattIpcHandlers } from '../ipc/gatt-handlers';
 import { registerGeoIpcHandlers } from '../ipc/geo-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
@@ -52,6 +55,7 @@ import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from 
 import { registerTranslationHandlers } from '../ipc/translation-handlers';
 import { initLogFile, patchMainConsole, setMainWindow } from '../log-service';
 import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
+import { attachMeshtasticGattTap } from '../meshtastic-backend/gattTap';
 import type { MeshtasticBackendHandle } from '../meshtastic-backend/hostProtocol';
 import { startInProcessMeshtasticBackend } from '../meshtastic-backend/inProcessHost';
 import { withMeshtasticLinkKeeper } from '../meshtastic-backend/keptLink';
@@ -63,7 +67,7 @@ import { MQTTManager } from '../mqtt-manager';
 import { createMeshTilesProtocolHandler } from '../offline-maps/protocol';
 import { createTileCache, type TileCache } from '../offline-maps/tile-cache';
 import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
-import { sanitizeLogMessage } from '../sanitize-log-message';
+import { errorMessageText, sanitizeLogMessage } from '../sanitize-log-message';
 import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from '../tak/tak-server-host';
 import { initUpdater } from '../updater';
 import { formatHeadlessAccessUrl, HeadlessConfigError, resolveHeadlessConfig } from './config';
@@ -71,6 +75,9 @@ import { BrowserWindow, configureHeadlessApp, configureHeadlessSafeStorage } fro
 import { registerHeadlessAppHandlers } from './headlessAppHandlers';
 import { headlessIpcRegistry } from './ipcRegistry';
 import { createMqttConnectionReuse } from './mqttConnectionReuse';
+import { registerSerialBridgeIpcHandlers, type SerialBridge } from './serialBridge';
+import { openSerialDevice } from './serialDevice';
+import { listSerialPorts } from './serialPorts';
 import { createHeadlessWebServer } from './webServer';
 
 declare const __MESH_CLIENT_APP_VERSION__: string | undefined;
@@ -84,6 +91,10 @@ const meshcoreMqttAdapter = new MeshcoreMqttAdapter();
 const takServerHost = createTakServerHost({ getMainWindow: pushTarget });
 
 let reticulumSidecarManager: ReticulumSidecarManager | null = null;
+/** Server-side serial ports (set when handlers register). */
+let serialBridge: SerialBridge | null = null;
+/** Set once on SIGINT / SIGTERM; BLE handlers refuse new work after it. */
+let shuttingDown = false;
 
 /** Same lazy creation as the Electron app (the sidecar binary is spawned on reticulum:start). */
 function ensureReticulumSidecarManager(): ReticulumSidecarManager {
@@ -230,7 +241,21 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerFileDialogIpcHandlers({
     getMainWindow: () => pushTarget() as unknown as ElectronBrowserWindow | null,
   });
-  // BLE (RNode / LoRa GATT) is not wired headless: the sidecar's btleplug needs host BlueZ.
+  // LoRa BLE through the sidecar GATT central (btleplug). Linux hosts only: the container needs
+  // the host's BlueZ over the system D-Bus (docs/development/headless-webui.md#bluetooth).
+  // Serial ports on the server, opened through the browser's navigator.serial polyfill.
+  serialBridge = registerSerialBridgeIpcHandlers({
+    listPorts: () => listSerialPorts(process.platform),
+    openDevice: (devicePath, baudRate) => openSerialDevice(devicePath, baudRate),
+  });
+  registerBluetoothctlIpcHandlers();
+  registerGattIpcHandlers({
+    getMainWindow: pushTarget,
+    isQuitting: () => shuttingDown,
+    ensureSidecar: ensureReticulumSidecarManager,
+  });
+  // The background ingest also stores what the Meshtastic BLE session receives.
+  if (meshtasticBackend) attachMeshtasticGattTap(gattSidecarProxy, meshtasticBackend.taps.ble);
   registerReticulumIpcHandlers({
     idleStatus: IDLE_RETICULUM_STATUS,
     ensureManager: ensureReticulumSidecarManager,
@@ -348,7 +373,6 @@ async function main(): Promise<void> {
   // log-injection-ok token is generated or operator-supplied config, printed once by design
   console.debug(`[headless] open ${formatHeadlessAccessUrl(config, address.port)}`);
 
-  let shuttingDown = false;
   const shutdown = (signal: string): void => {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -358,11 +382,23 @@ async function main(): Promise<void> {
     meshtasticBackend?.dispose();
     disposeTranslation?.();
     stopHttpBridgePolling();
+    serialBridge?.closeAll();
     mqttManager.disconnect();
     meshcoreMqttAdapter.disconnect();
     takServerHost.get()?.stop();
     takServerHost.get()?.stopRemote();
+    gattSidecarProxy.setQuitting();
+    gattSidecarProxy.setRnodeBondRecoveryExclusive(false);
     void server.close().then(async () => {
+      // Drop LoRa BLE links before the sidecar that holds them stops (as the desktop quit does).
+      try {
+        await gattSidecarProxy.disconnectAll();
+      } catch (err) {
+        console.warn(
+          '[headless] GATT disconnect failed:',
+          sanitizeLogMessage(errorMessageText(err)),
+        );
+      }
       // Stop the Reticulum sidecar (it owns its own files) before closing SQLite. A failed
       // stop is logged, not fatal: the process is exiting and the sidecar is our child.
       try {

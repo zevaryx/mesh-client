@@ -186,6 +186,29 @@ describe('WebIpcRenderer', () => {
     expect(sockets[0]?.sent).toEqual([]);
   });
 
+  it('handles page-local sends and raises page-local events without the socket', () => {
+    const sockets: FakeSocket[] = [];
+    const picked = vi.fn();
+    const renderer = new WebIpcRenderer({
+      url: 'ws://host/ipc?token=t',
+      createSocket: (url) => {
+        const sock = new FakeSocket(url);
+        sockets.push(sock);
+        return sock;
+      },
+      schedule: () => {},
+      localSends: { 'serial-port-selected': picked },
+    });
+    sockets[0]?.open();
+    const listener = vi.fn();
+    renderer.on('serial-ports-discovered', listener);
+    renderer.emitLocal('serial-ports-discovered', [[{ portId: '/dev/ttyUSB0' }]]);
+    expect(listener).toHaveBeenCalledWith(expect.anything(), [{ portId: '/dev/ttyUSB0' }]);
+    renderer.send('serial-port-selected', '/dev/ttyUSB0');
+    expect(picked).toHaveBeenCalledWith('/dev/ttyUSB0');
+    expect(sockets[0]?.sent).toEqual([]);
+  });
+
   it('delivers events to on/once listeners and stops after off', () => {
     const { renderer, current } = setup();
     current().open();
