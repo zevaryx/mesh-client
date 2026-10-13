@@ -90,6 +90,7 @@ import { ipcMain } from 'electron';
 
 import { noteLiveSessionData, noteLiveSessionWrite } from '../live-session-meter';
 import { assertIpcSender } from '../validate-ipc-sender';
+import { createLinkSharing } from './linkSharingHost';
 import {
   createTcpBridge,
   registerTcpBridgeIpcHandlers,
@@ -489,10 +490,10 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
       writeMissing: 'no-socket',
       getMainWindow,
       validateHost,
-      sharing: {
+      sharing: createLinkSharing({
         sessionOf: (e) => (e.sender as unknown as { id: number }).id,
         announce,
-      },
+      }),
     });
   }
 
@@ -591,7 +592,10 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
       writeMissing: 'reject',
       getMainWindow,
       validateHost,
-      sharing: { sessionOf: (e) => (e.sender as unknown as { id: number }).id, announce },
+      sharing: createLinkSharing({
+        sessionOf: (e) => (e.sender as unknown as { id: number }).id,
+        announce,
+      }),
     });
     const pending = bridge.connect(mkTab(1), '10.0.0.5', 5000);
     latestSocket().completeConnect();

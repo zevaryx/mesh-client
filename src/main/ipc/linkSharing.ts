@@ -6,6 +6,8 @@
  */
 import type { IpcMainInvokeEvent } from 'electron';
 
+import type { MeshcoreTcpMux, MeshcoreTcpMuxDeps } from './meshcoreTcpMux';
+
 export type SharedLinkAnnouncement =
   | { state: 'connected'; transport: 'tcp'; host: string; port: number }
   | { state: 'connected'; transport: 'http'; host: string; tls: boolean }
@@ -15,13 +17,20 @@ export interface LinkSharing {
   /** Stable id of the calling renderer (a browser tab), or `null` when unknown. */
   sessionOf: (event: IpcMainInvokeEvent) => number | null;
   announce: (protocol: 'meshtastic' | 'meshcore', change: SharedLinkAnnouncement) => void;
+  /**
+   * Factories for {@link SharedLinkMembers} and `MeshcoreTcpMux`. The headless server supplies
+   * them (`createLinkSharing`), so the desktop main bundle, which never shares links, imports the
+   * bridges' sharing code as types only and does not carry it.
+   */
+  members: () => SharedLinkMembers;
+  meshcoreMux: (deps: MeshcoreTcpMuxDeps) => MeshcoreTcpMux;
 }
 
 /** The tabs on one link; a tab that closes leaves it. */
 export class SharedLinkMembers {
   private readonly members = new Set<number>();
 
-  constructor(private readonly sharing: LinkSharing) {}
+  constructor(private readonly sharing: Pick<LinkSharing, 'sessionOf'>) {}
 
   has(sid: number): boolean {
     return this.members.has(sid);

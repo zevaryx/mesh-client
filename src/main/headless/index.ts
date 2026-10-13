@@ -31,7 +31,7 @@ import { registerFlasherHandlers } from '../ipc/flasher-handlers';
 import { registerGeoIpcHandlers } from '../ipc/geo-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
-import type { LinkSharing } from '../ipc/linkSharing';
+import { createLinkSharing } from '../ipc/linkSharingHost';
 import { registerLogIpcHandlers } from '../ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
@@ -128,7 +128,7 @@ function startMeshtasticBackend(): MeshtasticBackendHandle {
  * Shared viewing: tabs join an open radio link (TCP or HTTP) instead of reconnecting it, and every
  * tab follows a connect or a user's disconnect (`ipc/linkSharing.ts`, `shared/webBridgeDataSync.ts`).
  */
-const linkSharing: LinkSharing = {
+const linkSharing = createLinkSharing({
   sessionOf: (event) => {
     const id = (event.sender as { id?: unknown }).id;
     return typeof id === 'number' ? id : null;
@@ -136,7 +136,7 @@ const linkSharing: LinkSharing = {
   announce: (protocol, change) => {
     pushTarget()?.webContents.send(WEB_BRIDGE_LINK_CHANGED_EVENT, { protocol, ...change });
   },
-};
+});
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {

@@ -21,8 +21,7 @@ import type { MeshtasticLinkInfo } from '../meshtastic-backend/linkTarget';
 import { meshtasticTcpWriteErrorIsNoSocket } from '../meshtasticTcpWriteResult';
 import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender } from '../validate-ipc-sender';
-import { type LinkSharing, SharedLinkMembers } from './linkSharing';
-import { MeshcoreTcpMux } from './meshcoreTcpMux';
+import type { LinkSharing } from './linkSharing';
 
 export type TcpBridgeProtocol = 'meshcore' | 'meshtastic';
 export type TcpBridgeWriteMissing = 'reject' | 'no-socket';
@@ -104,7 +103,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
   /** Target of the open (connected) active socket; `null` while connecting or closed. */
   let activeTarget: { host: string; port: number } | null = null;
   /** Shared viewing: renderers on the active link (cleared when it closes). */
-  const attached = sharing ? new SharedLinkMembers(sharing) : null;
+  const attached = sharing ? sharing.members() : null;
 
   /**
    * Shared viewing, MeshCore: commands from every tab go to the radio one at a time and replies
@@ -114,7 +113,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
   const replyTargets = new Map<number, { send: (channel: string, ...args: unknown[]) => void }>();
   const mux =
     sharing && protocol === 'meshcore'
-      ? new MeshcoreTcpMux({
+      ? sharing.meshcoreMux({
           writeToRadio: (frame) => {
             const sock = activeSocket;
             if (!sock || sock.destroyed || sock.writableEnded) return;

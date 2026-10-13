@@ -14,7 +14,7 @@ import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
 import type { MeshtasticLinkOrigin } from '../meshtastic-backend/linkTarget';
 import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
-import { type LinkSharing, SharedLinkMembers } from './linkSharing';
+import type { LinkSharing } from './linkSharing';
 import type { TcpBridgeTap } from './tcp-bridge';
 
 let httpDevice: {
@@ -172,7 +172,7 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     return snapshotLiveSessionMeter(protocol);
   });
 
-  const members = deps.sharing ? new SharedLinkMembers(deps.sharing) : null;
+  const members = deps.sharing ? deps.sharing.members() : null;
 
   /** Preflight, then poll `fromradio` until replaced or disconnected. */
   const startHttpLink = async (
