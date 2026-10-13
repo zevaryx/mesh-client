@@ -17,6 +17,7 @@ import {
   readReticulumAttachmentAsDataUrl,
   takeReticulumAttachmentImageRateToken,
 } from '../reticulum-attachment-image';
+import { errorMessageText } from '../sanitize-log-message';
 import { validateIpcSender } from '../validate-ipc-sender';
 
 /** Register chat content handlers. Channel name literals keep check:ipc-contract aligned. */
@@ -48,7 +49,7 @@ export function registerChatContentIpcHandlers(): void {
     } catch (err) {
       console.error(
         '[IPC] chat:readReticulumAttachmentAsDataUrl failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -69,7 +70,7 @@ export function registerChatContentIpcHandlers(): void {
     } catch (err) {
       console.error(
         '[IPC] chat:readReticulumAttachmentBytes failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }

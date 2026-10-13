@@ -31,7 +31,7 @@ import { registerFlasherHandlers } from '../ipc/flasher-handlers';
 import { registerGeoIpcHandlers } from '../ipc/geo-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
-import { createLinkSharing } from '../ipc/linkSharingHost';
+import { combineTaps, createSharedLinkTap } from '../ipc/linkSharing';
 import { registerLogIpcHandlers } from '../ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
@@ -70,6 +70,7 @@ import { formatHeadlessAccessUrl, HeadlessConfigError, resolveHeadlessConfig } f
 import { BrowserWindow, configureHeadlessApp, configureHeadlessSafeStorage } from './electronShim';
 import { registerHeadlessAppHandlers } from './headlessAppHandlers';
 import { headlessIpcRegistry } from './ipcRegistry';
+import { createMqttConnectionReuse } from './mqttConnectionReuse';
 import { createHeadlessWebServer } from './webServer';
 
 declare const __MESH_CLIENT_APP_VERSION__: string | undefined;
@@ -128,15 +129,22 @@ function startMeshtasticBackend(): MeshtasticBackendHandle {
  * Shared viewing: tabs join an open radio link (TCP or HTTP) instead of reconnecting it, and every
  * tab follows a connect or a user's disconnect (`ipc/linkSharing.ts`, `shared/webBridgeDataSync.ts`).
  */
-const linkSharing = createLinkSharing({
-  sessionOf: (event) => {
-    const id = (event.sender as { id?: unknown }).id;
-    return typeof id === 'number' ? id : null;
-  },
-  announce: (protocol, change) => {
-    pushTarget()?.webContents.send(WEB_BRIDGE_LINK_CHANGED_EVENT, { protocol, ...change });
-  },
-});
+const sessionOfTab = (event: { sender: unknown }): number | null => {
+  const id = (event.sender as { id?: unknown }).id;
+  return typeof id === 'number' ? id : null;
+};
+const sharedLinkTap = (protocol: 'meshtastic' | 'meshcore', transport: 'tcp' | 'http') =>
+  createSharedLinkTap({
+    protocol,
+    transport,
+    sessionOf: sessionOfTab,
+    announce: (p, change) => {
+      pushTarget()?.webContents.send(WEB_BRIDGE_LINK_CHANGED_EVENT, { protocol: p, ...change });
+    },
+    broadcast: (frame) => {
+      pushTarget()?.webContents.send(`${protocol}:tcp-data`, frame);
+    },
+  });
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {
@@ -153,13 +161,12 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerTcpBridgeIpcHandlers({
     getMainWindow: pushTarget,
     validateHost: validateHttpHost,
-    sharing: linkSharing,
-    ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.taps.tcp } : {}),
+    meshtasticTap: combineTaps(meshtasticBackend?.taps.tcp, sharedLinkTap('meshtastic', 'tcp')),
+    meshcoreTap: sharedLinkTap('meshcore', 'tcp'),
   });
   registerHttpBridgeIpcHandlers({
     getMainWindow: pushTarget,
-    sharing: linkSharing,
-    ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.taps.http } : {}),
+    meshtasticTap: combineTaps(meshtasticBackend?.taps.http, sharedLinkTap('meshtastic', 'http')),
   });
   registerMqttIpcHandlers({
     mqttManager,
@@ -167,7 +174,7 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     getMainWindow: pushTarget,
     getTakServerManager: () => takServerHost.get(),
     // Every tab auto-connects MQTT on open; keep a matching live connection instead of bouncing it.
-    reuseSameConnection: true,
+    keepLiveConnection: createMqttConnectionReuse(),
     // MQTT chat / nodes are stored here while no tab is open (the tabs store them otherwise).
     ...(meshtasticBackend
       ? {

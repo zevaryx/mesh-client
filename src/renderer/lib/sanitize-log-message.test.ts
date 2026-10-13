@@ -9,6 +9,7 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  errorMessageText,
   sanitizeForConsoleEcho,
   sanitizeForLogSink,
   sanitizeLogMessage,
@@ -39,6 +40,15 @@ describe('sanitizeLogMessage', () => {
   it('handles non-strings by stringifying', () => {
     expect(sanitizeLogMessage(123)).toBe('123');
     expect(sanitizeLogMessage(null)).toBe('null');
+  });
+});
+
+describe('errorMessageText', () => {
+  it('returns an Error message without its name, and stringifies anything else', () => {
+    expect(errorMessageText(new TypeError('bad\ninput'))).toBe('bad\ninput');
+    expect(errorMessageText('plain')).toBe('plain');
+    expect(errorMessageText(42)).toBe('42');
+    expect(sanitizeLogMessage(errorMessageText(new Error('a\nb')))).toBe('a b');
   });
 });
 

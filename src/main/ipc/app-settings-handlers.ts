@@ -14,7 +14,7 @@ import {
   MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX,
 } from '../../shared/appSettingsKeyPrefixes';
 import type { NodeSqliteDB } from '../db-compat';
-import { sanitizeLogMessage } from '../sanitize-log-message';
+import { errorMessageText, sanitizeLogMessage } from '../sanitize-log-message';
 import { validateIpcSender } from '../validate-ipc-sender';
 
 // Allow-list keys to prevent arbitrary writes from a compromised renderer.
@@ -110,10 +110,7 @@ export function registerAppSettingsIpcHandlers(deps: AppSettingsIpcDeps): void {
       }
       return out;
     } catch (err) {
-      console.error(
-        '[IPC] appSettings:get failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] appSettings:get failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -140,10 +137,7 @@ export function registerAppSettingsIpcHandlers(deps: AppSettingsIpcDeps): void {
       console.debug(`[IPC] appSettings:set: ${sanitizeLogMessage(key)} (${result.changes} rows)`);
       return { changes: Number(result.changes) };
     } catch (err) {
-      console.error(
-        '[IPC] appSettings:set failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] appSettings:set failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });

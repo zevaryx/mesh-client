@@ -17,11 +17,11 @@ import {
   resetLiveSessionMeter,
 } from '../live-session-meter';
 import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
-import type { MeshtasticLinkInfo } from '../meshtastic-backend/linkTarget';
+import type { MeshtasticLinkInfo, MeshtasticLinkTarget } from '../meshtastic-backend/linkTarget';
 import { meshtasticTcpWriteErrorIsNoSocket } from '../meshtasticTcpWriteResult';
 import type { RendererPushTarget } from '../rendererPushTarget';
+import { errorMessageText } from '../sanitize-log-message';
 import { assertIpcSender } from '../validate-ipc-sender';
-import type { LinkSharing } from './linkSharing';
 
 export type TcpBridgeProtocol = 'meshcore' | 'meshtastic';
 export type TcpBridgeWriteMissing = 'reject' | 'no-socket';
@@ -35,15 +35,34 @@ export const TCP_BRIDGE_CONNECT_TIMEOUT_MS = 20_000;
 export const TCP_BRIDGE_KEEPALIVE_INITIAL_DELAY_MS = 30_000;
 
 /**
- * Main-process observer of the active socket (Meshtastic background ingest). Sees exactly what
- * the renderer sees; `write` targets the socket that was active at open and no-ops once replaced.
- * `onUserDisconnect` marks a renderer's explicit disconnect (the link keeper stops reconnecting).
+ * Main-process observer of the active socket (Meshtastic background ingest), and the extension
+ * point for headless shared viewing. Sees exactly what the renderer sees; `write` targets the
+ * socket that was active at open and no-ops once replaced. `onUserDisconnect` marks a renderer's
+ * explicit disconnect (the link keeper stops reconnecting).
+ *
+ * The optional hooks let a tap built outside the desktop main bundle (`ipc/linkSharing.ts`) share
+ * one link between browser tabs: join it instead of reconnecting, keep it when a tab that is not on
+ * it cleans up, route writes and replies, and announce changes.
  */
 export interface TcpBridgeTap {
-  onOpen: (write: (bytes: Uint8Array) => void, info?: MeshtasticLinkInfo) => void;
-  onData: (chunk: Uint8Array) => void;
-  onClose: () => void;
-  onUserDisconnect?: () => void;
+  onOpen: (write: (bytes: Uint8Array) => void, info?: TcpBridgeOpenInfo) => void;
+  /** `true` when the tap delivered the chunk to the renderers itself (no broadcast). */
+  onData: (chunk: Uint8Array) => boolean | undefined;
+  /** `dropped`: the link failed (not replaced or disconnected by a renderer). */
+  onClose: (dropped?: boolean) => void;
+  /** `hadLink`: the disconnect closed an open link (false when there was none). */
+  onUserDisconnect?: (hadLink?: boolean) => void;
+  /** A renderer connects: `true` resolves it without a new socket (it joined the open link). */
+  join?: (event: IpcMainInvokeEvent, target: MeshtasticLinkTarget) => boolean;
+  /** A renderer disconnects: `true` keeps the link (the caller is not on it). */
+  keepOnDisconnect?: (event: IpcMainInvokeEvent) => boolean;
+  /** A renderer writes: `true` when the tap sent the bytes itself. */
+  takeWrite?: (event: IpcMainInvokeEvent, bytes: Uint8Array) => boolean;
+}
+
+export interface TcpBridgeOpenInfo extends MeshtasticLinkInfo {
+  /** The renderer that opened the link (absent when the main process opened it). */
+  event?: IpcMainInvokeEvent;
 }
 
 /**
@@ -51,18 +70,6 @@ export interface TcpBridgeTap {
  * link keeper). A renderer cannot produce this object over IPC, so `assertIpcSender` still
  * guards every renderer call.
  */
-/**
- * Shared viewing (headless web UI: several tabs, one server). Without it each renderer that
- * connects replaces the socket, which reconnects the radio and makes it resend its config.
- * With it:
- * - a renderer connecting to the target the live socket already has, and not yet on it, attaches:
- *   the call resolves without a new socket (the stream already reaches every tab). A renderer that
- *   is already on it and connects again still gets a fresh socket (its own recovery path);
- * - each newly opened link and each explicit disconnect is announced to every renderer, so
- *   disconnected tabs join the link and connected tabs drop it when a user disconnects it.
- */
-export type TcpBridgeSharing = LinkSharing;
-
 export const MAIN_PROCESS_ORIGIN: unique symbol = Symbol('mesh-client.main-process-origin');
 
 export interface TcpBridgeDeps {
@@ -71,7 +78,6 @@ export interface TcpBridgeDeps {
   getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
   tap?: TcpBridgeTap;
-  sharing?: TcpBridgeSharing;
 }
 
 export interface TcpBridgeHandlers {
@@ -91,73 +97,29 @@ export interface TcpBridgeHandlers {
 export interface TcpBridgeRegisterDeps {
   getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
-  meshtasticTap?: TcpBridgeTap;
-  /** Headless only: share one link between browser tabs (see {@link TcpBridgeSharing}). */
-  sharing?: TcpBridgeSharing;
+  meshtasticTap?: TcpBridgeTap | undefined;
+  /** Headless shared viewing (`ipc/linkSharing.ts`); MeshCore has no ingest tap of its own. */
+  meshcoreTap?: TcpBridgeTap;
 }
 
 export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
-  const { protocol, writeMissing, getMainWindow, tap, sharing } = deps;
+  const { protocol, writeMissing, getMainWindow, tap } = deps;
   const validateHost: (host: unknown) => asserts host is string = deps.validateHost;
   let activeSocket: net.Socket | null = null;
-  /** Target of the open (connected) active socket; `null` while connecting or closed. */
-  let activeTarget: { host: string; port: number } | null = null;
-  /** Shared viewing: renderers on the active link (cleared when it closes). */
-  const attached = sharing ? sharing.members() : null;
-
-  /**
-   * Shared viewing, MeshCore: commands from every tab go to the radio one at a time and replies
-   * go back to the tab that asked (`meshcoreTcpMux.ts`). Meshtastic needs none: its stream
-   * carries no request / reply pairing a second tab could steal.
-   */
-  const replyTargets = new Map<number, { send: (channel: string, ...args: unknown[]) => void }>();
-  const mux =
-    sharing && protocol === 'meshcore'
-      ? sharing.meshcoreMux({
-          writeToRadio: (frame) => {
-            const sock = activeSocket;
-            if (!sock || sock.destroyed || sock.writableEnded) return;
-            sock.write(frame);
-            noteLiveSessionWrite(protocol);
-          },
-          deliver: (sid, frame) => {
-            if (sid === null) getMainWindow()?.webContents.send(dataChannel, frame);
-            else replyTargets.get(sid)?.send(dataChannel, frame);
-          },
-        })
-      : null;
-
-  const muxSessionOf = (event: IpcMainInvokeEvent): number | null => {
-    const sid = sharing?.sessionOf(event) ?? null;
-    if (sid === null || replyTargets.has(sid)) return sid;
-    replyTargets.set(sid, event.sender);
-    const sender = event.sender as { once?: (name: 'destroyed', fn: () => void) => unknown };
-    sender.once?.('destroyed', () => {
-      replyTargets.delete(sid);
-      mux?.sessionClosed(sid);
-    });
-    return sid;
-  };
-
-  /** Shared viewing: join the open link instead of replacing it (see {@link TcpBridgeSharing}). */
-  const tryAttach = (event: IpcMainInvokeEvent, host: string, port: number): boolean => {
-    if (!sharing || !activeSocket || !activeTarget) return false;
-    if (activeTarget.host !== host || activeTarget.port !== port) return false;
-    // A socket still connecting (a replacement in progress) is not joinable yet.
-    if (activeSocket.connecting || activeSocket.destroyed || activeSocket.writableEnded) {
-      return false;
-    }
-    if (!attached?.isOutsider(event)) return false;
-    const sid = attached.join(event);
-    console.debug(`[IPC] ${protocol}:tcp session ${String(sid)} attached to the shared link`);
-    return true;
-  };
 
   const connectChannel = `${protocol}:tcp-connect`;
   const writeChannel = `${protocol}:tcp-write`;
   const disconnectChannel = `${protocol}:tcp-disconnect`;
   const dataChannel = `${protocol}:tcp-data`;
   const disconnectedChannel = `${protocol}:tcp-disconnected`;
+
+  /** Shared viewing: a renderer joins the open link instead of replacing it (see the tap). */
+  const joinsOpenLink = (
+    event: IpcMainInvokeEvent | typeof MAIN_PROCESS_ORIGIN,
+    host: string,
+    port: number,
+  ): boolean =>
+    event !== MAIN_PROCESS_ORIGIN && tap?.join?.(event, { kind: 'tcp', host, port }) === true;
 
   const connect = (
     event: IpcMainInvokeEvent | typeof MAIN_PROCESS_ORIGIN,
@@ -180,7 +142,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
         reject(err instanceof Error ? err : new Error(String(err)));
         return;
       }
-      if (event !== MAIN_PROCESS_ORIGIN && tryAttach(event, host, p)) {
+      if (joinsOpenLink(event, host, p)) {
         settled = true;
         resolve();
         return;
@@ -218,14 +180,6 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
           `transport=tcp stack=${protocol} host=${sanitizeLogMessage(socketHost)} port=${p}`,
         );
         resetLiveSessionMeter(protocol);
-        if (activeSocket === socket) {
-          activeTarget = { host, port: p };
-          mux?.reset();
-          if (sharing) {
-            if (event !== MAIN_PROCESS_ORIGIN) attached?.join(event);
-            sharing.announce(protocol, { state: 'connected', transport: 'tcp', host, port: p });
-          }
-        }
         if (tap && activeSocket === socket) {
           tap.onOpen(
             (bytes) => {
@@ -233,7 +187,11 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
                 socket.write(bytes);
               }
             },
-            { origin, target: { kind: 'tcp', host, port: p } },
+            {
+              origin,
+              target: { kind: 'tcp', host, port: p },
+              ...(event === MAIN_PROCESS_ORIGIN ? {} : { event }),
+            },
           );
         }
         if (!settled) {
@@ -252,18 +210,18 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
           } catch (e) {
             console.debug(
               `[IPC] ${dataChannel} destroy after oversize ` +
-                sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+                sanitizeLogMessage(errorMessageText(e)),
             );
           }
           return;
         }
         // Superseded sockets must not update the live session meter (#792 connect-replace).
+        let delivered: boolean | undefined = false;
         if (activeSocket === socket) {
           noteLiveSessionData(protocol);
-          tap?.onData(new Uint8Array(chunk));
-          mux?.fromRadio(new Uint8Array(chunk)); // routes replies / pushes itself
+          delivered = tap?.onData(new Uint8Array(chunk));
         }
-        if (!mux) getMainWindow()?.webContents.send(dataChannel, new Uint8Array(chunk));
+        if (!delivered) getMainWindow()?.webContents.send(dataChannel, new Uint8Array(chunk));
       });
       socket.on('close', (hadError) => {
         clearTimeout(connectTimeout);
@@ -285,11 +243,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
         if (activeSocket === socket) {
           activeSocket = null;
           clearLiveSessionMeter(protocol);
-          tap?.onClose();
-          // Every tab reconnects after a drop: the first opens a new link, the rest attach to it.
-          activeTarget = null;
-          attached?.clear();
-          mux?.reset();
+          tap?.onClose(true);
           getMainWindow()?.webContents.send(disconnectedChannel);
         }
         // Connect-replace / timeout destroy can close a socket that never connected.
@@ -344,11 +298,7 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
       console.debug(`[IPC] ${writeChannel}: no active socket`);
       return 'no-socket';
     }
-    const muxSession = mux ? muxSessionOf(event) : null;
-    if (mux && muxSession !== null) {
-      mux.fromSession(muxSession, new Uint8Array(bytes));
-      return Promise.resolve(undefined);
-    }
+    if (tap?.takeWrite?.(event, new Uint8Array(bytes))) return Promise.resolve(undefined);
     return new Promise<'no-socket' | undefined>((resolve, reject) => {
       sock.write(new Uint8Array(bytes), (err) => {
         if (err) {
@@ -370,20 +320,10 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
     });
   };
 
-  /**
-   * Shared viewing: a disconnect from a tab that is not on the link is that tab cleaning up before
-   * its own connect (MeshCore does this); it must not drop the link other tabs are using.
-   */
-  const isCleanupFromOtherTab = (event: IpcMainInvokeEvent): boolean => {
-    if (!activeSocket || !attached?.isOutsider(event)) return false;
-    const sid = sharing?.sessionOf(event);
-    console.debug(`[IPC] ${disconnectChannel}: session ${String(sid)} is not on the link; kept`);
-    return true;
-  };
-
   const disconnect = (event: IpcMainInvokeEvent): void => {
     assertIpcSender(event, disconnectChannel);
-    if (isCleanupFromOtherTab(event)) return;
+    if (activeSocket && tap?.keepOnDisconnect?.(event)) return;
+    const hadLink = activeSocket !== null;
     if (activeSocket) {
       console.debug(`[IPC] ${disconnectChannel}`);
       // Null before destroy so this teardown close is not reported as a live link drop.
@@ -392,22 +332,15 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
       clearLiveSessionMeter(protocol);
       prev.destroy();
       tap?.onClose();
-      activeTarget = null;
-      attached?.clear();
-      mux?.reset();
-      // Shared viewing: a user's disconnect drops the link for every tab.
-      sharing?.announce(protocol, { state: 'disconnected', transport: 'tcp' });
     }
     // An explicit renderer disconnect, even with no socket: stop any background reconnect.
-    tap?.onUserDisconnect?.();
+    tap?.onUserDisconnect?.(hadLink);
   };
 
   const destroyForQuit = (logLabel: string): void => {
     if (!activeSocket) return;
     const prev = activeSocket;
     activeSocket = null;
-    activeTarget = null;
-    attached?.clear();
     clearLiveSessionMeter(protocol);
     tap?.onClose();
     try {
@@ -438,7 +371,7 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
     writeMissing: 'reject',
     getMainWindow: deps.getMainWindow,
     validateHost: deps.validateHost,
-    ...(deps.sharing ? { sharing: deps.sharing } : {}),
+    tap: deps.meshcoreTap,
   });
   ipcMain.handle('meshcore:tcp-connect', meshcore.connect);
   ipcMain.handle('meshcore:tcp-write', meshcore.write);
@@ -450,7 +383,6 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
     getMainWindow: deps.getMainWindow,
     validateHost: deps.validateHost,
     tap: deps.meshtasticTap,
-    ...(deps.sharing ? { sharing: deps.sharing } : {}),
   });
   ipcMain.handle('meshtastic:tcp-connect', meshtastic.connect);
   ipcMain.handle('meshtastic:tcp-write', meshtastic.write);

@@ -49,6 +49,7 @@ import {
   isDatabaseSchemaTooNewError,
   isDatabaseSchemaUpgradeDeclinedError,
 } from './database';
+import { getDbForIpc } from './db-ipc-lifecycle';
 import { formatDatabaseSchemaTooNewMessage, showFatalStartupError } from './fatal-startup-dialog';
 import {
   type GattDiscoveredDevice,
@@ -63,16 +64,20 @@ import { registerBeaconIpcHandlers } from './ipc/beacon-handlers';
 import { registerChatContentIpcHandlers } from './ipc/chat-content-handlers';
 import { registerChatOutboxIpcHandlers } from './ipc/chat-outbox-handlers';
 import { registerMeshcoreDbIpcHandlers } from './ipc/db-meshcore-handlers';
-import { registerMeshtasticDbIpcHandlers } from './ipc/db-meshtastic-handlers';
+import {
+  insertMeshtasticMessageRow,
+  insertPositionHistoryRow,
+  registerMeshtasticDbIpcHandlers,
+  upsertMeshtasticNodeRow,
+} from './ipc/db-meshtastic-handlers';
 import { registerEnvironmentTelemetryIpcHandlers } from './ipc/environment-telemetry-handlers';
 import { registerFileDialogIpcHandlers } from './ipc/file-dialog-handlers';
 import { registerFlasherHandlers } from './ipc/flasher-handlers';
 import { registerGattPairingIpcHandlers } from './ipc/gatt-pairing-handlers';
 import { registerGeoIpcHandlers } from './ipc/geo-handlers';
 import { registerGpsIpcHandlers } from './ipc/gps-handlers';
-import { registerHttpBridgeIpcHandlers } from './ipc/http-bridge';
+import { connectMeshtasticHttpFromMain, registerHttpBridgeIpcHandlers } from './ipc/http-bridge';
 import { registerLogIpcHandlers } from './ipc/log-handlers';
-import { sendMeshtasticBackendCaughtUp } from './ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from './ipc/mqtt-handlers';
 import { registerNotificationSoundHandlers } from './ipc/notification-sound-handlers';
 import { registerOfflineMapsIpcHandlers } from './ipc/offline-maps-handlers';
@@ -87,7 +92,11 @@ import { registerRrcDbIpcHandlers } from './ipc/rrc-db-handlers';
 import { registerSecureSecretsIpcHandlers } from './ipc/secure-secrets-handlers';
 import { registerServiceAnnouncementIpcHandlers } from './ipc/service-announcement-handlers';
 import { registerTakIpcHandlers } from './ipc/tak-handlers';
-import { destroyRegisteredTcpBridgeSockets, registerTcpBridgeIpcHandlers } from './ipc/tcp-bridge';
+import {
+  connectMeshtasticTcpFromMain,
+  destroyRegisteredTcpBridgeSockets,
+  registerTcpBridgeIpcHandlers,
+} from './ipc/tcp-bridge';
 import { registerTranslationHandlers } from './ipc/translation-handlers';
 import {
   flushLogBeforeQuit,
@@ -99,10 +108,7 @@ import {
   setMainWindow,
 } from './log-service';
 import { MeshcoreMqttAdapter } from './meshcore-mqtt-adapter';
-import { isDesktopMeshtasticBackendEnabled } from './meshtastic-backend/desktopBackendFlag';
 import { loadDesktopMeshtasticHost } from './meshtastic-backend/desktopHostLoader';
-import { mainMeshtasticLinkKeeperDeps } from './meshtastic-backend/mainLinks';
-import { mainMeshtasticBackendPersistDb } from './meshtastic-backend/mainPersist';
 import { ensureMicrophoneAccess, isAllowedMicrophonePrivacySettingsUrl } from './microphoneAccess';
 import { MQTTManager } from './mqtt-manager';
 import { createMeshTilesProtocolHandler } from './offline-maps/protocol';
@@ -112,6 +118,7 @@ import { createRendererHeartbeatWatchdog } from './rendererHeartbeatWatchdog';
 import { resolveRendererLoadUrl } from './resolveRendererLoadUrl';
 import { assertReticulumAttachmentPathJailed } from './reticulum-attachment-path';
 import { ReticulumSidecarManager } from './reticulum-sidecar-manager';
+import { errorMessageText } from './sanitize-log-message';
 import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from './tak/tak-server-host';
 import type { TakServerManager } from './tak-server-manager';
 import { updateUnreadAppBadge } from './unreadAppBadge';
@@ -127,10 +134,7 @@ try {
   crashReporter.start({ uploadToServer: false });
   console.debug('[main] crashReporter started (uploadToServer: false)');
 } catch (e: unknown) {
-  console.warn(
-    '[main] crashReporter.start failed:',
-    sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-  );
+  console.warn('[main] crashReporter.start failed:', sanitizeLogMessage(errorMessageText(e)));
 }
 
 // Custom scheme for offline map tiles (must register before app.whenReady).
@@ -306,7 +310,7 @@ async function quitMainProcess(opts: { relaunch?: boolean } = {}): Promise<void>
     } catch (err) {
       console.error(
         '[main] quitMainProcess GATT disconnectAll failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
     }
 
@@ -323,10 +327,7 @@ async function quitMainProcess(opts: { relaunch?: boolean } = {}): Promise<void>
     }
     app.exit(0);
   } catch (err) {
-    console.error(
-      '[main] quitMainProcess failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
+    console.error('[main] quitMainProcess failed:', sanitizeLogMessage(errorMessageText(err)));
     if (opts.relaunch) {
       try {
         app.relaunch();
@@ -492,7 +493,7 @@ process.on('unhandledRejection', (reason) => {
   if (isHarmlessSocketOptionError(reason)) {
     console.warn(
       '[main] Ignoring best-effort socket QoS failure:',
-      sanitizeLogMessage(reason instanceof Error ? reason.message : String(reason)),
+      sanitizeLogMessage(errorMessageText(reason)),
     );
     return;
   }
@@ -559,10 +560,7 @@ function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
       base = nativeImage.createFromPath(trayIconPath).resize({ width: 22, height: 22 });
     }
   } catch (e) {
-    console.error(
-      '[main] tray icon load failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] tray icon load failed:', sanitizeLogMessage(errorMessageText(e)));
   }
 
   if (!hasUnread) return base;
@@ -600,7 +598,7 @@ function buildTrayIcon(hasUnread: boolean): Electron.NativeImage {
   } catch (e) {
     console.error(
       '[main] tray unread icon overlay failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      sanitizeLogMessage(errorMessageText(e)),
     );
     return base;
   }
@@ -644,10 +642,7 @@ function setupTray(window: BrowserWindow) {
     ]);
     tray.setContextMenu(trayContextMenu);
   } catch (e) {
-    console.error(
-      '[main] tray setup failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] tray setup failed:', sanitizeLogMessage(errorMessageText(e)));
     tray = null;
     trayContextMenu = null;
   }
@@ -702,10 +697,7 @@ function applyAboutPanelOptions(): void {
       });
     }
   } catch (e: unknown) {
-    console.warn(
-      '[main] setAboutPanelOptions failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.warn('[main] setAboutPanelOptions failed:', sanitizeLogMessage(errorMessageText(e)));
   }
 }
 
@@ -717,10 +709,7 @@ function openHelpExternalLink(rawUrl: string): void {
   }
   console.debug(`[main] help link: openExternal url=${sanitizeLogMessage(target.toString())}`);
   void shell.openExternal(target.toString() /* parseHttpOrHttpsUrl */).catch((e: unknown) => {
-    console.error(
-      '[main] help link: openExternal failed',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] help link: openExternal failed', sanitizeLogMessage(errorMessageText(e)));
   });
 }
 
@@ -825,7 +814,7 @@ function showWindowsAboutFallbackWindow(): void {
     void win.loadURL(dataUrl).catch((e: unknown) => {
       console.error(
         '[main] about: Windows HTML load failed',
-        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        sanitizeLogMessage(errorMessageText(e)),
       );
       if (!win.isDestroyed()) win.destroy();
       if (windowsAboutWindow === win) windowsAboutWindow = null;
@@ -833,7 +822,7 @@ function showWindowsAboutFallbackWindow(): void {
   } catch (e: unknown) {
     console.error(
       '[main] about: Windows HTML fallback failed',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      sanitizeLogMessage(errorMessageText(e)),
     );
     try {
       dialog.showErrorBox(
@@ -859,19 +848,14 @@ function showAboutDialog(): void {
     }
     app.showAboutPanel();
   } catch (e) {
-    console.error(
-      '[main] about dialog failed',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] about dialog failed', sanitizeLogMessage(errorMessageText(e)));
 
     try {
       dialog.showErrorBox(`About ${appName}`, `${appName}\nVersion ${version}`);
     } catch (fallbackError) {
       console.error(
         '[main] about dialog fallback failed',
-        sanitizeLogMessage(
-          fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
-        ),
+        sanitizeLogMessage(errorMessageText(fallbackError)),
       );
     }
   }
@@ -1018,10 +1002,7 @@ function configureRendererSpellcheck(sess: Session): void {
 
     sess.setSpellCheckerLanguages(picked.slice(0, 3));
   } catch (e) {
-    console.warn(
-      '[main] configureRendererSpellcheck',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.warn('[main] configureRendererSpellcheck', sanitizeLogMessage(errorMessageText(e)));
   }
 }
 
@@ -1077,10 +1058,7 @@ function openExternalHttpOrHttpsIfExternal(currentUrl: string, targetUrl: string
   if (current?.origin === target.origin) return false;
 
   shell.openExternal(target.toString()).catch((e: unknown) => {
-    console.error(
-      '[main] external link open failed',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] external link open failed', sanitizeLogMessage(errorMessageText(e)));
   });
   return true;
 }
@@ -1451,10 +1429,7 @@ function createWindow() {
     }
     await mainWindow.loadURL(resolved.url);
   })().catch((e: unknown) => {
-    console.error(
-      '[main] Failed to load renderer:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] Failed to load renderer:', sanitizeLogMessage(errorMessageText(e)));
   });
 
   mainWindow.on('closed', () => {
@@ -1543,7 +1518,7 @@ function refreshUnreadAppBadge(): void {
   } catch (e) {
     console.error(
       '[main] app unread badge update failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      sanitizeLogMessage(errorMessageText(e)),
     );
   }
 }
@@ -1572,10 +1547,7 @@ ipcMain.on('set-tray-unread', (event, count: unknown) => {
     }
     tray?.setToolTip(hasUnread ? `Mesh-Client (${n} unread)` : 'Mesh-Client');
   } catch (e) {
-    console.error(
-      '[main] tray unread update failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] tray unread update failed:', sanitizeLogMessage(errorMessageText(e)));
   }
 });
 
@@ -1585,10 +1557,7 @@ function startPowerSaveBlocker(): void {
     powerSaveBlockerId = powerSaveBlocker.start('prevent-app-suspension');
     console.debug('[main] powerSaveBlocker started, id =', powerSaveBlockerId);
   } catch (e) {
-    console.error(
-      '[main] powerSaveBlocker start failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] powerSaveBlocker start failed:', sanitizeLogMessage(errorMessageText(e)));
     powerSaveBlockerId = null;
   }
 }
@@ -1601,10 +1570,7 @@ function stopPowerSaveBlocker(): void {
       console.debug('[main] powerSaveBlocker stopped, id =', powerSaveBlockerId);
     }
   } catch (e) {
-    console.error(
-      '[main] powerSaveBlocker stop failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[main] powerSaveBlocker stop failed:', sanitizeLogMessage(errorMessageText(e)));
   } finally {
     powerSaveBlockerId = null;
   }
@@ -1945,7 +1911,7 @@ ipcMain.handle('bluetooth-pair', async (event, macAddress: unknown, pin: unknown
             // trustDeviceBestEffort is best-effort and should not reject; finish pairing anyway.
             console.debug(
               '[IPC] bluetooth-pair trust settle:',
-              sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+              sanitizeLogMessage(errorMessageText(e)),
             );
             if (settled) return;
             finishResolve();
@@ -2179,25 +2145,17 @@ gattSidecarProxy.on(
 // ─── Meshtastic background ingest (opt-in) ─────────────────────────
 // Stores Meshtastic TCP chat, nodes, positions and telemetry in a utilityProcess while the
 // window's renderer is not decoding.
-const meshtasticDesktopHost = isDesktopMeshtasticBackendEnabled()
-  ? loadDesktopMeshtasticHost()
-  : null;
-// The sink logic ships in the host bundle; the database stays this bundle's singleton.
-const persistMeshtasticBackendRecord =
-  meshtasticDesktopHost?.createMeshtasticBackendPersist(mainMeshtasticBackendPersistDb()) ?? null;
-const meshtasticDesktopBackend =
-  meshtasticDesktopHost?.createDesktopMeshtasticBackend(
-    {
-      persist: (record) => {
-        persistMeshtasticBackendRecord?.(record);
-      },
-      onCaughtUp: (count) => {
-        console.debug(`[main] Meshtastic: ${count} record(s) stored by the background ingest`);
-        sendMeshtasticBackendCaughtUp(mainWindow, { count });
-      },
-    },
-    mainMeshtasticLinkKeeperDeps(),
-  ) ?? null;
+const meshtasticDesktopBackend = loadDesktopMeshtasticHost()?.startDesktopMeshtasticBackend({
+  getDb: () => getDbForIpc('meshtastic-backend'),
+  insertMessage: insertMeshtasticMessageRow,
+  upsertNode: upsertMeshtasticNodeRow,
+  insertPosition: insertPositionHistoryRow,
+  connectTcp: connectMeshtasticTcpFromMain,
+  connectHttp: connectMeshtasticHttpFromMain,
+  getMainWindow: () => mainWindow,
+  // Its Meshtastic BLE session feeds the ingest too (desktop only).
+  gatt: gattSidecarProxy,
+});
 
 gattSidecarProxy.on('connected', ({ sessionId }: { sessionId: GattSessionProfile }) => {
   mainWindow?.webContents.send('gatt-connected', { sessionId });
@@ -2217,8 +2175,6 @@ gattSidecarProxy.on(
     mainWindow?.webContents.send('gatt-from-radio', { sessionId, bytes });
   },
 );
-// Opt-in Meshtastic background ingest also sees the BLE session (desktop only).
-meshtasticDesktopBackend?.attachGatt(gattSidecarProxy);
 gattSidecarProxy.on(
   'issue',
   (payload: { sessionId?: GattSessionProfile; code: string; message: string }) => {
@@ -2294,7 +2250,7 @@ ipcMain.handle('bleCoexistence:acquireScan', async (event, owner: unknown) => {
     }
     console.error(
       '[main] bleCoexistence:acquireScan failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+      sanitizeLogMessage(errorMessageText(err)),
     );
     throw err;
   }
@@ -2342,7 +2298,7 @@ ipcMain.handle('gatt:stop-scan', async (event, sessionId: unknown) => {
     await gattSidecarProxy.stopScan(sessionId);
   } catch (err) {
     console.error(
-      `[main] gatt:stop-scan failed: session=${sessionId} message=${sanitizeLogMessage(err instanceof Error ? err.message : String(err))}`,
+      `[main] gatt:stop-scan failed: session=${sessionId} message=${sanitizeLogMessage(errorMessageText(err))}`,
     );
     throw err;
   }
@@ -2370,7 +2326,7 @@ ipcMain.handle('gatt:connect', async (event, sessionId: unknown, peripheralId: u
       gattSidecarProxy.connect(sessionId, peripheralId),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessageText(err);
     console.debug(
       `[main] gatt:connect failed: session=${sessionId} peripheral=${peripheralId} message=${sanitizeLogMessage(message)}`,
     );
@@ -2391,7 +2347,7 @@ ipcMain.handle('gatt:disconnect', async (event, sessionId: unknown) => {
     await gattSidecarProxy.disconnect(sessionId);
   } catch (err) {
     console.error(
-      `[main] gatt:disconnect failed: session=${sessionId} message=${sanitizeLogMessage(err instanceof Error ? err.message : String(err))}`,
+      `[main] gatt:disconnect failed: session=${sessionId} message=${sanitizeLogMessage(errorMessageText(err))}`,
     );
     throw err;
   }
@@ -2406,7 +2362,7 @@ ipcMain.handle('gatt:release-ble-central', async (event) => {
     await gattSidecarProxy.releaseBleCentral();
   } catch (err) {
     console.error(
-      `[main] gatt:release-ble-central failed: message=${sanitizeLogMessage(err instanceof Error ? err.message : String(err))}`,
+      `[main] gatt:release-ble-central failed: message=${sanitizeLogMessage(errorMessageText(err))}`,
     );
     throw err;
   }
@@ -2492,10 +2448,7 @@ ipcMain.handle('notify:message', (event, title: unknown, body: unknown) => {
       new Notification({ title, body }).show();
     }
   } catch (e) {
-    console.warn(
-      '[IPC] notify:message failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.warn('[IPC] notify:message failed:', sanitizeLogMessage(errorMessageText(e)));
   }
 });
 
@@ -2529,10 +2482,7 @@ ipcMain.handle('app:getLoginItem', (event) => {
     const settings = app.getLoginItemSettings();
     return { openAtLogin: settings.openAtLogin };
   } catch (e) {
-    console.error(
-      '[IPC] app:getLoginItem failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[IPC] app:getLoginItem failed:', sanitizeLogMessage(errorMessageText(e)));
     throw e;
   }
 });
@@ -2544,10 +2494,7 @@ ipcMain.handle('app:setLoginItem', (event, openAtLogin: unknown) => {
   try {
     app.setLoginItemSettings({ openAtLogin });
   } catch (e) {
-    console.error(
-      '[IPC] app:setLoginItem failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.error('[IPC] app:setLoginItem failed:', sanitizeLogMessage(errorMessageText(e)));
     throw e;
   }
 });
@@ -2598,10 +2545,7 @@ ipcMain.handle('app:showEmojiPanel', (event) => {
     try {
       app.showEmojiPanel();
     } catch (e) {
-      console.error(
-        '[IPC] app:showEmojiPanel failed:',
-        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-      );
+      console.error('[IPC] app:showEmojiPanel failed:', sanitizeLogMessage(errorMessageText(e)));
       throw e;
     }
   }
@@ -2622,10 +2566,7 @@ ipcMain.handle('clipboard:writeText', async (event, text: unknown) => {
   try {
     await clipboard.writeText(text);
   } catch (e) {
-    console.warn(
-      '[IPC] clipboard:writeText failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.warn('[IPC] clipboard:writeText failed:', sanitizeLogMessage(errorMessageText(e)));
     throw e;
   }
 });
@@ -2648,7 +2589,7 @@ ipcMain.handle('media:ensureMicrophoneAccess', async (event) => {
   } catch (e) {
     console.warn(
       '[IPC] media:ensureMicrophoneAccess failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+      sanitizeLogMessage(errorMessageText(e)),
     );
     return { granted: false, status: 'denied' };
   }
@@ -2670,10 +2611,7 @@ ipcMain.handle('media:ensureCameraAccess', async (event) => {
       },
     });
   } catch (e) {
-    console.warn(
-      '[IPC] media:ensureCameraAccess failed:',
-      sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-    );
+    console.warn('[IPC] media:ensureCameraAccess failed:', sanitizeLogMessage(errorMessageText(e)));
     return { granted: false, status: 'denied' };
   }
 });
@@ -2710,10 +2648,7 @@ ipcMain.handle('session:clearData', async (event) => {
     });
     await win.webContents.session.clearCache();
   } catch (err) {
-    console.error(
-      '[IPC] session:clearData failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
+    console.error('[IPC] session:clearData failed:', sanitizeLogMessage(errorMessageText(err)));
     throw err;
   }
 });
@@ -2729,10 +2664,7 @@ ipcMain.handle('chat:showItemInFolder', (event, filePath: unknown) => {
     shell.showItemInFolder(assertReticulumAttachmentPathJailed(filePath));
     return { ok: true };
   } catch (err) {
-    console.error(
-      '[IPC] chat:showItemInFolder failed:',
-      sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-    );
+    console.error('[IPC] chat:showItemInFolder failed:', sanitizeLogMessage(errorMessageText(err)));
     throw err;
   }
 });
@@ -2753,13 +2685,13 @@ registerChatOutboxIpcHandlers();
 registerTcpBridgeIpcHandlers({
   getMainWindow: () => mainWindow,
   validateHost: validateHttpHost,
-  ...(meshtasticDesktopBackend ? { meshtasticTap: meshtasticDesktopBackend.taps.tcp } : {}),
+  meshtasticTap: meshtasticDesktopBackend?.taps.tcp,
 });
 
 // ─── Meshtastic HTTP bridge ─────────────────────────────────────────
 registerHttpBridgeIpcHandlers({
   getMainWindow: () => mainWindow,
-  ...(meshtasticDesktopBackend ? { meshtasticTap: meshtasticDesktopBackend.taps.http } : {}),
+  meshtasticTap: meshtasticDesktopBackend?.taps.http,
 });
 
 registerTakIpcHandlers({
@@ -2844,7 +2776,7 @@ void app
       } catch (e: unknown) {
         console.warn(
           '[main] crashDumps path unavailable:',
-          sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+          sanitizeLogMessage(errorMessageText(e)),
         );
       }
 
@@ -2929,7 +2861,7 @@ void app
         ? formatDatabaseSchemaTooNewMessage(error)
         : isNativeModuleError
           ? `A native module failed to load. This usually means the app needs to be rebuilt for this version of Electron.\n\nFix: run "pnpm install" in the project directory, then restart.\n\nDetails: ${error.message}`
-          : `The application failed to start:\n\n${error instanceof Error ? error.message : String(error)}\n\nPlease report this issue.`;
+          : `The application failed to start:\n\n${errorMessageText(error)}\n\nPlease report this issue.`;
       showFatalStartupError('Mesh-Client — Startup Error', message);
       app.quit();
       return;
@@ -2942,7 +2874,7 @@ void app
         } catch (error) {
           console.error(
             '[main] Window creation error:',
-            sanitizeLogMessage(error instanceof Error ? error.message : String(error)),
+            sanitizeLogMessage(errorMessageText(error)),
           );
         }
       } else {
@@ -2957,7 +2889,7 @@ void app
     );
     showFatalStartupError(
       'Mesh-Client — Startup Error',
-      `The application failed to start:\n\n${error instanceof Error ? error.message : String(error)}\n\nPlease report this issue.`,
+      `The application failed to start:\n\n${errorMessageText(error)}\n\nPlease report this issue.`,
     );
     app.quit();
   });
@@ -2978,10 +2910,7 @@ app.on('before-quit', (event) => {
     try {
       await gattSidecarProxy.disconnectAll();
     } catch (err) {
-      console.error(
-        '[main] GATT shutdown failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[main] GATT shutdown failed:', sanitizeLogMessage(errorMessageText(err)));
     } finally {
       // quit() must run even if shutdown throws: before-quit was prevented, so an
       // escaping rejection here would leave the app running with no path to exit.
@@ -2990,7 +2919,7 @@ app.on('before-quit', (event) => {
       } catch (err) {
         console.error(
           '[main] shutdownAppResources failed before quit:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          sanitizeLogMessage(errorMessageText(err)),
         );
       }
       app.quit();

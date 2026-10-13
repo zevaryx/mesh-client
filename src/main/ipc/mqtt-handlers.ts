@@ -8,7 +8,7 @@
  */
 import { ipcMain } from 'electron';
 
-import { type MQTTSettings } from '../../renderer/lib/types';
+import { type MQTTSettings, type MQTTStatus } from '../../renderer/lib/types';
 import { type MeshProtocol } from '../../shared/meshProtocol';
 import { isValidHttpHostname } from '../httpHostValidation';
 import { sanitizeLogMessage } from '../log-service';
@@ -16,6 +16,7 @@ import { MeshcoreMqttAdapter } from '../meshcore-mqtt-adapter';
 import { resolveMqttBrokerClientId } from '../mqtt-broker-client-id';
 import { type CachedNode, type MQTTManager, parsePsk } from '../mqtt-manager';
 import type { RendererPushTarget } from '../rendererPushTarget';
+import { errorMessageText } from '../sanitize-log-message';
 import type { TakServerManager } from '../tak-server-manager';
 import { assertIpcSender } from '../validate-ipc-sender';
 import { MAX_PAYLOAD_LENGTH } from './db-ipc-validation';
@@ -293,44 +294,43 @@ export interface MqttIpcDeps {
     nodeUpdate: (update: unknown) => void;
   };
   /**
-   * Headless shared viewing: every browser tab auto-connects MQTT when it opens. With this set, a
-   * connect with the same settings as the live (or connecting) connection keeps it and re-sends
-   * its status to the tabs, instead of reconnecting the broker for everyone.
+   * Headless shared viewing: every browser tab auto-connects MQTT when it opens. `true` keeps the
+   * live connection (its status is re-sent to the tabs) instead of reconnecting the broker for
+   * everyone (`headless/mqttConnectionReuse.ts`).
    */
-  reuseSameConnection?: boolean;
+  keepLiveConnection?: (
+    protocol: 'meshtastic' | 'meshcore',
+    settings: MQTTSettings,
+    status: MQTTStatus,
+  ) => boolean;
 }
 
 /** Forward MQTT client events and register `mqtt:*`. Channel name literals keep check:ipc-contract aligned. */
 export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
-  const { mqttManager, meshcoreMqttAdapter } = deps;
-  /** Settings of the last connect per protocol (in memory only), for `reuseSameConnection`. */
-  const lastConnectKey: Partial<Record<'meshtastic' | 'meshcore', string>> = {};
+  const { mqttManager, meshcoreMqttAdapter, getMainWindow } = deps;
+
+  /** Push to the renderer, or log that it was dropped because no window exists yet. */
+  const push = (channel: string, payload: unknown, label: string, detail?: string): void => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) mainWindow.webContents.send(channel, payload);
+    else if (detail === undefined) console.debug(`[main] ${label} dropped (mainWindow not ready)`);
+    else
+      console.debug(`[main] ${label} dropped (mainWindow not ready)`, sanitizeLogMessage(detail));
+  };
 
   mqttManager.on('status', (s: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow)
-      mainWindow.webContents.send('mqtt:status', { status: s, protocol: 'meshtastic' });
-    else console.debug('[main] mqtt:status dropped (mainWindow not ready)', sanitizeLogMessage(s));
+    push('mqtt:status', { status: s, protocol: 'meshtastic' }, 'mqtt:status', s);
   });
   mqttManager.on('error', (msg: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow)
-      mainWindow.webContents.send('mqtt:error', { error: msg, protocol: 'meshtastic' });
-    else console.debug('[main] mqtt:error dropped (mainWindow not ready)', sanitizeLogMessage(msg));
+    push('mqtt:error', { error: msg, protocol: 'meshtastic' }, 'mqtt:error', msg);
   });
   mqttManager.on('clientId', (id: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow)
-      mainWindow.webContents.send('mqtt:clientId', { clientId: id, protocol: 'meshtastic' });
-    else
-      console.debug('[main] mqtt:clientId dropped (mainWindow not ready)', sanitizeLogMessage(id));
+    push('mqtt:clientId', { clientId: id, protocol: 'meshtastic' }, 'mqtt:clientId', id);
   });
   mqttManager.on('nodeUpdate', (n: CachedNode) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow)
-      mainWindow.webContents.send('mqtt:node-update', { ...n, protocol: 'meshtastic' as const });
-    else console.debug('[main] mqtt:node-update dropped (mainWindow not ready)');
-    deps.meshtasticBackground?.nodeUpdate({ ...n, protocol: 'meshtastic' as const });
+    const update = { ...n, protocol: 'meshtastic' as const };
+    push('mqtt:node-update', update, 'mqtt:node-update');
+    deps.meshtasticBackground?.nodeUpdate(update);
     deps.getTakServerManager()?.onNodeUpdate({
       ...n,
       altitude: n.altitude ?? undefined,
@@ -341,82 +341,45 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
   mqttManager.on(
     'traceRouteReply',
     (p: { meshFrom: number; route: number[]; routeBack: number[] }) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow)
-        mainWindow.webContents.send('mqtt:trace-route-reply', {
-          ...p,
-          protocol: 'meshtastic' as const,
-        });
-      else console.debug('[main] mqtt:trace-route-reply dropped (mainWindow not ready)');
+      push('mqtt:trace-route-reply', { ...p, protocol: 'meshtastic' }, 'mqtt:trace-route-reply');
     },
   );
   mqttManager.on('message', (m) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow) mainWindow.webContents.send('mqtt:message', m);
-    else console.debug('[main] mqtt:message dropped (mainWindow not ready)');
+    push('mqtt:message', m, 'mqtt:message');
     deps.meshtasticBackground?.message(m);
   });
   mqttManager.on('brokerRaw', (payload: { topic: string; payload: Buffer; retained: boolean }) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow) {
-      mainWindow.webContents.send('mqtt:brokerRaw', {
+    push(
+      'mqtt:brokerRaw',
+      {
         topic: payload.topic,
         payload: new Uint8Array(payload.payload),
         retained: payload.retained,
-      });
-    } else {
-      console.debug('[main] mqtt:brokerRaw dropped (mainWindow not ready)');
-    }
+      },
+      'mqtt:brokerRaw',
+    );
   });
 
   meshcoreMqttAdapter.on('status', (s: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow) mainWindow.webContents.send('mqtt:status', { status: s, protocol: 'meshcore' });
-    else
-      console.debug(
-        '[main] mqtt:status (meshcore) dropped (mainWindow not ready)',
-        sanitizeLogMessage(s),
-      );
+    push('mqtt:status', { status: s, protocol: 'meshcore' }, 'mqtt:status (meshcore)', s);
   });
   meshcoreMqttAdapter.on('error', (msg: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow) mainWindow.webContents.send('mqtt:error', { error: msg, protocol: 'meshcore' });
-    else
-      console.debug(
-        '[main] mqtt:error (meshcore) dropped (mainWindow not ready)',
-        sanitizeLogMessage(msg),
-      );
+    push('mqtt:error', { error: msg, protocol: 'meshcore' }, 'mqtt:error (meshcore)', msg);
   });
   meshcoreMqttAdapter.on('clientId', (id: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow)
-      mainWindow.webContents.send('mqtt:clientId', { clientId: id, protocol: 'meshcore' });
-    else
-      console.debug(
-        '[main] mqtt:clientId (meshcore) dropped (mainWindow not ready)',
-        sanitizeLogMessage(id),
-      );
+    push('mqtt:clientId', { clientId: id, protocol: 'meshcore' }, 'mqtt:clientId (meshcore)', id);
   });
   meshcoreMqttAdapter.on('subscribeWarning', (msg: string) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow)
-      mainWindow.webContents.send('mqtt:warning', { warning: msg, protocol: 'meshcore' });
-    else
-      console.debug(
-        '[main] mqtt:warning (meshcore) dropped (mainWindow not ready)',
-        sanitizeLogMessage(msg),
-      );
+    push('mqtt:warning', { warning: msg, protocol: 'meshcore' }, 'mqtt:warning (meshcore)', msg);
   });
   meshcoreMqttAdapter.on('chatMessage', (m) => {
-    const mainWindow = deps.getMainWindow();
-    if (mainWindow) mainWindow.webContents.send('mqtt:meshcore-chat', m);
-    else console.debug('[main] mqtt:meshcore-chat dropped (mainWindow not ready)');
+    push('mqtt:meshcore-chat', m, 'mqtt:meshcore-chat');
   });
 
   meshcoreMqttAdapter.on(
     MeshcoreMqttAdapter.EVENT_PROACTIVE_TOKEN_REFRESH,
     (serverHost: string) => {
-      const mainWindow = deps.getMainWindow();
+      const mainWindow = getMainWindow();
       if (mainWindow) {
         mainWindow.webContents.send('mqtt:requestTokenRefresh', serverHost);
       } else {
@@ -426,7 +389,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
   );
 
   meshcoreMqttAdapter.on(MeshcoreMqttAdapter.EVENT_TOKEN_REFRESH_NEEDED, (serverHost: string) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send('mqtt:requestTokenRefresh', serverHost);
     } else {
@@ -447,19 +410,11 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       const mqttSettings = settings as MQTTSettings;
       const clientId = resolveMqttBrokerClientId(mode, mqttSettings);
       const settingsWithClientId: MQTTSettings = { ...mqttSettings, clientId };
-      const client = mode === 'meshcore' ? meshcoreMqttAdapter : mqttManager;
-      const key = JSON.stringify(settingsWithClientId);
-      const status = client.getStatus();
-      if (
-        deps.reuseSameConnection &&
-        lastConnectKey[mode] === key &&
-        (status === 'connected' || status === 'connecting')
-      ) {
-        console.debug(`[IPC] mqtt:connect: ${mode} already ${status} with these settings; kept`);
-        deps.getMainWindow()?.webContents.send('mqtt:status', { status, protocol: mode });
+      const status = (mode === 'meshcore' ? meshcoreMqttAdapter : mqttManager).getStatus();
+      if (deps.keepLiveConnection?.(mode, settingsWithClientId, status)) {
+        push('mqtt:status', { status, protocol: mode }, 'mqtt:status');
         return;
       }
-      lastConnectKey[mode] = key;
       if (mode === 'meshcore') {
         meshcoreMqttAdapter.disconnect();
         meshcoreMqttAdapter.connect(settingsWithClientId);
@@ -468,10 +423,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
         mqttManager.connect(settingsWithClientId);
       }
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:connect failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:connect failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -482,10 +434,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       if (!protocol || protocol === 'meshtastic') mqttManager.disconnect();
       if (!protocol || protocol === 'meshcore') meshcoreMqttAdapter.disconnect();
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:disconnect failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:disconnect failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -496,10 +445,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       mqttManager.handlePowerResume();
       meshcoreMqttAdapter.handlePowerResume();
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:powerResume failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:powerResume failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -510,10 +456,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       mqttManager.handlePowerSuspend();
       meshcoreMqttAdapter.handlePowerSuspend();
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:powerSuspend failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:powerSuspend failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -527,10 +470,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       if (meshcoreMqttAdapter.getStatus() === 'connected') return meshcoreMqttAdapter.getClientId();
       return mqttManager.getClientId();
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:getClientId failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:getClientId failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -543,7 +483,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:refreshMeshcoreToken failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -567,7 +507,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       } catch (err) {
         console.error(
           '[IPC] mqtt:updateMeshcoreToken failed:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          sanitizeLogMessage(errorMessageText(err)),
         );
         throw err;
       }
@@ -588,7 +528,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:updateChannelKeys failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -603,7 +543,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:updateTopicPrefix failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -636,10 +576,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
         publishJsonMirror: a.publishJsonMirror,
       });
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:publish failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:publish failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -662,10 +599,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
         retained: a.retained,
       });
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:publishProxy failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:publishProxy failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -693,7 +627,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:publishMeshcore failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -730,7 +664,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:publishMeshcorePacketLog failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -741,10 +675,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     try {
       return mqttManager.getCachedNodes();
     } catch (err) {
-      console.error(
-        '[IPC] mqtt:getCachedNodes failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] mqtt:getCachedNodes failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -755,7 +686,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:getChannelNameToIndex failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -799,7 +730,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       }
       console.error(
         '[IPC] mqtt:publishNodeInfo failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -843,7 +774,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:publishPosition failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -884,7 +815,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mqtt:publishWaypoint failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }

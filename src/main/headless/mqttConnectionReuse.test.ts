@@ -16,7 +16,8 @@ vi.mock('../validate-ipc-sender', () => ({
 }));
 vi.mock('../mqtt-broker-client-id', () => ({ resolveMqttBrokerClientId: () => 'client-1' }));
 
-const { registerMqttIpcHandlers } = await import('./mqtt-handlers');
+const { registerMqttIpcHandlers } = await import('../ipc/mqtt-handlers');
+const { createMqttConnectionReuse } = await import('./mqttConnectionReuse');
 
 class FakeClient extends EventEmitter {
   status = 'disconnected';
@@ -38,7 +39,7 @@ const settings = {
   mqttTransportProtocol: 'meshtastic',
 };
 
-function setup(reuseSameConnection: boolean) {
+function setup(reuse: boolean) {
   handlers.clear();
   const meshtastic = new FakeClient();
   const meshcore = new FakeClient();
@@ -48,7 +49,7 @@ function setup(reuseSameConnection: boolean) {
     meshcoreMqttAdapter: meshcore as never,
     getMainWindow: () => ({ webContents: { send } }),
     getTakServerManager: () => null,
-    reuseSameConnection,
+    ...(reuse ? { keepLiveConnection: createMqttConnectionReuse() } : {}),
   });
   const connect = (s: object) => handlers.get('mqtt:connect')?.({}, s);
   return { meshtastic, send, connect };

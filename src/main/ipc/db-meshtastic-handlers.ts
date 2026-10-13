@@ -34,6 +34,7 @@ import {
   meshtasticNodePublicKeyHexOrNull,
   migrateMeshtasticNodeNumInDb,
 } from '../meshtasticNodeRenumber';
+import { errorMessageText } from '../sanitize-log-message';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
 import {
   capStatusString,
@@ -804,7 +805,7 @@ export function registerMeshtasticDbIpcHandlers(): void {
         // RF echo may have inserted the real packet_id before this runs; drop orphan temp row.
         deleteByPacketId.run(oldPid);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessageText(err);
         if (msg.includes('UNIQUE constraint failed')) {
           deleteByPacketId.run(oldPid);
           return;

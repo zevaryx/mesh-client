@@ -53,6 +53,7 @@ import {
   MESHCORE_MESSAGE_CHANNEL_SQL,
   persistMeshcoreMessage,
 } from '../meshcoreMessageChannel';
+import { errorMessageText } from '../sanitize-log-message';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
 import {
   MAX_GROUP_NAME,
@@ -847,7 +848,7 @@ export function registerMeshcoreDbIpcHandlers(): void {
       } catch (err) {
         console.error(
           '[IPC] db:updateMeshcoreContactAdvert error:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          sanitizeLogMessage(errorMessageText(err)),
         );
         throw err;
       }
@@ -869,7 +870,7 @@ export function registerMeshcoreDbIpcHandlers(): void {
     } catch (err) {
       console.error(
         '[IPC] db:updateMeshcoreContactType error:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -919,7 +920,7 @@ export function registerMeshcoreDbIpcHandlers(): void {
       } catch (err) {
         console.error(
           '[IPC] db:updateMeshcoreContactLastRf error:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          sanitizeLogMessage(errorMessageText(err)),
         );
         throw err;
       }

@@ -90,7 +90,7 @@ import { ipcMain } from 'electron';
 
 import { noteLiveSessionData, noteLiveSessionWrite } from '../live-session-meter';
 import { assertIpcSender } from '../validate-ipc-sender';
-import { createLinkSharing } from './linkSharingHost';
+import { createSharedLinkTap } from './linkSharing';
 import {
   createTcpBridge,
   registerTcpBridgeIpcHandlers,
@@ -490,7 +490,9 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
       writeMissing: 'no-socket',
       getMainWindow,
       validateHost,
-      sharing: createLinkSharing({
+      tap: createSharedLinkTap({
+        protocol: 'meshtastic',
+        transport: 'tcp',
         sessionOf: (e) => (e.sender as unknown as { id: number }).id,
         announce,
       }),
@@ -592,9 +594,14 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
       writeMissing: 'reject',
       getMainWindow,
       validateHost,
-      sharing: createLinkSharing({
+      tap: createSharedLinkTap({
+        protocol: 'meshcore',
+        transport: 'tcp',
         sessionOf: (e) => (e.sender as unknown as { id: number }).id,
         announce,
+        broadcast: (frame) => {
+          send('meshcore:tcp-data', frame);
+        },
       }),
     });
     const pending = bridge.connect(mkTab(1), '10.0.0.5', 5000);

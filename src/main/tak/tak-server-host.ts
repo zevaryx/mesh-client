@@ -10,6 +10,7 @@ import path from 'path';
 import { type TAKServerStatus, type TAKSettings } from '../../shared/tak-types';
 import { sanitizeLogMessage } from '../log-service';
 import type { RendererPushTarget } from '../rendererPushTarget';
+import { errorMessageText } from '../sanitize-log-message';
 import { type TakServerManager } from '../tak-server-manager';
 import { canAutoConnectTakRemote, loadTakRemoteSettings } from './remote-settings';
 
@@ -48,43 +49,29 @@ export function createTakServerHost(deps: TakServerHostDeps): TakServerHost {
   let takServerManager: TakServerManager | null = null;
   let takServerManagerLoadPromise: Promise<TakServerManager> | null = null;
 
-  function attachTakForwarders(manager: TakServerManager): void {
-    manager.on('status', (status) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:status', status);
-      else console.debug('[main] tak:status dropped (mainWindow not ready)');
-    });
-    manager.on('client-connected', (client) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:clientConnected', client);
-      else console.debug('[main] tak:clientConnected dropped (mainWindow not ready)');
-    });
-    manager.on('client-disconnected', (clientId) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:clientDisconnected', clientId);
-      else console.debug('[main] tak:clientDisconnected dropped (mainWindow not ready)');
-    });
-    manager.on('remote-status', (status) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:remoteStatus', status);
-      else console.debug('[main] tak:remoteStatus dropped (mainWindow not ready)');
-    });
-    manager.on('client-updated', (client) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:clientUpdated', client);
-      else console.debug('[main] tak:clientUpdated dropped (mainWindow not ready)');
-    });
+  /** Manager event → renderer channel. */
+  const TAK_FORWARDS: readonly (readonly [string, string])[] = [
+    ['status', 'tak:status'],
+    ['client-connected', 'tak:clientConnected'],
+    ['client-disconnected', 'tak:clientDisconnected'],
+    ['remote-status', 'tak:remoteStatus'],
+    ['client-updated', 'tak:clientUpdated'],
     // Dropped while the window is down: a chat message must not be sent on the mesh late.
-    manager.on('client-chat', (message) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:inboundChat', message);
-      else console.debug('[main] tak:inboundChat dropped (mainWindow not ready)');
-    });
+    ['client-chat', 'tak:inboundChat'],
     // The renderer re-reads tak:getContacts on mount, so a dropped batch is recovered there.
-    manager.on('contacts', (update) => {
-      const mainWindow = deps.getMainWindow();
-      if (mainWindow) mainWindow.webContents.send('tak:contacts', update);
-    });
+    ['contacts', 'tak:contacts'],
+  ];
+
+  function attachTakForwarders(manager: TakServerManager): void {
+    for (const [event, channel] of TAK_FORWARDS) {
+      manager.on(event, (payload: unknown) => {
+        const mainWindow = deps.getMainWindow();
+        if (mainWindow) mainWindow.webContents.send(channel, payload);
+        else if (channel !== 'tak:contacts') {
+          console.debug(`[main] ${channel} dropped (mainWindow not ready)`);
+        }
+      });
+    }
   }
 
   async function ensureTakServerManager(): Promise<TakServerManager> {
@@ -118,18 +105,12 @@ export function createTakServerHost(deps: TakServerHostDeps): TakServerHost {
           void ensureTakServerManager()
             .then((m) => m.start(saved))
             .catch((e: unknown) => {
-              console.error(
-                '[TAK] Auto-start failed:',
-                sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-              );
+              console.error('[TAK] Auto-start failed:', sanitizeLogMessage(errorMessageText(e)));
             });
         }
       }
     } catch (e: unknown) {
-      console.warn(
-        '[TAK] Settings restore failed:',
-        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
-      );
+      console.warn('[TAK] Settings restore failed:', sanitizeLogMessage(errorMessageText(e)));
     }
 
     // Reconnect the remote TAK relay when it was saved with autoConnect. An unverified or
@@ -145,14 +126,14 @@ export function createTakServerHost(deps: TakServerHostDeps): TakServerHost {
           .catch((e: unknown) => {
             console.error(
               '[TAK] Remote relay auto-connect failed:',
-              sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+              sanitizeLogMessage(errorMessageText(e)),
             );
           });
       }
     } catch (e: unknown) {
       console.warn(
         '[TAK] Remote relay settings restore failed:',
-        sanitizeLogMessage(e instanceof Error ? e.message : String(e)),
+        sanitizeLogMessage(errorMessageText(e)),
       );
     }
   }

@@ -159,7 +159,10 @@ describe('loadDesktopMeshtasticHost', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesh-backend-host-'));
     try {
-      expect(loadDesktopMeshtasticHost(dir)).toBeNull();
+      const on = { MESH_CLIENT_MESHTASTIC_BACKEND: 'on' };
+      expect(loadDesktopMeshtasticHost({}, dir)).toBeNull();
+      expect(warn).not.toHaveBeenCalled();
+      expect(loadDesktopMeshtasticHost(on, dir)).toBeNull();
       expect(warn).toHaveBeenCalledWith(
         '[meshtastic-backend] meshtastic-backend-host.js not built; disabled',
       );
@@ -167,7 +170,10 @@ describe('loadDesktopMeshtasticHost', () => {
         path.join(dir, 'meshtastic-backend-host.js'),
         'exports.createDesktopMeshtasticBackend = () => "loaded";',
       );
-      expect(loadDesktopMeshtasticHost(dir)?.createDesktopMeshtasticBackend).toBeTypeOf('function');
+      expect(loadDesktopMeshtasticHost({}, dir)).toBeNull();
+      expect(loadDesktopMeshtasticHost(on, dir)?.createDesktopMeshtasticBackend).toBeTypeOf(
+        'function',
+      );
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
       warn.mockRestore();

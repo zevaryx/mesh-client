@@ -1,23 +1,17 @@
 /**
- * Link-keeper wiring shared by the Electron main process and the headless server: open TCP / HTTP
- * through the same bridges renderers use, and persist the target in `app_settings`.
+ * Link-keeper wiring for the headless server: open TCP / HTTP through the same bridges renderers
+ * use, and keep the target in `app_settings`. (The desktop host builds the same from injected
+ * functions; see `desktopHostEntry.ts`.)
  */
+import { getDbForIpc } from '../db-ipc-lifecycle';
 import { connectMeshtasticHttpFromMain } from '../ipc/http-bridge';
 import { connectMeshtasticTcpFromMain } from '../ipc/tcp-bridge';
 import type { MeshtasticLinkKeeperDeps } from './linkKeeper';
-import type { MeshtasticLinkTarget } from './linkTarget';
-import { loadMeshtasticLinkTarget, saveMeshtasticLinkTarget } from './linkTargetStore';
-
-export function connectMeshtasticLinkFromMain(target: MeshtasticLinkTarget): Promise<void> {
-  return target.kind === 'tcp'
-    ? connectMeshtasticTcpFromMain(target.host, target.port)
-    : connectMeshtasticHttpFromMain(target.host, target.tls);
-}
+import { meshtasticLinkKeeperDeps } from './linkKeeperDeps';
 
 export function mainMeshtasticLinkKeeperDeps(): MeshtasticLinkKeeperDeps {
-  return {
-    connect: connectMeshtasticLinkFromMain,
-    loadTarget: loadMeshtasticLinkTarget,
-    saveTarget: saveMeshtasticLinkTarget,
-  };
+  return meshtasticLinkKeeperDeps(
+    { connectTcp: connectMeshtasticTcpFromMain, connectHttp: connectMeshtasticHttpFromMain },
+    () => getDbForIpc('meshtastic-backend:link'),
+  );
 }

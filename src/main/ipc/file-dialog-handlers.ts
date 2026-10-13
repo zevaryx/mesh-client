@@ -24,6 +24,7 @@ import { createIpcRateLimiter } from '../ipcRateLimit';
 import { exportLogTo, getLogPath, sanitizeLogMessage } from '../log-service';
 import { readMecpReceivedLogForExport } from '../mecp-received-log';
 import { readFileUpTo } from '../readFileUpTo';
+import { errorMessageText } from '../sanitize-log-message';
 import {
   buildSupportBundleZip,
   defaultSupportBundleFilename,
@@ -49,10 +50,10 @@ export interface FileDialogIpcDeps {
 }
 
 /** Register the file-dialog handlers. Channel name literals keep check:ipc-contract aligned. */
-export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
+export function registerFileDialogIpcHandlers({ getMainWindow }: FileDialogIpcDeps): void {
   // ─── IPC: Export database ───────────────────────────────────────────
   ipcMain.handle('db:export', async (event) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('db:export: unauthorized sender');
     exportIpcRateLimit.checkOrThrow();
     try {
@@ -75,7 +76,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
 
   // ─── IPC: Import / merge database ───────────────────────────────────
   ipcMain.handle('db:import', async (event) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('db:import: unauthorized sender');
     exportIpcRateLimit.checkOrThrow();
     try {
@@ -102,7 +103,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
   });
 
   ipcMain.handle('log:export', async (event) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) {
       throw new Error('IPC sender validation failed');
     }
@@ -125,10 +126,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
       }
       return null;
     } catch (err) {
-      console.error(
-        '[IPC] log:export failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] log:export failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -136,7 +134,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
   ipcMain.handle(
     'support:exportBundle',
     async (event, mode: unknown, debugSnapshotJson: unknown) => {
-      const mainWindow = deps.getMainWindow();
+      const mainWindow = getMainWindow();
       if (!validateIpcSender(event)) {
         throw new Error('IPC sender validation failed');
       }
@@ -167,7 +165,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
       } catch (err) {
         console.error(
           '[IPC] support:exportBundle failed:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          sanitizeLogMessage(errorMessageText(err)),
         );
         throw err;
       }
@@ -175,7 +173,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
   );
 
   ipcMain.handle('chat:export', async (event, messages: unknown) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
     exportIpcRateLimit.checkOrThrow();
     if (!Array.isArray(messages)) throw new Error('messages must be an array');
@@ -195,16 +193,13 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
       await fs.promises.writeFile(result.filePath, text, 'utf8');
       return { success: true, path: result.filePath };
     } catch (err) {
-      console.error(
-        '[IPC] chat:export failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] chat:export failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
 
   ipcMain.handle('mecp:exportReceivedLog', async (event) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
     exportIpcRateLimit.checkOrThrow();
     if (!mainWindow) return { success: false as const, reason: 'error' as const };
@@ -227,14 +222,14 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] mecp:exportReceivedLog failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
   });
 
   ipcMain.handle('gps:exportGpx', async (event, opts: unknown) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
     const o = opts && typeof opts === 'object' ? (opts as Record<string, unknown>) : {};
     const nodeId = typeof o.nodeId === 'number' && Number.isFinite(o.nodeId) ? o.nodeId : undefined;
@@ -276,16 +271,13 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
       await fs.promises.writeFile(result.filePath, xml, 'utf8');
       return { success: true, path: result.filePath };
     } catch (err) {
-      console.error(
-        '[IPC] gps:exportGpx failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] gps:exportGpx failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
 
   ipcMain.handle('chat:saveReticulumAttachment', async (event, opts: unknown) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
     if (!opts || typeof opts !== 'object') throw new Error('opts must be an object');
     const o = opts as Record<string, unknown>;
@@ -320,14 +312,14 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] chat:saveReticulumAttachment failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
   });
 
   ipcMain.handle('meshtastic:xmodemPickUpload', async (event) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
     if (!mainWindow) return null;
     try {
@@ -353,7 +345,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] meshtastic:xmodemPickUpload failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }
@@ -362,7 +354,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
   ipcMain.handle(
     'meshtastic:xmodemSaveDownload',
     async (event, filename: unknown, data: unknown) => {
-      const mainWindow = deps.getMainWindow();
+      const mainWindow = getMainWindow();
       if (!validateIpcSender(event)) throw new Error('IPC sender validation failed');
       if (typeof filename !== 'string' || filename.length === 0 || filename.length > 256) {
         throw new Error('meshtastic:xmodemSaveDownload: invalid filename');
@@ -382,7 +374,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
       } catch (err) {
         console.error(
           '[IPC] meshtastic:xmodemSaveDownload failed:',
-          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+          sanitizeLogMessage(errorMessageText(err)),
         );
         throw err;
       }
@@ -390,7 +382,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
   );
 
   ipcMain.handle('meshcore:openJsonFile', async (event) => {
-    const mainWindow = deps.getMainWindow();
+    const mainWindow = getMainWindow();
     assertIpcSender(event, 'meshcore:openJsonFile');
     try {
       if (!mainWindow) return null;
@@ -406,7 +398,7 @@ export function registerFileDialogIpcHandlers(deps: FileDialogIpcDeps): void {
     } catch (err) {
       console.error(
         '[IPC] meshcore:openJsonFile failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        sanitizeLogMessage(errorMessageText(err)),
       );
       throw err;
     }

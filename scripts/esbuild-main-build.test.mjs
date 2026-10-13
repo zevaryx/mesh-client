@@ -8,11 +8,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildMainProcess, parseEsbuildMainBuildArgs } from './esbuild-main-build.mjs';
 
 /** Keep the minified main outfile under esbuild's 1mb advisory (and well below). */
-// 640 -> 648 KiB for the headless web UI branch: handler modules split out of index.ts, the
-// Meshtastic background-ingest wiring, and the link-sharing branches of the radio bridges (about
-// 7 KiB over main, which itself sits within 0.5 KiB of 640). The opt-in desktop ingest host, the
-// MeshCore command serializer and the link-membership tracker ship outside index.js.
-const MAIN_BUNDLE_SIZE_BUDGET_BYTES = 648 * 1024;
+const MAIN_BUNDLE_SIZE_BUDGET_BYTES = 640 * 1024;
 
 describe('esbuild-main-build', () => {
   /** @type {string | null} */

@@ -11,6 +11,7 @@ import {
   logDeviceConnection,
   sanitizeLogMessage,
 } from '../log-service';
+import { errorMessageText } from '../sanitize-log-message';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
 
 /** Register `log:*`. Channel name literals keep check:ipc-contract aligned. */
@@ -20,10 +21,7 @@ export function registerLogIpcHandlers(): void {
     try {
       return getLogPath();
     } catch (err) {
-      console.error(
-        '[IPC] log:getPath failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] log:getPath failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -33,10 +31,7 @@ export function registerLogIpcHandlers(): void {
     try {
       return getRecentLines();
     } catch (err) {
-      console.error(
-        '[IPC] log:getRecentLines failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] log:getRecentLines failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });
@@ -48,10 +43,7 @@ export function registerLogIpcHandlers(): void {
     try {
       clearLogFile();
     } catch (err) {
-      console.error(
-        '[IPC] log:clear failed:',
-        sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
-      );
+      console.error('[IPC] log:clear failed:', sanitizeLogMessage(errorMessageText(err)));
       throw err;
     }
   });

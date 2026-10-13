@@ -133,25 +133,17 @@ describe('Meshtastic MQTT waypoint IPC (source contract)', () => {
 
 describe('MQTT forwarder dropped-event logs (source contract)', () => {
   it('sanitizes dynamic MQTT fields when mainWindow is not ready', () => {
-    // Path-specific (not aggregate counts): each dropped-event branch sanitizes its payload.
+    // One push helper sanitizes the dynamic detail of every dropped event...
     expect(MAIN_IPC_SOURCE).toMatch(
-      /mqtt:status dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(s\)/,
+      /dropped \(mainWindow not ready\)`,\s*sanitizeLogMessage\(detail\)\)/,
     );
-    expect(MAIN_IPC_SOURCE).toMatch(
-      /mqtt:error dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(msg\)/,
-    );
-    expect(MAIN_IPC_SOURCE).toMatch(
-      /mqtt:clientId dropped \(mainWindow not ready\)',\s*sanitizeLogMessage\(id\)/,
-    );
-    expect(MAIN_IPC_SOURCE).toMatch(
-      /mqtt:status \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(s\)/,
-    );
-    expect(MAIN_IPC_SOURCE).toMatch(
-      /mqtt:error \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(msg\)/,
-    );
-    expect(MAIN_IPC_SOURCE).toMatch(
-      /mqtt:clientId \(meshcore\) dropped \(mainWindow not ready\)',[\s\S]{0,40}sanitizeLogMessage\(id\)/,
-    );
+    // ...and each forwarder with a dynamic field passes it as that detail (path-specific).
+    expect(MAIN_IPC_SOURCE).toMatch(/'mqtt:status',\s*s\)/);
+    expect(MAIN_IPC_SOURCE).toMatch(/'mqtt:error',\s*msg\)/);
+    expect(MAIN_IPC_SOURCE).toMatch(/'mqtt:clientId',\s*id\)/);
+    expect(MAIN_IPC_SOURCE).toMatch(/'mqtt:status \(meshcore\)',\s*s\)/);
+    expect(MAIN_IPC_SOURCE).toMatch(/'mqtt:error \(meshcore\)',\s*msg\)/);
+    expect(MAIN_IPC_SOURCE).toMatch(/'mqtt:clientId \(meshcore\)',\s*id\)/);
   });
 
   it('sanitizes Linux bluetoothctl spawn-error log paths', () => {
@@ -641,9 +633,7 @@ describe('External link routing (source contract)', () => {
   it('logs rejected external link opens instead of leaving unhandled rejections', () => {
     expect(INDEX_SOURCE).toContain('shell.openExternal(target.toString()).catch((e: unknown) => {');
     expect(INDEX_SOURCE).toContain("'[main] external link open failed'");
-    expect(INDEX_SOURCE).toContain(
-      'sanitizeLogMessage(e instanceof Error ? e.message : String(e))',
-    );
+    expect(INDEX_SOURCE).toContain('sanitizeLogMessage(errorMessageText(e))');
   });
 });
 
