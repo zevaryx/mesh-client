@@ -61,7 +61,7 @@ docker run --rm -p 8080:8080 -v mesh-client-data:/data \
 
 **Open it from a secure context.** Browsers keep some APIs to HTTPS pages and `localhost`. Over plain HTTP by LAN address or host name the bridge fills in `crypto.randomUUID` (used when connecting) and logs a warning, but `crypto.subtle` cannot be replaced: MeshCore channel decryption and key checks, some Reticulum and translation features, notifications and the clipboard do not work there. From another machine use an HTTPS reverse proxy ([Reverse proxy](#reverse-proxy)) or an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 server`, then `http://localhost:8080`).
 
-For a local test, `compose.yaml` builds the image and serves it on `127.0.0.1:8080` (token and key from a `.env` file, with throwaway defaults); `docker compose --profile fake-radios up --build` adds the fake Meshtastic and MeshCore radios at `127.0.0.1:4403` and `127.0.0.1:5000` (the server's own loopback). Bluetooth and serial passthrough are there, commented out.
+For a local test, `compose.yaml` builds the image and serves it on `127.0.0.1:8080` (token and key from a `.env` file, with throwaway defaults); `docker compose --profile fake-radios up --build` adds the fake Meshtastic and MeshCore radios at `127.0.0.1:4403` and `127.0.0.1:5000` (the server's own loopback). Bluetooth and serial passthrough are there, commented out. `--profile https` adds nginx on port 8443 with a self-signed certificate (`docker/nginx/`), created on first start for the names in `MESH_CLIENT_TLS_NAMES` (`DNS:<name>` / `IP:<address>`, comma-separated; default `localhost` and `127.0.0.1`) and kept in a volume; accept the browser's warning once, or trust the certificate (`docker compose cp https:/etc/nginx/tls/mesh-client.crt .`).
 
 The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the runtime image holds only Node, `dist/renderer` and `dist-headless/`. The image runs as `node`, keeps state in the `/data` volume and has a `/healthz` health check. Behind a Docker Hub rate limit or mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node`.
 
@@ -108,7 +108,7 @@ server {
   location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
-    proxy_set_header Host $host;
+    proxy_set_header Host $http_host;  # keeps a non-default port, which the Origin check needs
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $http_connection;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -118,7 +118,7 @@ server {
 }
 ```
 
-With the proxy as the only way in, set `MESH_CLIENT_WEB_TRUST_PROXY=on` so the bad-token lockout applies per browser instead of to the proxy.
+`compose.yaml`'s `https` profile runs this setup with a self-signed certificate (`docker/nginx/mesh-client.conf`). With the proxy as the only way in, set `MESH_CLIENT_WEB_TRUST_PROXY=on` so the bad-token lockout applies per browser instead of to the proxy.
 
 ## Background ingest (Meshtastic)
 

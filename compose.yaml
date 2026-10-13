@@ -3,14 +3,22 @@
 #
 #   docker compose up --build                            # server only
 #   docker compose --profile fake-radios up --build      # plus fake Meshtastic + MeshCore radios
+#   docker compose --profile https up --build            # plus HTTPS (nginx, self-signed)
 #
 # Open http://127.0.0.1:8080/?token=<MESH_CLIENT_WEB_TOKEN>. With the fake radios, connect over
 # WiFi/TCP to 127.0.0.1:4403 (Meshtastic) or 127.0.0.1:5000 (MeshCore): they share the server's
 # network, so "127.0.0.1" is the server's own loopback, not your machine's.
 #
+# HTTPS (profile "https"): https://<this machine>:8443/?token=... from any machine on the network.
+# The browser warns about the self-signed certificate once; accept it (or trust the certificate,
+# see docker/nginx/10-mesh-client-self-signed-cert.sh). Unlike plain HTTP by address, this is a
+# secure context, so MeshCore channel decryption and notifications work.
+#
 # Set your own values in a .env file next to this one (or the shell environment):
 #   MESH_CLIENT_WEB_TOKEN=<at least 16 characters>
 #   MESH_CLIENT_SECRET_KEY=<at least 16 characters; keeps saved credentials across restarts>
+#   MESH_CLIENT_TLS_NAMES=DNS:mesh.lan,IP:192.168.1.20   # names / addresses you open it by (https)
+#   MESH_CLIENT_HTTPS_PORT=8443                           # (https)
 # Both are visible in `docker inspect`; for anything beyond local testing use the *_FILE
 # variables with Docker secrets instead (see the docs).
 
@@ -81,5 +89,23 @@ services:
     depends_on: [mesh-client, fake-meshtastic]
     restart: unless-stopped
 
+  # HTTPS for other machines on the network (profile "https"): nginx with a self-signed
+  # certificate, created on first start and kept in the mesh-client-tls volume.
+  https:
+    profiles: [https]
+    # The Debian image ships openssl, which creates the certificate.
+    image: ${NGINX_IMAGE:-nginx}:1.27-bookworm
+    restart: unless-stopped
+    ports:
+      - '${MESH_CLIENT_HTTPS_PORT:-8443}:443'
+    environment:
+      MESH_CLIENT_TLS_NAMES: ${MESH_CLIENT_TLS_NAMES:-DNS:localhost,IP:127.0.0.1}
+    volumes:
+      - ./docker/nginx/mesh-client.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/10-mesh-client-self-signed-cert.sh:/docker-entrypoint.d/10-mesh-client-self-signed-cert.sh:ro
+      - mesh-client-tls:/etc/nginx/tls
+    depends_on: [mesh-client]
+
 volumes:
   mesh-client-data:
+  mesh-client-tls:
