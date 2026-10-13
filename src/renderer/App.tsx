@@ -183,6 +183,7 @@ import { useChatMacroShortcuts } from './hooks/useChatMacroShortcuts';
 import { useConnectionView } from './hooks/useConnectionView';
 import { useContactGroups } from './hooks/useContactGroups';
 import { useProtocolDbRefresh } from './hooks/useDbRefresh';
+import { useHeadlessSharedSession } from './hooks/useHeadlessSharedSession';
 import { useLiveChannelKeysSync } from './hooks/useLiveChannelKeysSync';
 import { useMediaQuery } from './hooks/useMediaQuery';
 import { MeshClientDeepLinkHost } from './hooks/useMeshClientDeepLink';
@@ -1033,6 +1034,11 @@ function AppContent() {
   const { refreshAllFromDb: refreshMeshtasticAllFromDb } = meshtasticDbRefresh;
   const { refreshAllFromDb: refreshMeshcoreAllFromDb } = meshcoreDbRefresh;
   const { refreshAllFromDb: refreshReticulumAllFromDb } = reticulumDbRefresh;
+  // Web UI: follow data and radio-link changes made in other browser tabs.
+  useHeadlessSharedSession(
+    { meshtastic: meshtasticDbRefresh, meshcore: meshcoreDbRefresh, reticulum: reticulumDbRefresh },
+    { meshtastic: meshtasticConnection, meshcore: meshcoreConnection },
+  );
 
   // Wait for startup prune before first hydrate (avoids double hydrate). Stagger active protocol first.
   const [startupPruneDone, setStartupPruneDone] = useState(false);

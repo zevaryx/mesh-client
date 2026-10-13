@@ -19,6 +19,11 @@ import path from 'node:path';
 import WebSocket, { WebSocketServer } from 'ws';
 
 import {
+  WEB_BRIDGE_DATA_CHANGED_EVENT,
+  webBridgeDataChangeFor,
+  webBridgeResultChangedRows,
+} from '../../shared/webBridgeDataSync';
+import {
   normalizeHeadlessHostPlatform,
   parseWebBridgeClientFrame,
   serializeWebBridgeFrame,
@@ -525,6 +530,19 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
         (value) => {
           transfer.finishCall(call, true);
           sendFrame(ws, { t: 'result', id: frame.id, value });
+          // Shared viewing: other tabs reload what this tab changed (`webBridgeDataSync.ts`).
+          const change = webBridgeDataChangeFor(frame.channel);
+          if (change && webBridgeResultChangedRows(value)) {
+            for (const other of sessions) {
+              if (other !== ws) {
+                sendFrame(other, {
+                  t: 'event',
+                  channel: WEB_BRIDGE_DATA_CHANGED_EVENT,
+                  args: [change],
+                });
+              }
+            }
+          }
         },
         (err: unknown) => {
           transfer.finishCall(call, false);

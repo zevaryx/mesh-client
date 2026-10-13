@@ -69,6 +69,14 @@ import type {
   TranslationProgress,
   TranslationRequest,
 } from '../shared/translation-types';
+import {
+  isWebBridgeDataChange,
+  isWebBridgeLinkChange,
+  WEB_BRIDGE_DATA_CHANGED_EVENT,
+  WEB_BRIDGE_LINK_CHANGED_EVENT,
+  type WebBridgeDataChange,
+  type WebBridgeLinkChange,
+} from '../shared/webBridgeDataSync';
 import { WEB_BRIDGE_PLATFORM_GLOBAL } from '../shared/webBridgeProtocol';
 
 export type { GattBleDevice, GattBleSessionId, SerialPort };
@@ -1108,6 +1116,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     typeof (globalThis as Record<string, unknown>)[WEB_BRIDGE_PLATFORM_GLOBAL] === 'string'
       ? ('web' as const)
       : ('desktop' as const),
+  // ─── Shared viewing (headless web UI; never fires on desktop) ───────────────
+  sharedSession: {
+    onDataChanged: (cb: (change: WebBridgeDataChange) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, change: unknown) => {
+        if (isWebBridgeDataChange(change)) cb(change);
+      };
+      ipcRenderer.on(WEB_BRIDGE_DATA_CHANGED_EVENT, handler);
+      return () => ipcRenderer.off(WEB_BRIDGE_DATA_CHANGED_EVENT, handler);
+    },
+    onLinkChanged: (cb: (change: WebBridgeLinkChange) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, change: unknown) => {
+        if (isWebBridgeLinkChange(change)) cb(change);
+      };
+      ipcRenderer.on(WEB_BRIDGE_LINK_CHANGED_EVENT, handler);
+      return () => ipcRenderer.off(WEB_BRIDGE_LINK_CHANGED_EVENT, handler);
+    },
+  },
   showEmojiPanel: () => ipcRenderer.invoke('app:showEmojiPanel'),
 
   // ─── Microphone / camera ─────────────────────────────────────────────────────

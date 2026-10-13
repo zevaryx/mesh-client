@@ -94,6 +94,7 @@ import type {
   VoiceOkResponse,
   VoiceStatusResponse,
 } from './voice-types';
+import type { WebBridgeDataChange, WebBridgeLinkChange } from './webBridgeDataSync';
 
 export type { MeshProtocol, SupportBundleMode };
 
@@ -1243,6 +1244,14 @@ export interface ElectronAPI {
    * OS session), else `desktop`. Window-only controls hide on `web`.
    */
   hostKind: 'desktop' | 'web';
+  /**
+   * Shared viewing in the web UI: another tab changed data or the shared radio link
+   * (`webBridgeDataSync.ts`). Never fires on desktop.
+   */
+  sharedSession: {
+    onDataChanged: (cb: (change: WebBridgeDataChange) => void) => () => void;
+    onLinkChanged: (cb: (change: WebBridgeLinkChange) => void) => () => void;
+  };
   showEmojiPanel: () => Promise<void>;
 
   // ─── Microphone / camera (OS privacy + Chromium media) ───────────────────────

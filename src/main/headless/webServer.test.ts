@@ -150,6 +150,47 @@ describe('headless web server', () => {
     await expect(openClient(port, '?token=wrong-token-0123456789')).rejects.toThrow('401');
   });
 
+  it('tells the other tabs (not the writer) when a tab changed shared data', async () => {
+    let changes = 1;
+    registry.handle('db:saveMessage', () => ({ changes }));
+    registry.handle('db:saveNode', () => ({ changes: 1 }));
+    const port = await startServer();
+    const writer = await openClient(port);
+    const other = await openClient(port);
+    const otherEvents: unknown[] = [];
+    const writerEvents: unknown[] = [];
+    other.on('message', (d: Buffer) =>
+      otherEvents.push(parseWebBridgeServerFrame(d.toString('utf8'))),
+    );
+    writer.on('message', (d: Buffer) =>
+      writerEvents.push(parseWebBridgeServerFrame(d.toString('utf8'))),
+    );
+    const call = (id: number, channel: string) => {
+      writer.send(serializeWebBridgeFrame({ t: 'invoke', id, channel, args: [{}] }));
+    };
+    call(1, 'db:saveMessage');
+    call(2, 'db:saveNode'); // stream-derived: every tab writes it, never announced
+    await vi.waitFor(() => {
+      expect(writerEvents).toHaveLength(2);
+    });
+    changes = 0;
+    call(3, 'db:saveMessage'); // duplicate insert: nothing changed
+    await vi.waitFor(() => {
+      expect(writerEvents).toHaveLength(3);
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(otherEvents).toEqual([
+      {
+        t: 'event',
+        channel: 'headless:dataChanged',
+        args: [{ protocol: 'meshtastic', kind: 'messages' }],
+      },
+    ]);
+    expect(writerEvents.every((f) => (f as { t: string }).t === 'result')).toBe(true);
+    writer.close();
+    other.close();
+  });
+
   it('with auth off, serves IP / localhost hosts only (rebinding guard)', async () => {
     const port = await startServer(null);
     const rebind = await getWithHost(port, `evil.example:${port}`);

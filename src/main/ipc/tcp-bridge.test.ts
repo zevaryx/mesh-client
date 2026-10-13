@@ -12,6 +12,7 @@ const { FakeSocket, sockets } = vi.hoisted(() => {
     readableEnded = false;
     remoteAddress = '127.0.0.1';
     remotePort = 5000;
+    connecting = false;
     connectPort: number | null = null;
     connectHost: string | null = null;
     private readonly listeners = new Map<string, ((...args: unknown[]) => void)[]>();
@@ -21,6 +22,7 @@ const { FakeSocket, sockets } = vi.hoisted(() => {
     readonly connect = vi.fn((port: number, host: string, cb?: () => void) => {
       this.connectPort = port;
       this.connectHost = host;
+      this.connecting = true;
       this.connectListener = cb;
       return this;
     });
@@ -50,6 +52,7 @@ const { FakeSocket, sockets } = vi.hoisted(() => {
     }
 
     completeConnect(): void {
+      this.connecting = false;
       this.connectListener?.();
     }
   }
@@ -452,5 +455,142 @@ describe('registerTcpBridgeIpcHandlers', () => {
     expect(TCP_BRIDGE_SOURCE).toContain('assertIpcSender(event, connectChannel)');
     expect(TCP_BRIDGE_SOURCE).toContain('assertIpcSender(event, writeChannel)');
     expect(TCP_BRIDGE_SOURCE).toContain('assertIpcSender(event, disconnectChannel)');
+  });
+});
+
+describe('createTcpBridge shared viewing (headless tabs)', () => {
+  const send = vi.fn();
+  const getMainWindow = (): BrowserWindow =>
+    ({ webContents: { send } }) as unknown as BrowserWindow;
+  const announce = vi.fn();
+
+  /** A browser tab's IPC event: `sender.id` is its session; `destroy()` closes the tab. */
+  function tab(id: number) {
+    const onDestroyed: (() => void)[] = [];
+    const ev = {
+      sender: {
+        id,
+        once: (name: string, fn: () => void) => {
+          if (name === 'destroyed') onDestroyed.push(fn);
+        },
+      },
+    } as unknown as IpcMainInvokeEvent;
+    return {
+      ev,
+      close: () => {
+        for (const fn of onDestroyed) fn();
+      },
+    };
+  }
+
+  function sharedBridge() {
+    return createTcpBridge({
+      protocol: 'meshtastic',
+      writeMissing: 'no-socket',
+      getMainWindow,
+      validateHost,
+      sharing: {
+        sessionOf: (e) => (e.sender as unknown as { id: number }).id,
+        announce,
+      },
+    });
+  }
+
+  async function open(bridge: ReturnType<typeof sharedBridge>, ev: IpcMainInvokeEvent) {
+    const pending = bridge.connect(ev, '10.0.0.5', 4403);
+    latestSocket().completeConnect();
+    await pending;
+  }
+
+  beforeEach(() => {
+    sockets.length = 0;
+    vi.clearAllMocks();
+    vi.mocked(assertIpcSender).mockImplementation(() => {});
+    vi.spyOn(console, 'debug').mockImplementation(() => {});
+  });
+
+  it('lets a second tab join the open link instead of reconnecting the radio', async () => {
+    const bridge = sharedBridge();
+    await open(bridge, tab(1).ev);
+    expect(announce).toHaveBeenCalledWith('meshtastic', {
+      state: 'connected',
+      host: '10.0.0.5',
+      port: 4403,
+    });
+    await bridge.connect(tab(2).ev, '10.0.0.5', 4403);
+    expect(sockets).toHaveLength(1);
+    expect(sockets[0]?.destroy).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives a tab already on the link a real reconnect (its own recovery path)', async () => {
+    const bridge = sharedBridge();
+    const a = tab(1);
+    await open(bridge, a.ev);
+    await open(bridge, a.ev);
+    expect(sockets).toHaveLength(2);
+    expect(sockets[0]?.destroy).toHaveBeenCalled();
+  });
+
+  it('opens a new link for another target, a closed tab, or while the link is connecting', async () => {
+    const bridge = sharedBridge();
+    const a = tab(1);
+    const b = tab(2);
+    await open(bridge, a.ev);
+    await open(bridge, b.ev); // b was not on it, but its first connect attaches…
+    expect(sockets).toHaveLength(1);
+    b.close(); // …and a closed tab that reopens joins again rather than reconnecting
+    await bridge.connect(tab(2).ev, '10.0.0.5', 4403);
+    expect(sockets).toHaveLength(1);
+    const other = bridge.connect(tab(3).ev, '10.0.0.6', 4403);
+    expect(sockets).toHaveLength(2);
+    // The replacement is still connecting: a fourth tab cannot join it yet.
+    const joinWhileConnecting = bridge.connect(tab(4).ev, '10.0.0.6', 4403);
+    expect(sockets).toHaveLength(3);
+    latestSocket().completeConnect();
+    await joinWhileConnecting;
+    await expect(other).rejects.toThrow('closed before connect');
+  });
+
+  it("announces a user's disconnect to every tab and forgets who was on the link", async () => {
+    const bridge = sharedBridge();
+    const a = tab(1);
+    await open(bridge, a.ev);
+    await bridge.connect(tab(2).ev, '10.0.0.5', 4403);
+    bridge.disconnect(a.ev);
+    expect(announce).toHaveBeenLastCalledWith('meshtastic', { state: 'disconnected' });
+    // Disconnect with no link (the other tab following it) is not announced again.
+    bridge.disconnect(tab(2).ev);
+    expect(announce).toHaveBeenCalledTimes(2);
+    await open(bridge, a.ev);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('after a link drop the first reconnecting tab opens it and the rest join', async () => {
+    const bridge = sharedBridge();
+    const a = tab(1);
+    const b = tab(2);
+    await open(bridge, a.ev);
+    await bridge.connect(b.ev, '10.0.0.5', 4403);
+    sockets[0]?.emit('close', true);
+    expect(send).toHaveBeenCalledWith('meshtastic:tcp-disconnected');
+    await open(bridge, a.ev);
+    await bridge.connect(b.ev, '10.0.0.5', 4403);
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('keeps the desktop behavior without sharing: every connect replaces the socket', async () => {
+    const bridge = createTcpBridge({
+      protocol: 'meshtastic',
+      writeMissing: 'no-socket',
+      getMainWindow,
+      validateHost,
+    });
+    for (const id of [1, 2]) {
+      const pending = bridge.connect(tab(id).ev, '10.0.0.5', 4403);
+      latestSocket().completeConnect();
+      await pending;
+    }
+    expect(sockets).toHaveLength(2);
   });
 });

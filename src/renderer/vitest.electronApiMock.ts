@@ -293,6 +293,10 @@ export function createElectronAPIMock(): ElectronAPI {
     },
     getPlatform: vi.fn().mockReturnValue('linux'),
     hostKind: 'desktop',
+    sharedSession: {
+      onDataChanged: vi.fn(() => () => {}),
+      onLinkChanged: vi.fn(() => () => {}),
+    },
     showEmojiPanel: vi.fn().mockResolvedValue(undefined),
     media: {
       ensureMicrophoneAccess: vi.fn().mockResolvedValue({ granted: true, status: 'granted' }),

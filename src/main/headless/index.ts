@@ -9,6 +9,7 @@ import path from 'node:path';
 // Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
 import { app, type BrowserWindow as ElectronBrowserWindow, ipcMain } from 'electron';
 
+import { WEB_BRIDGE_LINK_CHANGED_EVENT } from '../../shared/webBridgeDataSync';
 import {
   closeDatabase,
   getDatabase,
@@ -137,6 +138,21 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerTcpBridgeIpcHandlers({
     getMainWindow: pushTarget,
     validateHost: validateHttpHost,
+    // Shared viewing: tabs join an open radio link instead of reconnecting it, and every tab
+    // follows a connect or a user's disconnect (`webBridgeDataSync.ts`).
+    sharing: {
+      sessionOf: (event) => {
+        const id = (event.sender as { id?: unknown }).id;
+        return typeof id === 'number' ? id : null;
+      },
+      announce: (protocol, change) => {
+        pushTarget()?.webContents.send(WEB_BRIDGE_LINK_CHANGED_EVENT, {
+          protocol,
+          transport: 'tcp',
+          ...change,
+        });
+      },
+    },
     ...(meshtasticBackend ? { meshtasticTap: meshtasticBackend.taps.tcp } : {}),
   });
   registerHttpBridgeIpcHandlers({

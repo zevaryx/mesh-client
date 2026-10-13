@@ -253,6 +253,10 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     restartApp: noopAsync,
     getPlatform: () => 'linux',
     hostKind: 'desktop',
+    sharedSession: {
+      onDataChanged: () => noop,
+      onLinkChanged: () => noop,
+    },
     showEmojiPanel: noopAsync,
     clipboard: {
       writeText: noopAsync,

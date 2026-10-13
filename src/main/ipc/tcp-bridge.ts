@@ -50,6 +50,25 @@ export interface TcpBridgeTap {
  * link keeper). A renderer cannot produce this object over IPC, so `assertIpcSender` still
  * guards every renderer call.
  */
+/**
+ * Shared viewing (headless web UI: several tabs, one server). Without it each renderer that
+ * connects replaces the socket, which reconnects the radio and makes it resend its config.
+ * With it:
+ * - a renderer connecting to the target the live socket already has, and not yet on it, attaches:
+ *   the call resolves without a new socket (the stream already reaches every tab). A renderer that
+ *   is already on it and connects again still gets a fresh socket (its own recovery path);
+ * - each newly opened link and each explicit disconnect is announced to every renderer, so
+ *   disconnected tabs join the link and connected tabs drop it when a user disconnects it.
+ */
+export interface TcpBridgeSharing {
+  /** Stable id of the calling renderer (a browser tab), or `null` when unknown. */
+  sessionOf: (event: IpcMainInvokeEvent) => number | null;
+  announce: (
+    protocol: TcpBridgeProtocol,
+    change: { state: 'connected'; host: string; port: number } | { state: 'disconnected' },
+  ) => void;
+}
+
 export const MAIN_PROCESS_ORIGIN: unique symbol = Symbol('mesh-client.main-process-origin');
 
 export interface TcpBridgeDeps {
@@ -58,6 +77,7 @@ export interface TcpBridgeDeps {
   getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
   tap?: TcpBridgeTap;
+  sharing?: TcpBridgeSharing;
 }
 
 export interface TcpBridgeHandlers {
@@ -78,12 +98,41 @@ export interface TcpBridgeRegisterDeps {
   getMainWindow: () => RendererPushTarget | null;
   validateHost: (host: unknown) => asserts host is string;
   meshtasticTap?: TcpBridgeTap;
+  /** Headless only: share one link between browser tabs (see {@link TcpBridgeSharing}). */
+  sharing?: TcpBridgeSharing;
 }
 
 export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
-  const { protocol, writeMissing, getMainWindow, tap } = deps;
+  const { protocol, writeMissing, getMainWindow, tap, sharing } = deps;
   const validateHost: (host: unknown) => asserts host is string = deps.validateHost;
   let activeSocket: net.Socket | null = null;
+  /** Target of the open (connected) active socket; `null` while connecting or closed. */
+  let activeTarget: { host: string; port: number } | null = null;
+  /** Shared viewing: renderers on the active link (cleared when it closes). */
+  const attached = new Set<number>();
+
+  const watchSessionEnd = (event: IpcMainInvokeEvent, sid: number): void => {
+    const sender = event.sender as { once?: (name: 'destroyed', fn: () => void) => unknown };
+    sender.once?.('destroyed', () => {
+      attached.delete(sid);
+    });
+  };
+
+  /** Shared viewing: join the open link instead of replacing it (see {@link TcpBridgeSharing}). */
+  const tryAttach = (event: IpcMainInvokeEvent, host: string, port: number): boolean => {
+    if (!sharing || !activeSocket || !activeTarget) return false;
+    if (activeTarget.host !== host || activeTarget.port !== port) return false;
+    // A socket still connecting (a replacement in progress) is not joinable yet.
+    if (activeSocket.connecting || activeSocket.destroyed || activeSocket.writableEnded) {
+      return false;
+    }
+    const sid = sharing.sessionOf(event);
+    if (sid === null || attached.has(sid)) return false;
+    attached.add(sid);
+    watchSessionEnd(event, sid);
+    console.debug(`[IPC] ${protocol}:tcp session ${String(sid)} attached to the shared link`);
+    return true;
+  };
 
   const connectChannel = `${protocol}:tcp-connect`;
   const writeChannel = `${protocol}:tcp-write`;
@@ -110,6 +159,11 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
       } catch (err) {
         // catch-no-log-ok validation error forwarded to promise reject
         reject(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+      if (event !== MAIN_PROCESS_ORIGIN && tryAttach(event, host, p)) {
+        settled = true;
+        resolve();
         return;
       }
       if (activeSocket) {
@@ -145,6 +199,17 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
           `transport=tcp stack=${protocol} host=${sanitizeLogMessage(socketHost)} port=${p}`,
         );
         resetLiveSessionMeter(protocol);
+        if (activeSocket === socket) {
+          activeTarget = { host, port: p };
+          if (sharing) {
+            const sid = event === MAIN_PROCESS_ORIGIN ? null : sharing.sessionOf(event);
+            if (sid !== null && event !== MAIN_PROCESS_ORIGIN && !attached.has(sid)) {
+              attached.add(sid);
+              watchSessionEnd(event, sid);
+            }
+            sharing.announce(protocol, { state: 'connected', host, port: p });
+          }
+        }
         if (tap && activeSocket === socket) {
           tap.onOpen(
             (bytes) => {
@@ -204,6 +269,9 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
           activeSocket = null;
           clearLiveSessionMeter(protocol);
           tap?.onClose();
+          // Every tab reconnects after a drop: the first opens a new link, the rest attach to it.
+          activeTarget = null;
+          attached.clear();
           getMainWindow()?.webContents.send(disconnectedChannel);
         }
         // Connect-replace / timeout destroy can close a socket that never connected.
@@ -289,6 +357,10 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
       clearLiveSessionMeter(protocol);
       prev.destroy();
       tap?.onClose();
+      activeTarget = null;
+      attached.clear();
+      // Shared viewing: a user's disconnect drops the link for every tab.
+      sharing?.announce(protocol, { state: 'disconnected' });
     }
     // An explicit renderer disconnect, even with no socket: stop any background reconnect.
     tap?.onUserDisconnect?.();
@@ -298,6 +370,8 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
     if (!activeSocket) return;
     const prev = activeSocket;
     activeSocket = null;
+    activeTarget = null;
+    attached.clear();
     clearLiveSessionMeter(protocol);
     tap?.onClose();
     try {
@@ -328,6 +402,7 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
     writeMissing: 'reject',
     getMainWindow: deps.getMainWindow,
     validateHost: deps.validateHost,
+    ...(deps.sharing ? { sharing: deps.sharing } : {}),
   });
   ipcMain.handle('meshcore:tcp-connect', meshcore.connect);
   ipcMain.handle('meshcore:tcp-write', meshcore.write);
@@ -339,6 +414,7 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
     getMainWindow: deps.getMainWindow,
     validateHost: deps.validateHost,
     tap: deps.meshtasticTap,
+    ...(deps.sharing ? { sharing: deps.sharing } : {}),
   });
   ipcMain.handle('meshtastic:tcp-connect', meshtastic.connect);
   ipcMain.handle('meshtastic:tcp-write', meshtastic.write);
