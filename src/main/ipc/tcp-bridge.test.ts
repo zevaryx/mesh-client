@@ -566,6 +566,48 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
     expect(sockets).toHaveLength(2);
   });
 
+  it('ignores a disconnect from a tab that is not on the link (its pre-connect cleanup)', async () => {
+    const bridge = sharedBridge();
+    await open(bridge, tab(1).ev);
+    bridge.disconnect(tab(2).ev);
+    expect(sockets[0]?.destroy).not.toHaveBeenCalled();
+    expect(announce).toHaveBeenCalledTimes(1);
+    await bridge.connect(tab(2).ev, '10.0.0.5', 4403);
+    expect(sockets).toHaveLength(1);
+  });
+
+  it('serializes MeshCore commands from several tabs and replies only to the asker', async () => {
+    const tabSend = { 1: vi.fn(), 2: vi.fn() };
+    const mkTab = (id: 1 | 2) =>
+      ({
+        sender: { id, send: tabSend[id], once: () => {} },
+      }) as unknown as IpcMainInvokeEvent;
+    const bridge = createTcpBridge({
+      protocol: 'meshcore',
+      writeMissing: 'reject',
+      getMainWindow,
+      validateHost,
+      sharing: { sessionOf: (e) => (e.sender as unknown as { id: number }).id, announce },
+    });
+    const pending = bridge.connect(mkTab(1), '10.0.0.5', 5000);
+    latestSocket().completeConnect();
+    await pending;
+    await bridge.connect(mkTab(2), '10.0.0.5', 5000);
+    const sock = latestSocket();
+    await bridge.write(mkTab(1), [0x3c, 1, 0, 1]); // app start
+    await bridge.write(mkTab(2), [0x3c, 1, 0, 1]);
+    expect(sock.write).toHaveBeenCalledTimes(1);
+    sock.emit('data', Buffer.from([0x3e, 2, 0, 5, 9])); // self info → tab 1
+    expect(tabSend[1]).toHaveBeenCalledWith(
+      'meshcore:tcp-data',
+      Uint8Array.from([0x3e, 2, 0, 5, 9]),
+    );
+    expect(tabSend[2]).not.toHaveBeenCalled();
+    expect(sock.write).toHaveBeenCalledTimes(2);
+    sock.emit('data', Buffer.from([0x3e, 1, 0, 0x83])); // MsgWaiting push → every tab
+    expect(send).toHaveBeenCalledWith('meshcore:tcp-data', Uint8Array.from([0x3e, 1, 0, 0x83]));
+  });
+
   it('after a link drop the first reconnecting tab opens it and the rest join', async () => {
     const bridge = sharedBridge();
     const a = tab(1);

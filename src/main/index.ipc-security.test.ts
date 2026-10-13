@@ -481,7 +481,7 @@ describe('tcp-bridge protocol wiring (source contract)', () => {
   it('destroys the socket on oversized tcp-data chunks without emitting', () => {
     const dataIdx = TCP_BRIDGE_SOURCE.indexOf("socket.on('data'");
     expect(dataIdx).toBeGreaterThan(-1);
-    const dataBody = TCP_BRIDGE_SOURCE.slice(dataIdx, dataIdx + 900);
+    const dataBody = TCP_BRIDGE_SOURCE.slice(dataIdx, dataIdx + 1000);
     expect(dataBody).toContain('TCP_BRIDGE_DATA_MAX_BYTES');
     expect(dataBody).toContain('oversized chunk');
     expect(dataBody).toContain('socket.destroy()');

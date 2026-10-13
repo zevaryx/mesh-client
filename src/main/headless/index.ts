@@ -164,6 +164,8 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     meshcoreMqttAdapter,
     getMainWindow: pushTarget,
     getTakServerManager: () => takServerHost.get(),
+    // Every tab auto-connects MQTT on open; keep a matching live connection instead of bouncing it.
+    reuseSameConnection: true,
     // MQTT chat / nodes are stored here while no tab is open (the tabs store them otherwise).
     ...(meshtasticBackend
       ? {

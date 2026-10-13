@@ -292,11 +292,19 @@ export interface MqttIpcDeps {
     message: (message: unknown) => void;
     nodeUpdate: (update: unknown) => void;
   };
+  /**
+   * Headless shared viewing: every browser tab auto-connects MQTT when it opens. With this set, a
+   * connect with the same settings as the live (or connecting) connection keeps it and re-sends
+   * its status to the tabs, instead of reconnecting the broker for everyone.
+   */
+  reuseSameConnection?: boolean;
 }
 
 /** Forward MQTT client events and register `mqtt:*`. Channel name literals keep check:ipc-contract aligned. */
 export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
   const { mqttManager, meshcoreMqttAdapter } = deps;
+  /** Settings of the last connect per protocol (in memory only), for `reuseSameConnection`. */
+  const lastConnectKey: Partial<Record<'meshtastic' | 'meshcore', string>> = {};
 
   mqttManager.on('status', (s: string) => {
     const mainWindow = deps.getMainWindow();
@@ -439,6 +447,19 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
       const mqttSettings = settings as MQTTSettings;
       const clientId = resolveMqttBrokerClientId(mode, mqttSettings);
       const settingsWithClientId: MQTTSettings = { ...mqttSettings, clientId };
+      const client = mode === 'meshcore' ? meshcoreMqttAdapter : mqttManager;
+      const key = JSON.stringify(settingsWithClientId);
+      const status = client.getStatus();
+      if (
+        deps.reuseSameConnection &&
+        lastConnectKey[mode] === key &&
+        (status === 'connected' || status === 'connecting')
+      ) {
+        console.debug(`[IPC] mqtt:connect: ${mode} already ${status} with these settings; kept`);
+        deps.getMainWindow()?.webContents.send('mqtt:status', { status, protocol: mode });
+        return;
+      }
+      lastConnectKey[mode] = key;
       if (mode === 'meshcore') {
         meshcoreMqttAdapter.disconnect();
         meshcoreMqttAdapter.connect(settingsWithClientId);

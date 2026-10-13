@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { createSharedSessionSync, type SharedSessionRefresh } from '../lib/headlessSharedSession';
 import { isWebHost } from '../lib/hostKind';
+import { loadLastConnection } from '../lib/lastConnectionStorage';
 import type { MeshProtocol } from '../lib/types';
 import type { ProtocolConnectionActions } from './useProtocolConnection';
 
@@ -27,7 +28,13 @@ export function useHeadlessSharedSession(
       refresh: (protocol) => refreshRef.current[protocol],
       link: (protocol) => ({
         status: () => connectionsRef.current[protocol].state.status,
-        connectTcp: (address) => connectionsRef.current[protocol].connectAutomatic('tcp', address),
+        // The tab that connected saved its connection type; TCP links are `tcp` or `http`
+        // depending on the protocol (MeshCore's network option is `http` in the panel).
+        connectTcp: (address) => {
+          const saved = loadLastConnection(protocol)?.type;
+          const type = saved === 'http' || saved === 'tcp' ? saved : 'tcp';
+          return connectionsRef.current[protocol].connectAutomatic(type, address);
+        },
         disconnect: () => connectionsRef.current[protocol].disconnect(),
       }),
     });
