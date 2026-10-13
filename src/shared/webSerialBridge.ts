@@ -11,7 +11,7 @@ export const WEB_SERIAL_LIST = 'serial:list';
 export const WEB_SERIAL_OPEN = 'serial:open';
 /** `(link, bytes: Uint8Array) => void` */
 export const WEB_SERIAL_WRITE = 'serial:write';
-/** `(link) => void`: leave the link; the port closes when no tab is left on it. */
+/** `(link) => void`: disconnect; the port closes when no other tab is on it (a closed tab keeps it). */
 export const WEB_SERIAL_CLOSE = 'serial:close';
 /** Push `(link, bytes: Uint8Array)` to the tabs on the link. */
 export const WEB_SERIAL_DATA_EVENT = 'serial:data';

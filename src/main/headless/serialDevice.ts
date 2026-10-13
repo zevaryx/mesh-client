@@ -2,7 +2,7 @@
  * One open serial device on the headless server: Node has no serial API, so the device file is
  * opened non-blocking, its line settings are set with `stty` (no shell; baud from a fixed list),
  * reads come through a `tty.ReadStream` (event driven, no thread-pool reads) and writes through
- * `fs.write`, one at a time.
+ * `fs.write`, one at a time. Closing releases both descriptors (see `release`).
  *
  * OS-specific: `stty -F` on Linux, `stty -f` on macOS (see `serialPorts.ts` for Windows). The
  * device is opened before `stty` runs and kept open, so the settings stay applied.
@@ -97,14 +97,30 @@ export async function openSerialDevice(
     });
     throw err;
   }
-  // The stream owns the descriptor from here on; destroying it closes the device.
+  // libuv reopens a terminal by name for its own handle (so making it non-blocking does not affect
+  // other users of the descriptor), and then neither uses nor closes ours: destroying the stream
+  // alone would keep the device open until the server exits. Node exposes the handle's descriptor
+  // only as `_handle.fd`; when it cannot be read, ours is left alone rather than risk closing a
+  // reused descriptor number.
+  const handleFd = (stream as unknown as { _handle?: { fd?: unknown } })._handle?.fd;
+  const ownsFd = typeof handleFd === 'number' && handleFd !== fd;
   let closed = false;
   let closeListener: ((reason: string) => void) | null = null;
   let writes: Promise<void> = Promise.resolve();
+  /** Stop reading, then release our descriptor once queued writes have settled. */
+  const release = (): void => {
+    stream.destroy();
+    if (!ownsFd) return;
+    void writes.then(() => {
+      fs.close(fd, (err) => {
+        if (err) console.warn('[serial] closing the device failed:', err.code);
+      });
+    });
+  };
   const finish = (reason: string): void => {
     if (closed) return;
     closed = true;
-    stream.destroy();
+    release();
     closeListener?.(reason);
   };
   stream.on('error', (err) => {
@@ -125,7 +141,7 @@ export async function openSerialDevice(
     close: () => {
       if (closed) return;
       closed = true;
-      stream.destroy();
+      release();
     },
     onData: (listener) => {
       stream.on('data', (chunk: Buffer) => {

@@ -94,7 +94,7 @@ describe('serial bridge (headless)', () => {
     expect(t.openDevice).toHaveBeenCalledWith(PORT, 115200);
   });
 
-  it('shares one device between tabs and closes it when the last tab leaves', async () => {
+  it('shares one device between tabs, keeps it when tabs close, closes it on the last disconnect', async () => {
     const t = setup();
     const a = tab(1);
     const b = tab(2);
@@ -114,10 +114,17 @@ describe('serial bridge (headless)', () => {
 
     a.call('serial:close', 1);
     expect(t.devices[0]?.closed).toBe(false);
-    b.close(); // tab closed without serial:close
+    // The last tab going away (closed, reloaded) keeps the radio connected, like a TCP link...
+    b.close();
+    expect(t.devices[0]?.closed).toBe(false);
+    // ...a tab that comes back joins it...
+    const c = tab(3);
+    await expect(c.call('serial:open', PORT, 115200)).resolves.toEqual({ link: 1 });
+    expect(t.openDevice).toHaveBeenCalledTimes(1);
+    // ...and the last tab's explicit disconnect closes it.
+    c.call('serial:close', 1);
     expect(t.devices[0]?.closed).toBe(true);
-    // The port opens afresh for the next tab.
-    await tab(3).call('serial:open', PORT, 115200);
+    await tab(4).call('serial:open', PORT, 115200);
     expect(t.openDevice).toHaveBeenCalledTimes(2);
   });
 

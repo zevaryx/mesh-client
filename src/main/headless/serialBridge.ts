@@ -4,8 +4,9 @@
  * unchanged on top.
  *
  * Shared viewing: a port is opened once. Another tab opening the same port joins the open link
- * (its baud rate is ignored); every tab on the link gets the radio's bytes and can write. The port
- * closes when the last tab leaves it or disconnects. The protocol is not known up front: the first
+ * (its baud rate is ignored); every tab on the link gets the radio's bytes and can write. Like the
+ * TCP links, the port stays open when tabs close (a tab that comes back joins it again); it closes
+ * when the last tab on it disconnects (`serial:close`). The protocol is not known up front: the first
  * write decides it. MeshCore frames start with `<`, and MeshCore has no request ids, so its
  * commands then go through {@link MeshcoreTcpMux} (one at a time, replies to the asking tab only,
  * pushes to all). Anything else (Meshtastic) passes through.
@@ -80,10 +81,15 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     link.mux?.reset();
   };
 
-  const leave = (link: SerialLink, sid: number): void => {
+  /** `disconnect`: the tab closed the port, rather than going away (tab closed, page reloaded). */
+  const leave = (link: SerialLink, sid: number, disconnect: boolean): void => {
     if (!link.members.delete(sid)) return;
     link.mux?.sessionClosed(sid);
     if (link.members.size > 0) return;
+    if (!disconnect) {
+      console.debug(`[serial] ${sanitizeLogMessage(link.portId)}: no tab left; keeping it open`);
+      return;
+    }
     console.debug(`[serial] ${sanitizeLogMessage(link.portId)}: last tab left; closing`);
     dropLink(link);
     link.device.close();
@@ -93,7 +99,7 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     if (link.members.has(sid)) return;
     link.members.set(sid, sender);
     sender.once?.('destroyed', () => {
-      leave(link, sid);
+      leave(link, sid, false);
     });
   };
 
@@ -198,7 +204,7 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     assertIpcSender(event, WEB_SERIAL_CLOSE);
     const { sid } = tabOf(event);
     const link = typeof linkId === 'number' ? links.get(linkId) : undefined;
-    if (link) leave(link, sid);
+    if (link) leave(link, sid, true);
   });
 
   return {
