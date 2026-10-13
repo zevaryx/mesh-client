@@ -11,12 +11,18 @@
  * commands then go through {@link MeshcoreTcpMux} (one at a time, replies to the asking tab only,
  * pushes to all). Anything else (Meshtastic) passes through.
  *
+ * Background (no tab open): once the protocol is known, the link is handed to that protocol's
+ * tap (`deps.taps`, the background ingest behind the link keeper) like the TCP bridge's links;
+ * the keeper reopens a port it lost with {@link SerialBridge.openFromMain}. Open links are
+ * announced to the tabs and listed by {@link SerialBridge.openLinks} so a tab opened later joins.
+ *
  * Only ports the server lists can be opened, so a token holder cannot open arbitrary files.
  * Failure behavior: an open failure rejects to the caller; an unplugged device pushes
  * `serial:closed` to its tabs and drops the link; a write failure rejects to the writer.
  */
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
 
+import type { WebBridgeLinkChange } from '../../shared/webBridgeDataSync';
 import {
   WEB_SERIAL_BAUD_RATES,
   WEB_SERIAL_CLOSE,
@@ -29,6 +35,8 @@ import {
   type WebSerialPortListing,
 } from '../../shared/webSerialBridge';
 import { MeshcoreTcpMux } from '../ipc/meshcoreTcpMux';
+import type { TcpBridgeTap } from '../ipc/tcp-bridge';
+import type { MeshtasticLinkOrigin } from '../meshtastic-backend/linkTarget';
 import { errorMessageText, sanitizeLogMessage } from '../sanitize-log-message';
 import { assertIpcSender } from '../validate-ipc-sender';
 import type { SerialDevice } from './serialDevice';
@@ -43,21 +51,34 @@ interface TabSender {
   once?: (name: 'destroyed', fn: () => void) => unknown;
 }
 
+export type SerialLinkProtocol = 'meshtastic' | 'meshcore';
+
 interface SerialLink {
   id: number;
   portId: string;
+  baudRate: number;
   device: SerialDevice;
   members: Map<number, TabSender>;
-  /** Set by the first write: `null` = pass through, else the MeshCore command serializer. */
-  mux: MeshcoreTcpMux | null | undefined;
+  /** Decided by the first write (or the opener): unknown until then. */
+  protocol: SerialLinkProtocol | undefined;
+  /** MeshCore: the command serializer (replies to the asking tab only). */
+  mux: MeshcoreTcpMux | null;
 }
 
 export interface SerialBridgeDeps {
   listPorts: () => WebSerialPortListing[];
   openDevice: (devicePath: string, baudRate: number) => Promise<SerialDevice>;
+  /** Background handling per protocol (ingest + link keeper), as for the TCP bridge's links. */
+  taps?: Partial<Record<SerialLinkProtocol, TcpBridgeTap>>;
+  /** Tell every tab a link opened or was disconnected (shared viewing). */
+  announce?: (change: WebBridgeLinkChange) => void;
 }
 
 export interface SerialBridge {
+  /** Open a port for the background (no tab): the link keeper after a restart or a drop. */
+  openFromMain: (portId: string, baudRate: number, protocol: SerialLinkProtocol) => Promise<void>;
+  /** Open links whose protocol is known, as `headless:linkState` reports them. */
+  openLinks: () => WebBridgeLinkChange[];
   /** Close every open port (server shutdown). */
   closeAll: () => void;
 }
@@ -79,6 +100,48 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     links.delete(link.id);
     if (byPort.get(link.portId) === link) byPort.delete(link.portId);
     link.mux?.reset();
+    if (link.protocol) deps.taps?.[link.protocol]?.onClose();
+  };
+
+  const linkChange = (link: SerialLink): WebBridgeLinkChange | null =>
+    link.protocol
+      ? { protocol: link.protocol, transport: 'serial', state: 'connected', portId: link.portId }
+      : null;
+
+  /** The protocol is known: serialize MeshCore, hand the link to its tap, tell the tabs. */
+  const decideProtocol = (
+    link: SerialLink,
+    protocol: SerialLinkProtocol,
+    origin: MeshtasticLinkOrigin,
+  ): void => {
+    if (link.protocol) return;
+    link.protocol = protocol;
+    if (protocol === 'meshcore') {
+      link.mux = new MeshcoreTcpMux({
+        writeToRadio: (frame) => {
+          link.device.write(frame).catch((err: unknown) => {
+            console.warn('[serial] write failed:', sanitizeLogMessage(errorMessageText(err)));
+          });
+        },
+        deliver: (target, frame) => {
+          deliver(link, target, frame);
+        },
+      });
+    }
+    deps.taps?.[protocol]?.onOpen(
+      (bytes) => {
+        if (links.get(link.id) !== link) return;
+        link.device.write(bytes).catch((err: unknown) => {
+          console.debug(
+            '[serial] background write failed:',
+            sanitizeLogMessage(errorMessageText(err)),
+          );
+        });
+      },
+      { origin, target: { kind: 'serial', portId: link.portId, baudRate: link.baudRate } },
+    );
+    const change = linkChange(link);
+    if (change) deps.announce?.(change);
   };
 
   /** `disconnect`: the tab closed the port, rather than going away (tab closed, page reloaded). */
@@ -93,6 +156,11 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     console.debug(`[serial] ${sanitizeLogMessage(link.portId)}: last tab left; closing`);
     dropLink(link);
     link.device.close();
+    // An explicit disconnect: the background must not reopen it, and other tabs drop it too.
+    if (link.protocol) {
+      deps.taps?.[link.protocol]?.onUserDisconnect?.(true);
+      deps.announce?.({ protocol: link.protocol, transport: 'serial', state: 'disconnected' });
+    }
   };
 
   const join = (link: SerialLink, sid: number, sender: TabSender): void => {
@@ -116,11 +184,14 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     const link: SerialLink = {
       id: nextLink++,
       portId,
+      baudRate,
       device,
       members: new Map(),
-      mux: undefined,
+      protocol: undefined,
+      mux: null,
     };
     device.onData((bytes) => {
+      if (link.protocol) deps.taps?.[link.protocol]?.onData(bytes);
       if (link.mux) link.mux.fromRadio(bytes);
       else deliver(link, null, bytes);
     });
@@ -138,9 +209,24 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
     return link;
   };
 
+  /** The existing link for a port, or a new one (two openers at once share one device). */
+  const linkFor = async (portId: string, baudRate: number): Promise<SerialLink> => {
+    const existing = byPort.get(portId);
+    if (existing) return existing;
+    let pending = opening.get(portId);
+    if (!pending) {
+      pending = openLink(portId, baudRate).finally(() => {
+        opening.delete(portId);
+      });
+      opening.set(portId, pending);
+    }
+    return pending;
+  };
+
   ipcMain.handle(WEB_SERIAL_LIST, (event) => {
     assertIpcSender(event, WEB_SERIAL_LIST);
-    return deps.listPorts();
+    // Ports with an open link are offered to every tab (it may join without the picker).
+    return deps.listPorts().map((p) => (byPort.has(p.portId) ? { ...p, open: true } : p));
   });
 
   ipcMain.handle(
@@ -154,19 +240,9 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
         throw new Error('serial:open: unsupported baud rate');
       }
       const { sid, sender } = tabOf(event);
-      let link = byPort.get(portId);
-      if (link) {
+      if (byPort.has(portId))
         console.debug(`[serial] tab ${sid} joined ${sanitizeLogMessage(portId)}`);
-      } else {
-        let pending = opening.get(portId);
-        if (!pending) {
-          pending = openLink(portId, baudRate).finally(() => {
-            opening.delete(portId);
-          });
-          opening.set(portId, pending);
-        }
-        link = await pending;
-      }
+      const link = await linkFor(portId, baudRate);
       join(link, sid, sender);
       return { link: link.id };
     },
@@ -181,21 +257,11 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
       throw new Error(`serial:write: invalid or oversized payload (max ${SERIAL_WRITE_MAX_BYTES})`);
     }
     if (bytes.length === 0) return;
-    if (link.mux === undefined) {
-      const meshcore = bytes[0] === MESHCORE_FRAME_OUTGOING;
-      link.mux = meshcore
-        ? new MeshcoreTcpMux({
-            writeToRadio: (frame) => {
-              link.device.write(frame).catch((err: unknown) => {
-                console.warn('[serial] write failed:', sanitizeLogMessage(errorMessageText(err)));
-              });
-            },
-            deliver: (target, frame) => {
-              deliver(link, target, frame);
-            },
-          })
-        : null;
-    }
+    decideProtocol(
+      link,
+      bytes[0] === MESHCORE_FRAME_OUTGOING ? 'meshcore' : 'meshtastic',
+      'renderer',
+    );
     if (link.mux) link.mux.fromSession(sid, bytes);
     else await link.device.write(bytes);
   });
@@ -208,6 +274,18 @@ export function registerSerialBridgeIpcHandlers(deps: SerialBridgeDeps): SerialB
   });
 
   return {
+    openFromMain: async (portId, baudRate, protocol) => {
+      if (!deps.listPorts().some((p) => p.portId === portId)) {
+        throw new Error(`serial port ${portId} is not present`);
+      }
+      const link = await linkFor(portId, baudRate);
+      decideProtocol(link, protocol, 'backend');
+    },
+    openLinks: () =>
+      [...links.values()].flatMap((link) => {
+        const change = linkChange(link);
+        return change ? [change] : [];
+      }),
     closeAll: () => {
       for (const link of [...links.values()]) {
         dropLink(link);

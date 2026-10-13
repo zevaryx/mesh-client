@@ -73,6 +73,23 @@ describe('createSharedSessionSync', () => {
     expect(idle.link.disconnect).not.toHaveBeenCalled();
   });
 
+  it('on load, joins the open links of protocols without a saved connection', () => {
+    const t = setup('disconnected');
+    t.sync.joinOpenLinks(
+      [
+        { protocol: 'meshtastic', transport: 'tcp', state: 'connected', host: 'r.lan', port: 4403 },
+        { protocol: 'meshcore', transport: 'serial', state: 'connected', portId: '/dev/ttyACM0' },
+        { protocol: 'meshcore', transport: 'tcp', state: 'disconnected' },
+      ],
+      // Meshtastic auto-connects from its saved connection (joining the open link by itself).
+      (p) => p === 'meshtastic',
+    );
+    expect(t.link.join).toHaveBeenCalledTimes(1);
+    expect(t.link.join).toHaveBeenCalledWith(
+      expect.objectContaining({ protocol: 'meshcore', portId: '/dev/ttyACM0' }),
+    );
+  });
+
   it('logs failed reloads and joins instead of throwing', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const t = setup();
@@ -115,6 +132,20 @@ describe('sharedLinkConnectArgs', () => {
     ).toEqual({ type: 'http', address: 'https://r.lan' });
   });
 
+  it('joins a serial link by its server port', () => {
+    const serial = {
+      protocol: 'meshcore',
+      transport: 'serial',
+      state: 'connected',
+      portId: '/dev/serial/by-id/usb-radio',
+    } as const;
+    expect(sharedLinkConnectArgs(serial, { type: 'http', httpAddress: '10.0.0.5:5000' })).toEqual({
+      type: 'serial',
+      portId: '/dev/serial/by-id/usb-radio',
+    });
+    expect(sharedLinkConnectArgs({ ...serial, portId: '' }, null)).toBeNull();
+  });
+
   it('falls back to the announced target', () => {
     expect(sharedLinkConnectArgs(tcp, { type: 'ble' })).toEqual({
       type: 'tcp',
@@ -132,6 +163,10 @@ describe('sharedLinkConnectArgs', () => {
         null,
       ),
     ).toEqual({ type: 'http', address: 'r.lan' });
+    // MeshCore names its TCP option `http`.
+    expect(sharedLinkConnectArgs({ ...tcp, protocol: 'meshcore', host: '10.0.0.5' }, null)).toEqual(
+      { type: 'http', address: '10.0.0.5:4403' },
+    );
     expect(
       sharedLinkConnectArgs(
         { protocol: 'meshcore', transport: 'tcp', state: 'disconnected' },

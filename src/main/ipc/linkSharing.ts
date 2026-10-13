@@ -37,6 +37,11 @@ export interface SharedLinkTapOptions {
   broadcast?: (frame: Uint8Array) => void;
 }
 
+export interface SharedLinkTap extends TcpBridgeTap {
+  /** The open link, as announced (`null` when none): what a tab opened later can join. */
+  current: () => Extract<SharedLinkAnnouncement, { state: 'connected' }> | null;
+}
+
 interface ReplyTarget {
   send: (channel: string, ...args: unknown[]) => void;
   once?: (name: 'destroyed', fn: () => void) => unknown;
@@ -48,7 +53,7 @@ function sameTarget(a: MeshtasticLinkTarget, b: MeshtasticLinkTarget): boolean {
   return false;
 }
 
-export function createSharedLinkTap(opts: SharedLinkTapOptions): TcpBridgeTap {
+export function createSharedLinkTap(opts: SharedLinkTapOptions): SharedLinkTap {
   const { protocol, transport, sessionOf } = opts;
   const members = new Set<number>();
   let target: MeshtasticLinkTarget | null = null;
@@ -80,6 +85,16 @@ export function createSharedLinkTap(opts: SharedLinkTapOptions): TcpBridgeTap {
     return sid;
   };
 
+  const announcement = (): ReturnType<SharedLinkTap['current']> => {
+    if (target?.kind === 'tcp') {
+      return { state: 'connected', transport: 'tcp', host: target.host, port: target.port };
+    }
+    if (target?.kind === 'http') {
+      return { state: 'connected', transport: 'http', host: target.host, tls: target.tls };
+    }
+    return null;
+  };
+
   const isOutsider = (event: IpcMainInvokeEvent): boolean => {
     const sid = sessionOf(event);
     return sid !== null && !members.has(sid);
@@ -99,26 +114,14 @@ export function createSharedLinkTap(opts: SharedLinkTapOptions): TcpBridgeTap {
   };
 
   return {
+    current: announcement,
     onOpen: (write, info) => {
       writeToLink = write;
       target = info?.target ?? null;
       mux?.reset();
       if (info?.event) join(info.event);
-      if (target?.kind === 'tcp') {
-        opts.announce(protocol, {
-          state: 'connected',
-          transport: 'tcp',
-          host: target.host,
-          port: target.port,
-        });
-      } else if (target?.kind === 'http') {
-        opts.announce(protocol, {
-          state: 'connected',
-          transport: 'http',
-          host: target.host,
-          tls: target.tls,
-        });
-      }
+      const change = announcement();
+      if (change) opts.announce(protocol, change);
     },
     onData: (chunk) => {
       if (!mux) return false;

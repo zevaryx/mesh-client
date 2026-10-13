@@ -12,6 +12,7 @@ vi.mock('electron', () => ({
 vi.mock('../validate-ipc-sender', () => ({ assertIpcSender: vi.fn() }));
 
 const { registerSerialBridgeIpcHandlers } = await import('./serialBridge');
+import type { TcpBridgeTap } from '../ipc/tcp-bridge';
 import type { SerialDevice } from './serialDevice';
 
 /** A fake device: records writes; `radio()` / `unplug()` drive it from the radio side. */
@@ -55,7 +56,7 @@ function tab(id: number) {
 
 const PORT = '/dev/serial/by-id/usb-radio';
 
-function setup() {
+function setup(extra: Partial<Parameters<typeof registerSerialBridgeIpcHandlers>[0]> = {}) {
   handlers.clear();
   const devices: FakeDevice[] = [];
   const openDevice = vi.fn(() => {
@@ -66,6 +67,7 @@ function setup() {
   const bridge = registerSerialBridgeIpcHandlers({
     listPorts: () => [{ portId: PORT, displayName: 'radio', portName: 'ttyUSB0' }],
     openDevice,
+    ...extra,
   });
   return { bridge, devices, openDevice };
 }
@@ -177,5 +179,80 @@ describe('serial bridge (headless)', () => {
     await tab(1).call('serial:open', PORT, 115200);
     t.bridge.closeAll();
     expect(t.devices[0]?.closed).toBe(true);
+  });
+
+  it('hands a link to its protocol tap once known, announces it and reports it as open', async () => {
+    const tap = (): TcpBridgeTap => ({
+      onOpen: vi.fn(),
+      onData: vi.fn(() => false),
+      onClose: vi.fn(),
+      onUserDisconnect: vi.fn(),
+    });
+    const taps = { meshtastic: tap(), meshcore: tap() };
+    const announce = vi.fn();
+    const t = setup({ taps, announce });
+    const a = tab(1);
+    await a.call('serial:open', PORT, 115200);
+    // Protocol unknown until the first write: no tap, not listed, but offered as open.
+    expect(t.bridge.openLinks()).toEqual([]);
+    expect(a.call('serial:list')).toEqual([
+      { portId: PORT, displayName: 'radio', portName: 'ttyUSB0', open: true },
+    ]);
+    await a.call('serial:write', 1, new Uint8Array(mcFrame('<', [22])));
+    expect(taps.meshcore.onOpen).toHaveBeenCalledWith(expect.any(Function), {
+      origin: 'renderer',
+      target: { kind: 'serial', portId: PORT, baudRate: 115200 },
+    });
+    expect(taps.meshtastic.onOpen).not.toHaveBeenCalled();
+    const connected = {
+      protocol: 'meshcore',
+      transport: 'serial',
+      state: 'connected',
+      portId: PORT,
+    };
+    expect(announce).toHaveBeenCalledWith(connected);
+    expect(t.bridge.openLinks()).toEqual([connected]);
+    // The tap sees the radio's bytes and writes straight to the device (not through the mux).
+    t.devices[0]?.radio(mcFrame('>', [0x83]));
+    expect(taps.meshcore.onData).toHaveBeenCalledWith(new Uint8Array(mcFrame('>', [0x83])));
+    const write = vi.mocked(taps.meshcore.onOpen).mock.calls[0]?.[0];
+    write?.(new Uint8Array(mcFrame('<', [10])));
+    expect(t.devices[0]?.written.at(-1)).toEqual(new Uint8Array(mcFrame('<', [10])));
+    // The last tab's explicit disconnect: the background must not reopen it.
+    a.call('serial:close', 1);
+    expect(taps.meshcore.onClose).toHaveBeenCalled();
+    expect(taps.meshcore.onUserDisconnect).toHaveBeenCalledWith(true);
+    expect(announce).toHaveBeenLastCalledWith({
+      protocol: 'meshcore',
+      transport: 'serial',
+      state: 'disconnected',
+    });
+    expect(t.bridge.openLinks()).toEqual([]);
+  });
+
+  it('opens a port for the background, which a tab then joins', async () => {
+    const meshtastic: TcpBridgeTap = {
+      onOpen: vi.fn(),
+      onData: vi.fn(() => false),
+      onClose: vi.fn(),
+    };
+    const t = setup({ taps: { meshtastic } });
+    await expect(t.bridge.openFromMain('/dev/ttyGone', 115200, 'meshtastic')).rejects.toThrow(
+      'not present',
+    );
+    await t.bridge.openFromMain(PORT, 115200, 'meshtastic');
+    expect(meshtastic.onOpen).toHaveBeenCalledWith(expect.any(Function), {
+      origin: 'backend',
+      target: { kind: 'serial', portId: PORT, baudRate: 115200 },
+    });
+    expect(t.bridge.openLinks()).toEqual([
+      { protocol: 'meshtastic', transport: 'serial', state: 'connected', portId: PORT },
+    ]);
+    await tab(1).call('serial:open', PORT, 115200);
+    expect(t.openDevice).toHaveBeenCalledTimes(1);
+    // An unplugged device is a drop (the keeper reopens it), not a user disconnect.
+    t.devices[0]?.unplug();
+    expect(meshtastic.onClose).toHaveBeenCalled();
+    expect(t.bridge.openLinks()).toEqual([]);
   });
 });

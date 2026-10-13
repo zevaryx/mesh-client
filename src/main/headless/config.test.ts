@@ -151,6 +151,19 @@ describe('resolveHeadlessConfig Meshtastic background ingest', () => {
   });
 });
 
+describe('resolveHeadlessConfig MeshCore background ingest', () => {
+  it('is on by default, can be turned off, and rejects other values', () => {
+    expect(resolveHeadlessConfig({}, BUNDLE_DIR).meshcoreBackgroundIngest).toBe(true);
+    expect(
+      resolveHeadlessConfig({ MESH_CLIENT_MESHCORE_BACKEND: 'off' }, BUNDLE_DIR)
+        .meshcoreBackgroundIngest,
+    ).toBe(false);
+    expect(() =>
+      resolveHeadlessConfig({ MESH_CLIENT_MESHCORE_BACKEND: 'yes' }, BUNDLE_DIR),
+    ).toThrow('MESH_CLIENT_MESHCORE_BACKEND must be "on" or "off"');
+  });
+});
+
 describe('resolveHeadlessConfig hardening options', () => {
   const files: Record<string, string> = { '/run/secrets/web_token': '  file-token-0123456789\n' };
   const readFile = (file: string): string => {

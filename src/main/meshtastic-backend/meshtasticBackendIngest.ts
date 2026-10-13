@@ -55,10 +55,17 @@ const { PortNum } = Portnums;
 /**
  * How a link delivers FromRadio and takes keep-alives:
  * - `tcp`: a byte stream (0x94 0xC3 framing); heartbeats are framed.
+ * - `serial`: the same stream over a server serial port (headless); debug text between frames is
+ *   skipped by the framer.
  * - `http`: one FromRadio per `/api/v1/fromradio` poll; no heartbeat (the renderer sends none).
  * - `ble`: one FromRadio per sidecar notification; heartbeats are raw ToRadio.
  */
-export type MeshtasticLinkKind = 'tcp' | 'http' | 'ble';
+export type MeshtasticLinkKind = 'tcp' | 'serial' | 'http' | 'ble';
+
+/** Stream links carry framed bytes (`0x94 0xC3` + length) in both directions. */
+function isStreamLink(kind: MeshtasticLinkKind): boolean {
+  return kind === 'tcp' || kind === 'serial';
+}
 
 /** Same cadence as the renderer's keep-alive (`meshtasticTransportSideEffects.ts`). */
 export const MESHTASTIC_BACKEND_HEARTBEAT_MS = 60 * MS_PER_SECOND;
@@ -168,7 +175,7 @@ export class MeshtasticBackendIngest {
    * and gets a config request so the radio starts streaming.
    */
   linkOpened(kind: MeshtasticLinkKind = 'tcp', origin: MeshtasticLinkOrigin = 'renderer'): void {
-    if (kind === 'tcp') this.resetFramer();
+    if (isStreamLink(kind)) this.resetFramer();
     else this.closeFramer();
     this.linkKind = kind;
     this.linkUp = true;
@@ -184,7 +191,9 @@ export class MeshtasticBackendIngest {
     }
     this.syncHeartbeat();
     if (origin === 'backend') {
-      this.send(meshtasticWantConfigFrame(Math.floor(Math.random() * 0xffffffff), kind !== 'tcp'));
+      this.send(
+        meshtasticWantConfigFrame(Math.floor(Math.random() * 0xffffffff), !isStreamLink(kind)),
+      );
     }
   }
 
@@ -196,9 +205,9 @@ export class MeshtasticBackendIngest {
     this.syncHeartbeat();
   }
 
-  /** Inbound data: stream bytes on `tcp`, one whole FromRadio per call on `http` / `ble`. */
+  /** Inbound data: stream bytes on `tcp` / `serial`, one FromRadio per call on `http` / `ble`. */
   pushBytes(chunk: Uint8Array): void {
-    if (this.linkKind !== 'tcp') {
+    if (!isStreamLink(this.linkKind)) {
       this.handleFromRadio(chunk);
       return;
     }

@@ -109,6 +109,7 @@ describe('createDesktopMeshtasticBackend', () => {
     const inner: MeshtasticBackendHandle = {
       taps: {
         tcp: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
+        serial: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
         http: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn(), onUserDisconnect: vi.fn() },
         ble: { onOpen: vi.fn(), onData: vi.fn(), onClose: vi.fn() },
       },

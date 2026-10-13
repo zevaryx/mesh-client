@@ -48,6 +48,8 @@ export interface HeadlessConfig {
   maxUploadBytes: number;
   /** Store Meshtastic TCP chat in the server while no browser tab owns the link. */
   meshtasticBackgroundIngest: boolean;
+  /** Store MeshCore messages (TCP / serial companion) while no browser tab is open. */
+  meshcoreBackgroundIngest: boolean;
   tokenSource: 'file' | 'env' | 'generated' | null;
   maxSessions: number;
   trustProxy: boolean;
@@ -161,6 +163,11 @@ export function resolveHeadlessConfig(
     true,
     'MESH_CLIENT_MESHTASTIC_BACKEND',
   );
+  const meshcoreBackgroundIngest = parseOnOff(
+    env.MESH_CLIENT_MESHCORE_BACKEND,
+    true,
+    'MESH_CLIENT_MESHCORE_BACKEND',
+  );
   const trustProxy = parseOnOff(
     env.MESH_CLIENT_WEB_TRUST_PROXY,
     false,
@@ -181,6 +188,7 @@ export function resolveHeadlessConfig(
   return {
     allowedHosts,
     meshtasticBackgroundIngest,
+    meshcoreBackgroundIngest,
     tokenSource,
     maxSessions,
     trustProxy,

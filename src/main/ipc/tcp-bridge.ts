@@ -354,14 +354,22 @@ export function createTcpBridge(deps: TcpBridgeDeps): TcpBridgeHandlers {
 }
 
 const registeredBridges: TcpBridgeHandlers[] = [];
-let registeredMeshtasticBridge: TcpBridgeHandlers | null = null;
+const registeredByProtocol: Partial<Record<TcpBridgeProtocol, TcpBridgeHandlers>> = {};
+
+/** Open a protocol's TCP link from the main process (background-ingest link keepers). */
+export function connectTcpFromMain(
+  protocol: TcpBridgeProtocol,
+  host: string,
+  port: number,
+): Promise<void> {
+  const bridge = registeredByProtocol[protocol];
+  if (!bridge) return Promise.reject(new Error(`${protocol}:tcp bridge not registered`));
+  return bridge.connect(MAIN_PROCESS_ORIGIN, host, port);
+}
 
 /** Open the Meshtastic TCP link from the main process (background-ingest link keeper). */
 export function connectMeshtasticTcpFromMain(host: string, port: number): Promise<void> {
-  if (!registeredMeshtasticBridge) {
-    return Promise.reject(new Error('meshtastic:tcp bridge not registered'));
-  }
-  return registeredMeshtasticBridge.connect(MAIN_PROCESS_ORIGIN, host, port);
+  return connectTcpFromMain('meshtastic', host, port);
 }
 
 /** Register both protocol bridges. Channel name literals keep check:ipc-contract aligned. */
@@ -389,7 +397,8 @@ export function registerTcpBridgeIpcHandlers(deps: TcpBridgeRegisterDeps): void 
   ipcMain.handle('meshtastic:tcp-disconnect', meshtastic.disconnect);
 
   registeredBridges.push(meshcore, meshtastic);
-  registeredMeshtasticBridge = meshtastic;
+  registeredByProtocol.meshcore = meshcore;
+  registeredByProtocol.meshtastic = meshtastic;
 }
 
 /** Destroy both protocol sockets on quit / will-quit. */

@@ -92,6 +92,7 @@ import { noteLiveSessionData, noteLiveSessionWrite } from '../live-session-meter
 import { assertIpcSender } from '../validate-ipc-sender';
 import { createSharedLinkTap } from './linkSharing';
 import {
+  connectTcpFromMain,
   createTcpBridge,
   registerTcpBridgeIpcHandlers,
   TCP_BRIDGE_CONNECT_TIMEOUT_MS,
@@ -451,6 +452,10 @@ describe('registerTcpBridgeIpcHandlers', () => {
       'meshtastic:tcp-write',
       'meshtastic:tcp-disconnect',
     ]);
+    // The background link keepers open either protocol's link from the main process.
+    void connectTcpFromMain('meshcore', '10.0.0.7', 5000).catch(() => undefined);
+    expect(latestSocket().connectHost).toBe('10.0.0.7');
+    expect(latestSocket().connectPort).toBe(5000);
     expect(TCP_BRIDGE_SOURCE).toContain("writeMissing: 'reject'");
     expect(TCP_BRIDGE_SOURCE).toContain("writeMissing: 'no-socket'");
     expect(TCP_BRIDGE_SOURCE).toContain('assertIpcSender(event, connectChannel)');
@@ -571,6 +576,33 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
     expect(announce).toHaveBeenCalledTimes(2);
     await open(bridge, a.ev);
     expect(sockets).toHaveLength(2);
+  });
+
+  it('reports the open link to tabs opened later, until a user disconnects it', async () => {
+    const tap = createSharedLinkTap({
+      protocol: 'meshtastic',
+      transport: 'tcp',
+      sessionOf: (e) => (e.sender as unknown as { id: number }).id,
+      announce,
+    });
+    const bridge = createTcpBridge({
+      protocol: 'meshtastic',
+      writeMissing: 'no-socket',
+      getMainWindow,
+      validateHost,
+      tap,
+    });
+    expect(tap.current()).toBeNull();
+    const a = tab(1);
+    await open(bridge, a.ev);
+    expect(tap.current()).toEqual({
+      state: 'connected',
+      transport: 'tcp',
+      host: '10.0.0.5',
+      port: 4403,
+    });
+    bridge.disconnect(a.ev);
+    expect(tap.current()).toBeNull();
   });
 
   it('ignores a disconnect from a tab that is not on the link (its pre-connect cleanup)', async () => {

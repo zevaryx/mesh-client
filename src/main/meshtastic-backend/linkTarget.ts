@@ -3,7 +3,10 @@
  * The background ingest's link keeper reconnects to the last target a renderer chose.
  */
 export type MeshtasticLinkTarget =
-  { kind: 'tcp'; host: string; port: number } | { kind: 'http'; host: string; tls: boolean };
+  | { kind: 'tcp'; host: string; port: number }
+  | { kind: 'http'; host: string; tls: boolean }
+  /** Headless: a port on the server (`serial:list` port id). */
+  | { kind: 'serial'; portId: string; baudRate: number };
 
 /**
  * Who opened a link. Only renderers open links over IPC; `backend` links are opened by the
@@ -20,6 +23,12 @@ export interface MeshtasticLinkInfo {
 export function parseMeshtasticLinkTarget(value: unknown): MeshtasticLinkTarget | null {
   if (typeof value !== 'object' || value === null) return null;
   const v = value as Record<string, unknown>;
+  if (v.kind === 'serial') {
+    const { portId, baudRate } = v;
+    if (typeof portId !== 'string' || portId.length === 0 || portId.length > 4096) return null;
+    if (typeof baudRate !== 'number' || !Number.isInteger(baudRate) || baudRate <= 0) return null;
+    return { kind: 'serial', portId, baudRate };
+  }
   if (typeof v.host !== 'string' || v.host.length === 0 || v.host.length > 253) return null;
   if (v.kind === 'tcp') {
     const port = v.port;

@@ -13,20 +13,27 @@ import {
 export interface MeshtasticLinkOpeners {
   connectTcp: (host: string, port: number) => Promise<void>;
   connectHttp: (host: string, tls: boolean) => Promise<void>;
+  /** Headless only: a port on the server. */
+  connectSerial?: (portId: string, baudRate: number) => Promise<void>;
 }
 
 export function meshtasticLinkKeeperDeps(
   open: MeshtasticLinkOpeners,
   getDb: LinkTargetDb,
+  settingKey?: string,
+  logTag?: string,
 ): MeshtasticLinkKeeperDeps {
   return {
-    connect: (target) =>
-      target.kind === 'tcp'
-        ? open.connectTcp(target.host, target.port)
-        : open.connectHttp(target.host, target.tls),
-    loadTarget: () => loadMeshtasticLinkTarget(getDb),
-    saveTarget: (target) => {
-      saveMeshtasticLinkTarget(getDb, target);
+    connect: (target) => {
+      if (target.kind === 'tcp') return open.connectTcp(target.host, target.port);
+      if (target.kind === 'http') return open.connectHttp(target.host, target.tls);
+      if (!open.connectSerial) return Promise.reject(new Error('serial links are not kept here'));
+      return open.connectSerial(target.portId, target.baudRate);
     },
+    loadTarget: () => loadMeshtasticLinkTarget(getDb, settingKey),
+    saveTarget: (target) => {
+      saveMeshtasticLinkTarget(getDb, target, settingKey);
+    },
+    ...(logTag ? { logTag } : {}),
   };
 }

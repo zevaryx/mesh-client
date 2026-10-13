@@ -7,6 +7,7 @@ import {
   MESHTASTIC_LINK_KEEPER_STARTUP_DELAY_MS,
   MeshtasticLinkKeeper,
 } from './linkKeeper';
+import { meshtasticLinkKeeperDeps } from './linkKeeperDeps';
 import { type MeshtasticLinkTarget, parseMeshtasticLinkTarget } from './linkTarget';
 
 const RADIO: MeshtasticLinkTarget = { kind: 'tcp', host: '192.168.1.20', port: 4403 };
@@ -124,6 +125,13 @@ describe('MeshtasticLinkKeeper', () => {
 });
 
 describe('parseMeshtasticLinkTarget', () => {
+  it('accepts serial targets (headless server ports)', () => {
+    const serial = { kind: 'serial', portId: '/dev/serial/by-id/usb-radio', baudRate: 115200 };
+    expect(parseMeshtasticLinkTarget(serial)).toEqual(serial);
+    expect(parseMeshtasticLinkTarget({ ...serial, portId: '' })).toBeNull();
+    expect(parseMeshtasticLinkTarget({ ...serial, baudRate: 'fast' })).toBeNull();
+  });
+
   it('accepts tcp and http targets and rejects malformed values', () => {
     expect(parseMeshtasticLinkTarget(RADIO)).toEqual(RADIO);
     expect(parseMeshtasticLinkTarget({ kind: 'http', host: 'radio.lan', tls: true })).toEqual({
@@ -141,5 +149,36 @@ describe('parseMeshtasticLinkTarget', () => {
     ]) {
       expect(parseMeshtasticLinkTarget(bad)).toBeNull();
     }
+  });
+});
+
+describe('meshtasticLinkKeeperDeps', () => {
+  const open = () => ({
+    connectTcp: vi.fn(() => Promise.resolve()),
+    connectHttp: vi.fn(() => Promise.resolve()),
+  });
+
+  it('opens each kind of link with its opener, under its own settings key', async () => {
+    const o = { ...open(), connectSerial: vi.fn(() => Promise.resolve()) };
+    const get = vi.fn((): unknown => undefined);
+    const run = vi.fn();
+    const db = { prepareOnce: (sql: string) => (sql.startsWith('SELECT') ? { get } : { run }) };
+    const deps = meshtasticLinkKeeperDeps(o, () => db as never, 'meshcoreBackgroundLink', 'mc');
+    await deps.connect({ kind: 'tcp', host: 'r.lan', port: 5000 });
+    await deps.connect({ kind: 'http', host: 'r.lan', tls: false });
+    await deps.connect({ kind: 'serial', portId: '/dev/ttyACM0', baudRate: 115200 });
+    expect(o.connectTcp).toHaveBeenCalledWith('r.lan', 5000);
+    expect(o.connectHttp).toHaveBeenCalledWith('r.lan', false);
+    expect(o.connectSerial).toHaveBeenCalledWith('/dev/ttyACM0', 115200);
+    expect(deps.logTag).toBe('mc');
+    deps.loadTarget();
+    expect(get).toHaveBeenCalledWith('meshcoreBackgroundLink');
+  });
+
+  it('refuses serial targets where serial links are not kept (desktop)', async () => {
+    const deps = meshtasticLinkKeeperDeps(open(), () => null);
+    await expect(
+      deps.connect({ kind: 'serial', portId: '/dev/ttyACM0', baudRate: 115200 }),
+    ).rejects.toThrow('serial links are not kept here');
   });
 });

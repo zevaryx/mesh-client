@@ -83,8 +83,8 @@ export const WEB_BRIDGE_LINK_CHANGED_EVENT = 'headless:linkChanged';
 
 export interface WebBridgeLinkChange {
   protocol: 'meshtastic' | 'meshcore';
-  /** The server bridge: TCP (both protocols) or Meshtastic HTTP polling. */
-  transport: 'tcp' | 'http';
+  /** The server bridge: TCP (both protocols), Meshtastic HTTP polling, or a serial port. */
+  transport: 'tcp' | 'http' | 'serial';
   state: 'connected' | 'disconnected';
   /** Set when `state` is `connected`. */
   host?: string;
@@ -92,14 +92,25 @@ export interface WebBridgeLinkChange {
   port?: number;
   /** HTTP: whether the radio is polled over HTTPS. */
   tls?: boolean;
+  /** Serial: the server's port (`serial:list` port id). */
+  portId?: string;
 }
+
+/**
+ * `() => WebBridgeLinkChange[]`: the radio links the server has open now (all `connected`), so a
+ * tab opened later (another browser, a cleared one) can join them.
+ */
+export const WEB_BRIDGE_LINK_STATE = 'headless:linkState';
 
 export function isWebBridgeLinkChange(value: unknown): value is WebBridgeLinkChange {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   if (v.protocol !== 'meshtastic' && v.protocol !== 'meshcore') return false;
-  if (v.transport !== 'tcp' && v.transport !== 'http') return false;
+  if (v.transport !== 'tcp' && v.transport !== 'http' && v.transport !== 'serial') return false;
   if (v.state === 'disconnected') return true;
+  if (v.transport === 'serial') {
+    return v.state === 'connected' && typeof v.portId === 'string' && v.portId !== '';
+  }
   if (v.state !== 'connected' || typeof v.host !== 'string' || v.host === '') return false;
   return v.transport === 'tcp'
     ? typeof v.port === 'number' && Number.isInteger(v.port)

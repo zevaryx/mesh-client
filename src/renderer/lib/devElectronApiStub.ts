@@ -256,6 +256,7 @@ export function createDevElectronApiStub(): typeof window.electronAPI {
     sharedSession: {
       onDataChanged: () => noop,
       onLinkChanged: () => noop,
+      getLinkState: () => Promise.resolve([]),
     },
     showEmojiPanel: noopAsync,
     clipboard: {

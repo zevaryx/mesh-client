@@ -42,6 +42,12 @@ export interface SharedSessionDeps {
 export interface SharedSessionSync {
   onDataChanged: (change: WebBridgeDataChange) => void;
   onLinkChanged: (change: WebBridgeLinkChange) => void;
+  /**
+   * On load: join the links the server already has open, for protocols this browser has no saved
+   * connection for. A saved connection auto-connects by itself (and the server lets it join the
+   * open link); joining here too would connect twice.
+   */
+  joinOpenLinks: (links: WebBridgeLinkChange[], hasSavedConnection: (p: string) => boolean) => void;
   dispose: () => void;
 }
 
@@ -65,7 +71,7 @@ export function createSharedSessionSync(deps: SharedSessionDeps): SharedSessionS
     });
   };
 
-  return {
+  const sync: SharedSessionSync = {
     onDataChanged: (change) => {
       const key = `${change.protocol}:${change.kind}`;
       const prev = pending.get(key);
@@ -101,29 +107,43 @@ export function createSharedSessionSync(deps: SharedSessionDeps): SharedSessionS
         );
       });
     },
+    joinOpenLinks: (links, hasSavedConnection) => {
+      for (const change of links) {
+        if (change.state !== 'connected' || hasSavedConnection(change.protocol)) continue;
+        sync.onLinkChanged(change);
+      }
+    },
     dispose: () => {
       for (const handle of pending.values()) clearTimer(handle);
       pending.clear();
     },
   };
+  return sync;
 }
 
 /**
  * How to connect to an announced link: the tab that opened it saved its connection type and
  * address (shared browser storage), which also carries what the announcement cannot (HTTP's
  * `https://` choice, MeshCore's `http` name for its network option). Without a matching saved
- * connection: TCP by host and port, HTTP by host.
+ * connection: TCP by host and port, HTTP by host. Serial: the server's port id (the web bridge's
+ * `navigator.serial` offers ports the server has open to every tab).
  */
 export function sharedLinkConnectArgs(
   change: WebBridgeLinkChange,
   saved: { type: string; httpAddress?: string } | null,
-): { type: 'tcp' | 'http'; address: string } | null {
+): { type: 'tcp' | 'http'; address: string } | { type: 'serial'; portId: string } | null {
+  if (change.transport === 'serial') {
+    return change.portId ? { type: 'serial', portId: change.portId } : null;
+  }
   if (saved && (saved.type === 'tcp' || saved.type === 'http') && saved.httpAddress) {
     return { type: saved.type, address: saved.httpAddress };
   }
   if (change.host === undefined) return null;
   if (change.transport === 'http') return { type: 'http', address: change.host };
-  return change.port === undefined
-    ? null
-    : { type: 'tcp', address: formatHostForUrl(change.host, change.port) };
+  if (change.port === undefined) return null;
+  // MeshCore names its TCP option `http` (its connect takes host:port).
+  return {
+    type: change.protocol === 'meshcore' ? 'http' : 'tcp',
+    address: formatHostForUrl(change.host, change.port),
+  };
 }

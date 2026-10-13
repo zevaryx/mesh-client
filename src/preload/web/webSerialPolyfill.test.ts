@@ -91,6 +91,16 @@ describe('web serial polyfill', () => {
     expect(await polyfill.serial.getPorts()).toEqual([port]);
   });
 
+  it('offers ports the server has open in getPorts, so a new browser can join them', async () => {
+    const f = fakeIpc([
+      { ...RADIO, open: true },
+      { ...RADIO, portId: '/dev/ttyUSB1' },
+    ]);
+    const polyfill = createWebSerialPolyfill(f.ipc, memoryStorage());
+    const ports = await polyfill.serial.getPorts();
+    expect(ports.map((p) => p.portId)).toEqual([RADIO.portId]);
+  });
+
   it('rejects with NotFoundError when the picker is cancelled', async () => {
     const f = fakeIpc();
     const polyfill = createWebSerialPolyfill(f.ipc, memoryStorage());

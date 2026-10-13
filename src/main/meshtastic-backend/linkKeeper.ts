@@ -21,6 +21,8 @@ export const MESHTASTIC_LINK_KEEPER_MAX_RETRY_MS = 60 * MS_PER_SECOND;
 
 export interface MeshtasticLinkKeeperDeps {
   connect: (target: MeshtasticLinkTarget) => Promise<void>;
+  /** Log prefix; the MeshCore background keeps its links with this class too. */
+  logTag?: string;
   loadTarget: () => MeshtasticLinkTarget | null;
   saveTarget: (target: MeshtasticLinkTarget | null) => void;
   setTimeout?: (fn: () => void, ms: number) => unknown;
@@ -28,6 +30,7 @@ export interface MeshtasticLinkKeeperDeps {
 }
 
 function describeTarget(t: MeshtasticLinkTarget): string {
+  if (t.kind === 'serial') return `serial ${sanitizeLogMessage(t.portId)}`;
   const host = sanitizeLogMessage(t.host);
   return t.kind === 'tcp' ? `tcp ${host}:${String(t.port)}` : `http ${host}`;
 }
@@ -42,8 +45,10 @@ export class MeshtasticLinkKeeper {
   private disposed = false;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
+  private readonly tag: string;
 
   constructor(private readonly deps: MeshtasticLinkKeeperDeps) {
+    this.tag = deps.logTag ?? 'meshtastic-backend';
     this.setTimer = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer =
       deps.clearTimeout ??
@@ -53,7 +58,7 @@ export class MeshtasticLinkKeeper {
     try {
       this.target = deps.loadTarget();
     } catch (err) {
-      console.warn('[meshtastic-backend] could not load the saved radio link', err);
+      console.warn(`[${this.tag}] could not load the saved radio link`, err);
     }
   }
 
@@ -108,7 +113,7 @@ export class MeshtasticLinkKeeper {
     try {
       this.deps.saveTarget(target);
     } catch (err) {
-      console.warn('[meshtastic-backend] could not save the radio link', err);
+      console.warn(`[${this.tag}] could not save the radio link`, err);
     }
   }
 
@@ -130,14 +135,12 @@ export class MeshtasticLinkKeeper {
     const target = this.target;
     if (!target || !this.wanted()) return;
     this.connecting = true;
-    console.debug(
-      `[meshtastic-backend] no renderer attached; connecting ${describeTarget(target)}`,
-    );
+    console.debug(`[${this.tag}] no renderer attached; connecting ${describeTarget(target)}`);
     try {
       await this.deps.connect(target);
     } catch (err) {
       console.debug(
-        `[meshtastic-backend] connect failed; retrying in ${String(this.retryMs)} ms`,
+        `[${this.tag}] connect failed; retrying in ${String(this.retryMs)} ms`,
         err instanceof Error ? err.message : String(err),
       );
       this.retryMs = Math.min(this.retryMs * 2, MESHTASTIC_LINK_KEEPER_MAX_RETRY_MS);

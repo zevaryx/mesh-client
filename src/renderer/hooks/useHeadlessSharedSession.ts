@@ -35,7 +35,10 @@ export function useHeadlessSharedSession(
         join: (change) => {
           const args = sharedLinkConnectArgs(change, loadLastConnection(protocol));
           if (!args) return Promise.resolve();
-          return connectionsRef.current[protocol].connectAutomatic(args.type, args.address);
+          const conn = connectionsRef.current[protocol];
+          return args.type === 'serial'
+            ? conn.connectAutomatic('serial', undefined, args.portId)
+            : conn.connectAutomatic(args.type, args.address);
         },
         disconnect: () => connectionsRef.current[protocol].disconnect(),
       }),
@@ -43,6 +46,20 @@ export function useHeadlessSharedSession(
     const api = window.electronAPI.sharedSession;
     const offData = api.onDataChanged(sync.onDataChanged);
     const offLink = api.onLinkChanged(sync.onLinkChanged);
+    // A tab opened while the server already holds a radio link (another browser, or the
+    // background after a restart) joins it instead of showing Disconnected.
+    api
+      .getLinkState()
+      .then((links) => {
+        sync.joinOpenLinks(links, (protocol) =>
+          protocol === 'meshtastic' || protocol === 'meshcore'
+            ? loadLastConnection(protocol) !== null
+            : false,
+        );
+      })
+      .catch((err: unknown) => {
+        console.warn('[sharedSession] reading the open links failed', err);
+      });
     return () => {
       offData();
       offLink();

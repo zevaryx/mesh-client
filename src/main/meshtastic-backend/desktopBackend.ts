@@ -51,6 +51,7 @@ export function createDesktopMeshtasticBackend(
   });
   const taps: MeshtasticLinkTaps = {
     tcp: forward('tcp'),
+    serial: forward('serial'),
     http: forward('http'),
     ble: forward('ble'),
   };

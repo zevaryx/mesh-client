@@ -27,6 +27,8 @@ export interface WebSerialPortListing {
   /** USB ids as 4-digit lowercase hex, like Electron's port list. */
   vendorId?: string;
   productId?: string;
+  /** The server has this port open (a tab or the background): every tab may join it. */
+  open?: boolean;
 }
 
 export interface WebSerialOpenResult {
@@ -46,6 +48,7 @@ export function isWebSerialPortListing(value: unknown): value is WebSerialPortLi
     typeof v.displayName === 'string' &&
     typeof v.portName === 'string' &&
     (v.vendorId === undefined || typeof v.vendorId === 'string') &&
-    (v.productId === undefined || typeof v.productId === 'string')
+    (v.productId === undefined || typeof v.productId === 'string') &&
+    (v.open === undefined || typeof v.open === 'boolean')
   );
 }

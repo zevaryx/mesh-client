@@ -304,7 +304,11 @@ export function createWebSerialPolyfill(
 
   serial.getPorts = async () => {
     const granted = loadGranted();
-    return (await listServerPorts()).filter((l) => granted.has(l.portId)).map(portFor);
+    // Ports the server has open are offered to every tab: another tab, or the background, opened
+    // them, and this tab may join without the picker.
+    return (await listServerPorts())
+      .filter((l) => granted.has(l.portId) || l.open === true)
+      .map(portFor);
   };
 
   const answer = (portId: string): void => {

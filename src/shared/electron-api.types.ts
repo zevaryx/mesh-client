@@ -1251,6 +1251,8 @@ export interface ElectronAPI {
   sharedSession: {
     onDataChanged: (cb: (change: WebBridgeDataChange) => void) => () => void;
     onLinkChanged: (cb: (change: WebBridgeLinkChange) => void) => () => void;
+    /** Web UI only: the radio links the server has open now, so a new tab can join them. */
+    getLinkState: () => Promise<WebBridgeLinkChange[]>;
   };
   showEmojiPanel: () => Promise<void>;
 

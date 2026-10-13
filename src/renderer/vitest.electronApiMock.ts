@@ -296,6 +296,7 @@ export function createElectronAPIMock(): ElectronAPI {
     sharedSession: {
       onDataChanged: vi.fn(() => () => {}),
       onLinkChanged: vi.fn(() => () => {}),
+      getLinkState: vi.fn().mockResolvedValue([]),
     },
     showEmojiPanel: vi.fn().mockResolvedValue(undefined),
     media: {

@@ -61,7 +61,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null;
 }
 
-const LINK_KINDS: readonly unknown[] = ['tcp', 'http', 'ble'];
+const LINK_KINDS: readonly unknown[] = ['tcp', 'serial', 'http', 'ble'];
 
 export function isMeshtasticBackendCommand(v: unknown): v is MeshtasticBackendCommand {
   if (!isRecord(v)) return false;
@@ -133,7 +133,12 @@ export function createMeshtasticLinkTaps(send: (cmd: MeshtasticBackendCommand) =
     },
   });
   return {
-    taps: { tcp: tapFor('tcp'), http: tapFor('http'), ble: tapFor('ble') },
+    taps: {
+      tcp: tapFor('tcp'),
+      serial: tapFor('serial'),
+      http: tapFor('http'),
+      ble: tapFor('ble'),
+    },
     write: (frame) => {
       current?.write(frame);
     },

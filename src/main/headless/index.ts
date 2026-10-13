@@ -9,7 +9,13 @@ import path from 'node:path';
 // Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
 import { app, type BrowserWindow as ElectronBrowserWindow, ipcMain } from 'electron';
 
-import { WEB_BRIDGE_LINK_CHANGED_EVENT } from '../../shared/webBridgeDataSync';
+import {
+  WEB_BRIDGE_DATA_CHANGED_EVENT,
+  WEB_BRIDGE_LINK_CHANGED_EVENT,
+  WEB_BRIDGE_LINK_STATE,
+  type WebBridgeDataChange,
+  type WebBridgeLinkChange,
+} from '../../shared/webBridgeDataSync';
 import {
   closeDatabase,
   getDatabase,
@@ -34,7 +40,7 @@ import { registerGattIpcHandlers } from '../ipc/gatt-handlers';
 import { registerGeoIpcHandlers } from '../ipc/geo-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
-import { combineTaps, createSharedLinkTap } from '../ipc/linkSharing';
+import { combineTaps, createSharedLinkTap, type SharedLinkTap } from '../ipc/linkSharing';
 import { registerLogIpcHandlers } from '../ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
 import { registerMqttIpcHandlers } from '../ipc/mqtt-handlers';
@@ -70,12 +76,18 @@ import { ReticulumSidecarManager } from '../reticulum-sidecar-manager';
 import { errorMessageText, sanitizeLogMessage } from '../sanitize-log-message';
 import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from '../tak/tak-server-host';
 import { initUpdater } from '../updater';
+import { assertIpcSender } from '../validate-ipc-sender';
 import { formatHeadlessAccessUrl, HeadlessConfigError, resolveHeadlessConfig } from './config';
 import { BrowserWindow, configureHeadlessApp, configureHeadlessSafeStorage } from './electronShim';
 import { registerHeadlessAppHandlers } from './headlessAppHandlers';
 import { headlessIpcRegistry } from './ipcRegistry';
+import { type MeshcoreBackgroundHost, startMeshcoreBackground } from './meshcoreBackgroundHost';
 import { createMqttConnectionReuse } from './mqttConnectionReuse';
-import { registerSerialBridgeIpcHandlers, type SerialBridge } from './serialBridge';
+import {
+  registerSerialBridgeIpcHandlers,
+  type SerialBridge,
+  type SerialLinkProtocol,
+} from './serialBridge';
 import { openSerialDevice } from './serialDevice';
 import { listSerialPorts } from './serialPorts';
 import { createHeadlessWebServer } from './webServer';
@@ -115,6 +127,8 @@ let meshtasticBackend: MeshtasticBackendHandle | null = null;
 const persistMeshtasticBackendRecord = createMeshtasticBackendPersist(
   mainMeshtasticBackendPersistDb(),
 );
+/** MeshCore background session (TCP / serial companion while no tab is open); `null` when off. */
+let meshcoreBackground: MeshcoreBackgroundHost | null = null;
 /** Browser tabs connected right now (bridge sessions). */
 let attachedTabs = 0;
 /** Map tile cache under the data dir (same layout as the desktop app's userData). */
@@ -132,8 +146,30 @@ function startMeshtasticBackend(): MeshtasticBackendHandle {
       sendMeshtasticBackendCaughtUp(pushTarget(), { count });
     },
   });
-  // Reconnects TCP / HTTP to the last radio a tab used, e.g. after a server restart.
-  return withMeshtasticLinkKeeper(ingest, mainMeshtasticLinkKeeperDeps());
+  // Reconnects TCP / HTTP / serial to the last radio a tab used, e.g. after a server restart.
+  return withMeshtasticLinkKeeper(
+    ingest,
+    mainMeshtasticLinkKeeperDeps(openSerialFromMain('meshtastic')),
+  );
+}
+
+/** Link keepers reopen a serial port through the bridge (registered with the handlers). */
+const openSerialFromMain =
+  (protocol: SerialLinkProtocol) =>
+  (portId: string, baudRate: number): Promise<void> =>
+    serialBridge
+      ? serialBridge.openFromMain(portId, baudRate, protocol)
+      : Promise.reject(new Error('serial bridge not registered'));
+
+function startHeadlessMeshcoreBackground(): MeshcoreBackgroundHost {
+  return startMeshcoreBackground({
+    onCaughtUp: (count) => {
+      console.debug(`[headless] MeshCore: ${count} message(s) stored while no tab was attached`);
+      const change: WebBridgeDataChange = { protocol: 'meshcore', kind: 'messages' };
+      pushTarget()?.webContents.send(WEB_BRIDGE_DATA_CHANGED_EVENT, change);
+    },
+    connectSerial: openSerialFromMain('meshcore'),
+  });
 }
 
 /**
@@ -144,18 +180,26 @@ const sessionOfTab = (event: { sender: unknown }): number | null => {
   const id = (event.sender as { id?: unknown }).id;
   return typeof id === 'number' ? id : null;
 };
-const sharedLinkTap = (protocol: 'meshtastic' | 'meshcore', transport: 'tcp' | 'http') =>
-  createSharedLinkTap({
+const announceLink = (change: WebBridgeLinkChange): void => {
+  pushTarget()?.webContents.send(WEB_BRIDGE_LINK_CHANGED_EVENT, change);
+};
+/** Every shared tap, so `headless:linkState` can list the open links. */
+const sharedLinkTaps: { protocol: 'meshtastic' | 'meshcore'; tap: SharedLinkTap }[] = [];
+const sharedLinkTap = (protocol: 'meshtastic' | 'meshcore', transport: 'tcp' | 'http') => {
+  const tap = createSharedLinkTap({
     protocol,
     transport,
     sessionOf: sessionOfTab,
     announce: (p, change) => {
-      pushTarget()?.webContents.send(WEB_BRIDGE_LINK_CHANGED_EVENT, { protocol: p, ...change });
+      announceLink({ protocol: p, ...change });
     },
     broadcast: (frame) => {
       pushTarget()?.webContents.send(`${protocol}:tcp-data`, frame);
     },
   });
+  sharedLinkTaps.push({ protocol, tap });
+  return tap;
+};
 
 /** Register every handler module that runs headless. Grow this list as modules are ported. */
 function registerHeadlessHandlers(window: BrowserWindow): void {
@@ -173,7 +217,7 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     getMainWindow: pushTarget,
     validateHost: validateHttpHost,
     meshtasticTap: combineTaps(meshtasticBackend?.taps.tcp, sharedLinkTap('meshtastic', 'tcp')),
-    meshcoreTap: sharedLinkTap('meshcore', 'tcp'),
+    meshcoreTap: combineTaps(meshcoreBackground?.taps.tcp, sharedLinkTap('meshcore', 'tcp')),
   });
   registerHttpBridgeIpcHandlers({
     getMainWindow: pushTarget,
@@ -247,6 +291,22 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   serialBridge = registerSerialBridgeIpcHandlers({
     listPorts: () => listSerialPorts(process.platform),
     openDevice: (devicePath, baudRate) => openSerialDevice(devicePath, baudRate),
+    taps: {
+      ...(meshtasticBackend ? { meshtastic: meshtasticBackend.taps.serial } : {}),
+      ...(meshcoreBackground ? { meshcore: meshcoreBackground.taps.serial } : {}),
+    },
+    announce: announceLink,
+  });
+  // The links open right now, for a tab opened later (another browser) to join.
+  ipcMain.handle(WEB_BRIDGE_LINK_STATE, (event): WebBridgeLinkChange[] => {
+    assertIpcSender(event, WEB_BRIDGE_LINK_STATE);
+    return [
+      ...sharedLinkTaps.flatMap(({ protocol, tap }) => {
+        const open = tap.current();
+        return open ? [{ protocol, ...open }] : [];
+      }),
+      ...(serialBridge?.openLinks() ?? []),
+    ];
   });
   registerBluetoothctlIpcHandlers();
   registerGattIpcHandlers({
@@ -332,6 +392,7 @@ async function main(): Promise<void> {
   }
 
   if (config.meshtasticBackgroundIngest) meshtasticBackend = startMeshtasticBackend();
+  if (config.meshcoreBackgroundIngest) meshcoreBackground = startHeadlessMeshcoreBackground();
   tileCache = createTileCache(config.dataDir);
   const server = createHeadlessWebServer({
     registry: headlessIpcRegistry,
@@ -352,6 +413,7 @@ async function main(): Promise<void> {
     onSessionCountChange: (count) => {
       attachedTabs = count;
       meshtasticBackend?.setRendererPresent(count > 0);
+      meshcoreBackground?.setRendererPresent(count > 0);
     },
   });
   const window = new BrowserWindow(server.broadcast);
@@ -380,6 +442,7 @@ async function main(): Promise<void> {
     window.destroy();
     destroyRegisteredTcpBridgeSockets('headless shutdown');
     meshtasticBackend?.dispose();
+    meshcoreBackground?.dispose();
     disposeTranslation?.();
     stopHttpBridgePolling();
     serialBridge?.closeAll();

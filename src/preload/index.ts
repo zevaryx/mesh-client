@@ -74,6 +74,7 @@ import {
   isWebBridgeLinkChange,
   WEB_BRIDGE_DATA_CHANGED_EVENT,
   WEB_BRIDGE_LINK_CHANGED_EVENT,
+  WEB_BRIDGE_LINK_STATE,
   type WebBridgeDataChange,
   type WebBridgeLinkChange,
 } from '../shared/webBridgeDataSync';
@@ -1131,6 +1132,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       };
       ipcRenderer.on(WEB_BRIDGE_LINK_CHANGED_EVENT, handler);
       return () => ipcRenderer.off(WEB_BRIDGE_LINK_CHANGED_EVENT, handler);
+    },
+    /** Web UI only (the desktop app has no such links): the radio links the server has open. */
+    getLinkState: async (): Promise<WebBridgeLinkChange[]> => {
+      const value: unknown = await ipcRenderer.invoke(WEB_BRIDGE_LINK_STATE);
+      return Array.isArray(value) ? value.filter(isWebBridgeLinkChange) : [];
     },
   },
   showEmojiPanel: () => ipcRenderer.invoke('app:showEmojiPanel'),

@@ -1,8 +1,8 @@
 /**
- * Compose a background-ingest handle with the link keeper: the keeper sees the TCP and HTTP taps
- * (it can reopen those links itself) and renderer presence. BLE is passed through untouched:
- * reopening a BLE session needs the sidecar's pairing and coexistence flow, which stays
- * renderer-driven.
+ * Compose a background-ingest handle with the link keeper: the keeper sees the TCP, HTTP and
+ * serial taps (it can reopen those links itself; serial on the headless server only) and renderer
+ * presence. BLE is passed through untouched: reopening a BLE session needs the sidecar's pairing
+ * and coexistence flow, which stays renderer-driven.
  */
 import type { MeshtasticBackendHandle } from './hostProtocol';
 import { MeshtasticLinkKeeper, type MeshtasticLinkKeeperDeps } from './linkKeeper';
@@ -16,6 +16,7 @@ export function withMeshtasticLinkKeeper(
   return {
     taps: {
       tcp: keeper.wrap(handle.taps.tcp),
+      serial: keeper.wrap(handle.taps.serial),
       http: keeper.wrap(handle.taps.http),
       ble: handle.taps.ble,
     },
