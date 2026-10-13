@@ -514,6 +514,7 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
     await open(bridge, tab(1).ev);
     expect(announce).toHaveBeenCalledWith('meshtastic', {
       state: 'connected',
+      transport: 'tcp',
       host: '10.0.0.5',
       port: 4403,
     });
@@ -558,7 +559,10 @@ describe('createTcpBridge shared viewing (headless tabs)', () => {
     await open(bridge, a.ev);
     await bridge.connect(tab(2).ev, '10.0.0.5', 4403);
     bridge.disconnect(a.ev);
-    expect(announce).toHaveBeenLastCalledWith('meshtastic', { state: 'disconnected' });
+    expect(announce).toHaveBeenLastCalledWith('meshtastic', {
+      state: 'disconnected',
+      transport: 'tcp',
+    });
     // Disconnect with no link (the other tab following it) is not announced again.
     bridge.disconnect(tab(2).ev);
     expect(announce).toHaveBeenCalledTimes(2);

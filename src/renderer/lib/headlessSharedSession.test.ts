@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createSharedSessionSync,
   SHARED_SESSION_RELOAD_DEBOUNCE_MS,
+  sharedLinkConnectArgs,
 } from './headlessSharedSession';
 
 function setup(status = 'disconnected') {
@@ -12,7 +13,7 @@ function setup(status = 'disconnected') {
   };
   const link = {
     status: vi.fn(() => status),
-    connectTcp: vi.fn(() => Promise.resolve()),
+    join: vi.fn(() => Promise.resolve()),
     disconnect: vi.fn(() => Promise.resolve()),
   };
   const sync = createSharedSessionSync({ refresh: () => refresh, link: () => link });
@@ -47,7 +48,7 @@ describe('createSharedSessionSync', () => {
       host: 'fd00::1',
       port: 4403,
     });
-    expect(t.link.connectTcp).toHaveBeenCalledWith('[fd00::1]:4403');
+    expect(t.link.join).toHaveBeenCalledWith(expect.objectContaining({ host: 'fd00::1' }));
     const busy = setup('configured');
     busy.sync.onLinkChanged({
       protocol: 'meshcore',
@@ -56,7 +57,7 @@ describe('createSharedSessionSync', () => {
       host: '10.0.0.5',
       port: 5000,
     });
-    expect(busy.link.connectTcp).not.toHaveBeenCalled();
+    expect(busy.link.join).not.toHaveBeenCalled();
   });
 
   it("follows another tab's disconnect, and ignores it when already disconnected", () => {
@@ -76,7 +77,7 @@ describe('createSharedSessionSync', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const t = setup();
     t.refresh.refreshMessagesFromDb.mockRejectedValueOnce(new Error('db closed'));
-    t.link.connectTcp.mockRejectedValueOnce(new Error('refused'));
+    t.link.join.mockRejectedValueOnce(new Error('refused'));
     t.sync.onDataChanged({ protocol: 'meshcore', kind: 'messages' });
     vi.advanceTimersByTime(SHARED_SESSION_RELOAD_DEBOUNCE_MS);
     t.sync.onLinkChanged({
@@ -89,5 +90,53 @@ describe('createSharedSessionSync', () => {
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledTimes(2);
     });
+  });
+});
+
+describe('sharedLinkConnectArgs', () => {
+  const tcp = {
+    protocol: 'meshtastic',
+    transport: 'tcp',
+    state: 'connected',
+    host: 'fd00::1',
+    port: 4403,
+  } as const;
+
+  it("reuses the connecting tab's saved type and address (HTTPS, MeshCore's http)", () => {
+    expect(sharedLinkConnectArgs(tcp, { type: 'http', httpAddress: '10.0.0.5:5000' })).toEqual({
+      type: 'http',
+      address: '10.0.0.5:5000',
+    });
+    expect(
+      sharedLinkConnectArgs(
+        { protocol: 'meshtastic', transport: 'http', state: 'connected', host: 'r.lan', tls: true },
+        { type: 'http', httpAddress: 'https://r.lan' },
+      ),
+    ).toEqual({ type: 'http', address: 'https://r.lan' });
+  });
+
+  it('falls back to the announced target', () => {
+    expect(sharedLinkConnectArgs(tcp, { type: 'ble' })).toEqual({
+      type: 'tcp',
+      address: '[fd00::1]:4403',
+    });
+    expect(
+      sharedLinkConnectArgs(
+        {
+          protocol: 'meshtastic',
+          transport: 'http',
+          state: 'connected',
+          host: 'r.lan',
+          tls: false,
+        },
+        null,
+      ),
+    ).toEqual({ type: 'http', address: 'r.lan' });
+    expect(
+      sharedLinkConnectArgs(
+        { protocol: 'meshcore', transport: 'tcp', state: 'disconnected' },
+        null,
+      ),
+    ).toBeNull();
   });
 });

@@ -53,5 +53,22 @@ describe('webBridgeDataSync', () => {
     expect(
       isWebBridgeLinkChange({ protocol: 'meshcore', transport: 'tcp', state: 'disconnected' }),
     ).toBe(true);
+    expect(
+      isWebBridgeLinkChange({
+        protocol: 'meshtastic',
+        transport: 'http',
+        state: 'connected',
+        host: 'r.lan',
+        tls: false,
+      }),
+    ).toBe(true);
+    expect(
+      isWebBridgeLinkChange({
+        protocol: 'meshtastic',
+        transport: 'http',
+        state: 'connected',
+        host: 'r.lan',
+      }),
+    ).toBe(false);
   });
 });

@@ -27,7 +27,8 @@ export interface SharedSessionRefresh {
 
 export interface SharedSessionLinkActions {
   status: () => string;
-  connectTcp: (address: string) => Promise<void>;
+  /** Join the link another tab opened (the server attaches this tab to it). */
+  join: (change: WebBridgeLinkChange) => Promise<void>;
   disconnect: () => Promise<void>;
 }
 
@@ -81,12 +82,9 @@ export function createSharedSessionSync(deps: SharedSessionDeps): SharedSessionS
       const link = deps.link(change.protocol);
       const status = link.status();
       if (change.state === 'connected') {
-        if (status !== 'disconnected' || change.host === undefined || change.port === undefined) {
-          return;
-        }
-        const address = formatHostForUrl(change.host, change.port);
+        if (status !== 'disconnected') return;
         console.debug(`[sharedSession] ${change.protocol}: joining the link another tab opened`);
-        link.connectTcp(address).catch((err: unknown) => {
+        link.join(change).catch((err: unknown) => {
           console.warn(
             `[sharedSession] ${change.protocol}: joining the shared link failed ` +
               errLikeToLogString(err),
@@ -108,4 +106,24 @@ export function createSharedSessionSync(deps: SharedSessionDeps): SharedSessionS
       pending.clear();
     },
   };
+}
+
+/**
+ * How to connect to an announced link: the tab that opened it saved its connection type and
+ * address (shared browser storage), which also carries what the announcement cannot (HTTP's
+ * `https://` choice, MeshCore's `http` name for its network option). Without a matching saved
+ * connection: TCP by host and port, HTTP by host.
+ */
+export function sharedLinkConnectArgs(
+  change: WebBridgeLinkChange,
+  saved: { type: string; httpAddress?: string } | null,
+): { type: 'tcp' | 'http'; address: string } | null {
+  if (saved && (saved.type === 'tcp' || saved.type === 'http') && saved.httpAddress) {
+    return { type: saved.type, address: saved.httpAddress };
+  }
+  if (change.host === undefined) return null;
+  if (change.transport === 'http') return { type: 'http', address: change.host };
+  return change.port === undefined
+    ? null
+    : { type: 'tcp', address: formatHostForUrl(change.host, change.port) };
 }

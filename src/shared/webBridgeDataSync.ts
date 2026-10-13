@@ -83,24 +83,25 @@ export const WEB_BRIDGE_LINK_CHANGED_EVENT = 'headless:linkChanged';
 
 export interface WebBridgeLinkChange {
   protocol: 'meshtastic' | 'meshcore';
-  transport: 'tcp';
+  /** The server bridge: TCP (both protocols) or Meshtastic HTTP polling. */
+  transport: 'tcp' | 'http';
   state: 'connected' | 'disconnected';
   /** Set when `state` is `connected`. */
   host?: string;
+  /** TCP: the port. */
   port?: number;
+  /** HTTP: whether the radio is polled over HTTPS. */
+  tls?: boolean;
 }
 
 export function isWebBridgeLinkChange(value: unknown): value is WebBridgeLinkChange {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   if (v.protocol !== 'meshtastic' && v.protocol !== 'meshcore') return false;
-  if (v.transport !== 'tcp') return false;
+  if (v.transport !== 'tcp' && v.transport !== 'http') return false;
   if (v.state === 'disconnected') return true;
-  return (
-    v.state === 'connected' &&
-    typeof v.host === 'string' &&
-    v.host !== '' &&
-    typeof v.port === 'number' &&
-    Number.isInteger(v.port)
-  );
+  if (v.state !== 'connected' || typeof v.host !== 'string' || v.host === '') return false;
+  return v.transport === 'tcp'
+    ? typeof v.port === 'number' && Number.isInteger(v.port)
+    : typeof v.tls === 'boolean';
 }

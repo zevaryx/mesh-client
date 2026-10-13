@@ -14,6 +14,7 @@ import { logDeviceConnection, sanitizeLogMessage } from '../log-service';
 import type { MeshtasticLinkOrigin } from '../meshtastic-backend/linkTarget';
 import type { RendererPushTarget } from '../rendererPushTarget';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
+import { type LinkSharing, SharedLinkMembers } from './linkSharing';
 import type { TcpBridgeTap } from './tcp-bridge';
 
 let httpDevice: {
@@ -100,6 +101,12 @@ export interface HttpBridgeIpcDeps {
   getMainWindow: () => RendererPushTarget | null;
   /** Meshtastic background ingest: sees each polled FromRadio (same shape as `TcpBridgeTap`). */
   meshtasticTap?: TcpBridgeTap;
+  /**
+   * Headless only: share the polled link between browser tabs, like the TCP bridge
+   * (`TcpBridgeSharing`): a tab connecting to the polled host joins it, link starts and user
+   * disconnects are announced, and a disconnect from a tab not on the link is ignored.
+   */
+  sharing?: LinkSharing;
 }
 
 /** Background-ingest tap of the registered bridge (one per process, like `httpDevice`). */
@@ -164,6 +171,8 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     }
     return snapshotLiveSessionMeter(protocol);
   });
+
+  const members = deps.sharing ? new SharedLinkMembers(deps.sharing) : null;
 
   /** Preflight, then poll `fromradio` until replaced or disconnected. */
   const startHttpLink = async (
@@ -235,6 +244,8 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     logDeviceConnection(
       `transport=http stack=meshtastic host=${sanitizeLogMessage(host)} tls=${tls}`,
     );
+    members?.clear();
+    deps.sharing?.announce('meshtastic', { state: 'connected', transport: 'http', host, tls });
   };
   startMeshtasticHttpFromMain = (host, tls) => startHttpLink(host, tls, 'backend');
 
@@ -244,7 +255,13 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
     if (typeof tls !== 'boolean') {
       throw new Error('Invalid tls');
     }
+    // Shared viewing: join the link another tab is polling instead of restarting it.
+    if (members?.isOutsider(event) && httpDevice?.host === host && httpDevice.tls === tls) {
+      members.join(event);
+      return;
+    }
     await startHttpLink(host, tls, 'renderer');
+    members?.join(event);
   });
 
   ipcMain.handle('http:write', async (event, data: number[]) => {
@@ -265,9 +282,13 @@ export function registerHttpBridgeIpcHandlers(deps: HttpBridgeIpcDeps): void {
 
   ipcMain.handle('http:disconnect', (event) => {
     assertIpcSender(event, 'http:disconnect');
+    // Shared viewing: a tab not on the link is cleaning up before its own connect.
+    if (httpDevice && members?.isOutsider(event)) return;
     if (httpDevice) {
       console.debug('[IPC] http:disconnect');
       stopHttpDevice();
+      members?.clear();
+      deps.sharing?.announce('meshtastic', { state: 'disconnected', transport: 'http' });
     }
     // An explicit renderer disconnect: stop any background reconnect.
     httpTap?.onUserDisconnect?.();
