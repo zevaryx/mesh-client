@@ -31,6 +31,7 @@ import {
 } from '../../shared/webBridgeProtocol';
 import { type BrowserLocalInvoke, createBrowserLocalInvokes } from './browserLocalInvokes';
 import { installHeadlessFileTransfer } from './headlessFileTransfer';
+import { installInsecureContextFallbacks } from './insecureContextFallbacks';
 import { createWebSerialPolyfill, type WebSerialPolyfill } from './webSerialPolyfill';
 
 type IpcListener = (event: IpcRendererEventLike, ...args: unknown[]) => void;
@@ -384,6 +385,7 @@ export const contextBridge = {
     Object.defineProperty(window, key, { value: api, configurable: false, writable: false });
     // Serial ports are the server's, so the renderer's Web Serial code reaches the radio there.
     if (key === 'electronAPI') {
+      installInsecureContextFallbacks(window);
       Object.defineProperty(navigator, 'serial', {
         value: getWebSerial().serial,
         configurable: true,
