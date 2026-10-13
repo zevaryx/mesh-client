@@ -59,6 +59,8 @@ docker run --rm -p 8080:8080 -v mesh-client-data:/data \
   -e MESH_CLIENT_SECRET_KEY_FILE=/run/secrets/mesh-secret.key mesh-client-web
 ```
 
+For a local test, `compose.yaml` builds the image and serves it on `127.0.0.1:8080` (token and key from a `.env` file, with throwaway defaults); `docker compose --profile fake-radios up --build` adds the fake Meshtastic and MeshCore radios at `127.0.0.1:4403` and `127.0.0.1:5000` (the server's own loopback). Bluetooth and serial passthrough are there, commented out.
+
 The server bundle is self-contained (`HEADLESS_SERVER_EXTERNALS = []`), so the runtime image holds only Node, `dist/renderer` and `dist-headless/`. The image runs as `node`, keeps state in the `/data` volume and has a `/healthz` health check. Behind a Docker Hub rate limit or mirror: `--build-arg NODE_IMAGE=mirror.gcr.io/library/node`.
 
 | Variable                            | Default                     | Meaning                                                                                            |

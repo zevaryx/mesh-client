@@ -60,3 +60,6 @@ docs/contributing.md
 docs/install.md
 docs/features.md
 __pycache__/
+
+# compose.yaml settings (web token, secret key)
+.env

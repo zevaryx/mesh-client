@@ -1,0 +1,85 @@
+# Headless web UI for testing: builds the local Dockerfile and serves it on this machine only.
+# Details: docs/development/headless-webui.md
+#
+#   docker compose up --build                            # server only
+#   docker compose --profile fake-radios up --build      # plus fake Meshtastic + MeshCore radios
+#
+# Open http://127.0.0.1:8080/?token=<MESH_CLIENT_WEB_TOKEN>. With the fake radios, connect over
+# WiFi/TCP to 127.0.0.1:4403 (Meshtastic) or 127.0.0.1:5000 (MeshCore): they share the server's
+# network, so "127.0.0.1" is the server's own loopback, not your machine's.
+#
+# Set your own values in a .env file next to this one (or the shell environment):
+#   MESH_CLIENT_WEB_TOKEN=<at least 16 characters>
+#   MESH_CLIENT_SECRET_KEY=<at least 16 characters; keeps saved credentials across restarts>
+# Both are visible in `docker inspect`; for anything beyond local testing use the *_FILE
+# variables with Docker secrets instead (see the docs).
+
+name: mesh-client-web
+
+services:
+  mesh-client:
+    build:
+      context: .
+      # Behind a Docker Hub rate limit:
+      # args:
+      #   NODE_IMAGE: mirror.gcr.io/library/node
+      #   RUST_IMAGE: mirror.gcr.io/library/rust
+    image: mesh-client-web:local
+    restart: unless-stopped
+    ports:
+      # Loopback only. To reach it from other machines, drop "127.0.0.1:" and put it behind an
+      # HTTPS reverse proxy (docs: Reverse proxy).
+      - '127.0.0.1:8080:8080'
+      # TAK server, when started in the app:
+      # - '127.0.0.1:8089:8089'
+    environment:
+      MESH_CLIENT_WEB_TOKEN: ${MESH_CLIENT_WEB_TOKEN:-mesh-client-test-token-change-me}
+      MESH_CLIENT_SECRET_KEY: ${MESH_CLIENT_SECRET_KEY:-mesh-client-test-key-change-me}
+    # USB serial radios plugged into this machine (Linux hosts). The container runs as uid 1000,
+    # so it also needs the device's group (dialout on Debian / Ubuntu; check `ls -l /dev/ttyUSB0`).
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0
+    # group_add:
+    #   - dialout
+    #
+    # Only where the host's BlueZ policy is limited to the bluetooth group, add its numeric id
+    # (getent group bluetooth) to group_add.
+    volumes:
+      - mesh-client-data:/data
+
+      # Bluetooth (Linux hosts with BlueZ running): the host's system D-Bus. Long syntax so a
+      # missing socket fails instead of creating a directory in its place.
+      # - type: bind
+      #   source: /run/dbus/system_bus_socket
+      #   target: /run/dbus/system_bus_socket
+      #   bind:
+      #     create_host_path: false
+
+  # Fake radios for testing without hardware (profile "fake-radios"). They run from the build
+  # stage, which has the repo's scripts and node_modules, inside the server's network namespace.
+  fake-meshtastic:
+    profiles: [fake-radios]
+    build:
+      context: .
+      target: build
+    image: mesh-client-web:build
+    working_dir: /src
+    command: [node, scripts/fake-meshtastic-radio.mjs, --port, '4403', --chatter-ms, '15000']
+    network_mode: service:mesh-client
+    depends_on: [mesh-client]
+    restart: unless-stopped
+
+  fake-meshcore:
+    profiles: [fake-radios]
+    build:
+      context: .
+      target: build
+    image: mesh-client-web:build
+    working_dir: /src
+    command: [node, scripts/fake-meshcore-radio.mjs, --port, '5000', --chatter-ms, '15000']
+    network_mode: service:mesh-client
+    depends_on: [mesh-client, fake-meshtastic]
+    restart: unless-stopped
+
+volumes:
+  mesh-client-data:
