@@ -7336,5 +7336,12 @@
     "sampleCounts": "3 个对话，示例",
     "connection": "连接",
     "futurePanels": "原生应用计划加入更多面板。"
+  },
+  "mobileApp": {
+    "linkReady": "电台已连接",
+    "noRadio": "无电台",
+    "notConnected": "未连接",
+    "statusBar": "连接状态",
+    "unread": "{{count}} 条未读"
   }
 }

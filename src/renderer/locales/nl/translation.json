@@ -7336,5 +7336,12 @@
     "directMessage": "Direct bericht",
     "app": "App",
     "connection": "Verbinding"
+  },
+  "mobileApp": {
+    "linkReady": "Radio verbonden",
+    "noRadio": "Geen radio",
+    "notConnected": "Niet verbonden",
+    "statusBar": "Verbindingsstatus",
+    "unread": "{{count}} ongelezen"
   }
 }

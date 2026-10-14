@@ -14,6 +14,10 @@ export interface ProtocolSwitcherProps {
   onSelect: (protocol: MeshProtocol) => void;
   contexts: Record<MeshProtocol, { radioName: string; connected: boolean; unreadCount: number }>;
   wide?: boolean;
+  /** Protocols to offer (the enabled ones in the app); every registered protocol by default. */
+  protocols?: readonly MeshProtocol[];
+  /** Live radio state (the web UI's mobile shell) rather than the prototype's sample labels. */
+  live?: boolean;
 }
 
 export function ProtocolSwitcher({
@@ -21,6 +25,8 @@ export function ProtocolSwitcher({
   onSelect,
   contexts,
   wide = false,
+  protocols = REGISTERED_MESH_PROTOCOLS,
+  live = false,
 }: ProtocolSwitcherProps) {
   const { t } = useTranslation();
   const id = useId();
@@ -136,6 +142,7 @@ export function ProtocolSwitcher({
         <div className="mobile-protocol-rail-control">
           <SharedProtocolSwitcher
             protocol={protocol}
+            protocols={protocols}
             unreadByProtocol={unreadByProtocol}
             onProtocolChange={onSelect}
             orientation="vertical"
@@ -191,13 +198,14 @@ export function ProtocolSwitcher({
           <div className="mobile-protocol-segments">
             <SharedProtocolSwitcher
               protocol={protocol}
+              protocols={protocols}
               unreadByProtocol={unreadByProtocol}
               onProtocolChange={selectFromSheet}
               orientation="horizontal"
             />
           </div>
           <div className="mobile-protocol-context-list">
-            {REGISTERED_MESH_PROTOCOLS.map((value) => {
+            {protocols.map((value) => {
               const theme = PROTOCOL_THEME[value];
               const context = contexts[value];
               return (
@@ -212,15 +220,19 @@ export function ProtocolSwitcher({
                     </span>
                     <span className="mobile-protocol-context-status text-label text-muted">
                       <StatusDot tone={context.connected ? 'ok' : 'idle'} />
-                      {t(
-                        context.connected
-                          ? 'mobilePrototype.sampleLinkReady'
-                          : 'mobilePrototype.notConnected',
-                      )}
+                      {live
+                        ? t(context.connected ? 'mobileApp.linkReady' : 'mobileApp.notConnected')
+                        : t(
+                            context.connected
+                              ? 'mobilePrototype.sampleLinkReady'
+                              : 'mobilePrototype.notConnected',
+                          )}
                     </span>
                   </span>
                   <span className="mobile-protocol-unread text-label text-muted">
-                    {t('mobilePrototype.sampleUnread', { count: context.unreadCount })}
+                    {live
+                      ? t('mobileApp.unread', { count: context.unreadCount })
+                      : t('mobilePrototype.sampleUnread', { count: context.unreadCount })}
                   </span>
                 </div>
               );

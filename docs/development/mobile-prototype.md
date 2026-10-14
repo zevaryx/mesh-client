@@ -4,6 +4,8 @@ This draft begins Mesh Client's iOS and Android work with a responsive UI shell 
 
 Reviewer controls, shell navigation, and the protocol switcher can change the displayed mock view. Each protocol has its own sample radio, conversation, current scene, and locally editable draft. Switching protocols restores that protocol's scene and draft within the current browser session. Connection, pairing, reconnect, and disconnect controls only navigate between static scenes. The send and retry-message controls are disabled visual placeholders. There is no real or simulated connection workflow, message queue, or message delivery. The prototype does not access hardware, invoke Electron IPC, show OS prompts, or open OS settings. Sample radio and message statuses are design fixtures, and native packets are never sent.
 
+The headless web UI already uses this shell on phone-sized screens, with the app's live panels inside it instead of the sample scenes; see [Headless web UI: Phones](headless-webui.md#phones).
+
 ## Run and build
 
 Run these commands from the repository root after the normal [development setup](../development-environment.md):

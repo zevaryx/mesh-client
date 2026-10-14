@@ -7215,6 +7215,13 @@
     },
     "fitTraffic": "Fit traffic"
   },
+  "mobileApp": {
+    "linkReady": "Radio connected",
+    "noRadio": "No radio",
+    "notConnected": "Not connected",
+    "statusBar": "Connection status",
+    "unread": "{{count}} unread"
+  },
   "mobilePrototype": {
     "brand": "Mesh Client",
     "briefTitle": "Your mesh, in your hand.",

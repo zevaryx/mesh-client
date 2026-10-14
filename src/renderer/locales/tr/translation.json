@@ -7336,5 +7336,12 @@
     "sampleCounts": "3 konuşma, örnek",
     "connection": "Bağlantı",
     "futurePanels": "Yerel uygulama için daha fazla panel planlanıyor."
+  },
+  "mobileApp": {
+    "linkReady": "Telsiz bağlı",
+    "noRadio": "Telsiz yok",
+    "notConnected": "Bağlı değil",
+    "statusBar": "Bağlantı durumu",
+    "unread": "{{count}} okunmamış"
   }
 }

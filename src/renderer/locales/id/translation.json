@@ -7336,5 +7336,12 @@
     "sampleCounts": "3 percakapan, contoh",
     "connection": "Koneksi",
     "futurePanels": "Panel lainnya direncanakan untuk aplikasi native."
+  },
+  "mobileApp": {
+    "linkReady": "Radio terhubung",
+    "noRadio": "Tidak ada radio",
+    "notConnected": "Tidak terhubung",
+    "statusBar": "Status koneksi",
+    "unread": "{{count}} belum dibaca"
   }
 }

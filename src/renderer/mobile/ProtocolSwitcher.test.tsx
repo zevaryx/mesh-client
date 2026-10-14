@@ -89,6 +89,31 @@ describe('mobile ProtocolSwitcher', () => {
     expect(within(dialog).getByText('No radio connected')).toBeInTheDocument();
   });
 
+  it('offers only the given protocols with live link wording (web UI mobile shell)', async () => {
+    const user = userEvent.setup();
+    render(
+      <ProtocolSwitcher
+        live
+        protocol="meshtastic"
+        protocols={['meshtastic', 'meshcore']}
+        contexts={contexts}
+        onSelect={vi.fn()}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Switch protocol, current Meshtastic' }));
+    const dialog = screen.getByRole('dialog', { name: 'Choose a protocol' });
+    expect(
+      within(dialog)
+        .getAllByRole('radio')
+        .map((r) => r.getAttribute('aria-label')),
+    ).toEqual(['Switch to Meshtastic', 'Switch to MeshCore, 3 unread']);
+    expect(within(dialog).queryByText('Field RNode')).not.toBeInTheDocument();
+    expect(within(dialog).getByText('Radio connected')).toBeInTheDocument();
+    expect(within(dialog).getByText('Not connected')).toBeInTheDocument();
+    expect(within(dialog).getByText('3 unread')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/sample/)).not.toBeInTheDocument();
+  });
+
   it('calls the controlled selection callback and restores focus to the trigger', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();

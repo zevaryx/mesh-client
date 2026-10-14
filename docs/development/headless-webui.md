@@ -255,11 +255,20 @@ Several browser tabs (or people) can use one server at once. Each tab runs its o
 
 `getPlatform()` reports the **server's** OS (`linux` / `darwin` / `win32`, other Unix-likes as `linux`), matching what the Electron app reports for the machine its main process runs on. The server injects `<meta name="mesh-client-host-platform">` into `index.html`; the bridge reads it into a global that `process.platform` compiles to in `web-bridge.js`.
 
+## Phones
+
+On a phone-sized screen (below 768 CSS pixels, the shell's compact breakpoint) the web UI uses the [mobile prototype's](mobile-prototype.md) shell instead of the desktop chrome: the prototype's header with its protocol chooser (a bottom sheet listing each enabled protocol's radio, link state and unread count), its bottom navigation (Chat, Network, Map, Incident, More) and its status bar holding the app's live status readouts (radio, MQTT, TAK, queue). The panels inside are the app's own, so everything works as on the desktop: chat, connection, nodes, map, settings. More opens the app's launcher (every panel, contacts, channels and settings). The switch follows the window width, so rotating a tablet or resizing a window moves between the two layouts without losing state.
+
+- **Where:** `src/renderer/mobile/MobileAppChrome.tsx` (`useMobileWebShell`, `MobileAppNav`, `MobileAppStatusBar`, `mobileProtocolContexts`) and `mobileApp.css` (the prototype shell filling the viewport); `App.tsx` swaps the rail, header actions, status bar and bottom bar when `useMobileWebShell()` is true. The protocol chooser is the prototype's `ProtocolSwitcher` with `live` (real link and unread wording) and `protocols` (the enabled ones).
+- **Not the desktop app:** the Electron app keeps its own compact layout in a narrow window; only the browser (`isWebHost()`) switches.
+- **The standalone prototype** (`vite.mobile-prototype.config.mjs`) still shows its sample scenes for design review; its Bluetooth pairing and permission scenes describe a future native app, not the web UI.
+
 ## Key files
 
 - `src/shared/webBridgeProtocol.ts`: frames and value codec
 - `src/preload/web/electronRendererShim.ts`: browser `ipcRenderer` / `contextBridge`
 - `src/preload/web/webSerialPolyfill.ts` and `src/shared/webSerialBridge.ts`: `navigator.serial` backed by the server's ports
+- `src/renderer/mobile/MobileAppChrome.tsx`, `mobileApp.css`: the phone layout (mobile prototype shell around the live panels)
 - `src/main/headless/`: `index.ts` (entry), `config.ts` (env), `webServer.ts` (HTTP/WS), `ipcRegistry.ts`, `electronShim.ts`, `serialBridge.ts` / `serialDevice.ts` / `serialPorts.ts` (server serial ports)
 - `src/main/ipc/gatt-handlers.ts`, `src/main/ipc/bluetoothctl-handlers.ts`: BLE handlers shared with the desktop app
 - `src/main/meshtastic-backend/`: Meshtastic background ingest and its in-process / `utilityProcess` hosts, and the link keeper both background sessions use

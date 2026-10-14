@@ -7409,5 +7409,12 @@
     "sampleCounts": "3 konverzace, ukázka",
     "connection": "Spojení",
     "futurePanels": "Další panely jsou plánovány pro nativní aplikaci."
+  },
+  "mobileApp": {
+    "linkReady": "Rádio připojeno",
+    "noRadio": "Žádné rádio",
+    "notConnected": "Nepřipojeno",
+    "statusBar": "Stav připojení",
+    "unread": "{{count}} nepřečteno"
   }
 }

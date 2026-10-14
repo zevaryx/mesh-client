@@ -401,6 +401,14 @@ import type {
 } from './lib/types';
 import { REGISTERED_MESH_PROTOCOLS } from './lib/types';
 import {
+  MOBILE_APP_SHELL_CLASS,
+  MobileAppNav,
+  MobileAppStatusBar,
+  mobileProtocolContexts,
+  useMobileWebShell,
+} from './mobile/MobileAppChrome';
+import { ProtocolSwitcher as MobileProtocolSwitcher } from './mobile/ProtocolSwitcher';
+import {
   ProtocolRuntimeProvider,
   type RuntimeMap,
   useAllRuntimes,
@@ -633,6 +641,8 @@ function AppContent() {
   const nodeDetailPaneFits = useMediaQuery(NODE_DETAIL_PANE_MEDIA_QUERY);
   /** Phones and very narrow windows: bottom bar instead of the rail (future mobile builds). */
   const shellCompact = useMediaQuery(SHELL_COMPACT_QUERY);
+  // Web UI on a phone-sized screen: the mobile prototype's shell around the same panels.
+  const mobileWebShell = useMobileWebShell();
   const [selectedPeerHash, setSelectedPeerHashState] = useState<string | null>(null);
   /** Same rule as nodes: picked from the Peers list or the map on a wide window shows in a pane. */
   const [peerDetailPaneHost, setPeerDetailPaneHost] = useState<DetailPaneHost | null>(null);
@@ -3932,6 +3942,24 @@ function AppContent() {
   const radioStatusAria = showStatusBarNode
     ? t('shell.status.radioWithNode', { status: deviceStatusText, node: headerSelfNodeLabel })
     : t('shell.status.radio', { status: deviceStatusText });
+  const mobileProtocolChooserContexts = mobileProtocolContexts(
+    enabledProtocols,
+    (p) => {
+      const view = selectByProtocol(connectionViewByProtocol, p);
+      const myNodeNum = view.state.myNodeNum;
+      return {
+        status: view.state.status,
+        radioLabel:
+          p === protocol
+            ? headerSelfNodeLabel || null
+            : myNodeNum > 0
+              ? selectByProtocol(panelActionsByProtocol, p).getPickerStyleNodeLabel(myNodeNum)
+              : null,
+        unreadCount: selectByProtocol(protocolSwitcherUnreadByProtocol, p),
+      };
+    },
+    t('mobileApp.noRadio'),
+  );
   const launcherButtonLabel = t('shell.openLauncher', {
     shortcut: formatShortcut('K', platform),
   });
@@ -4172,6 +4200,93 @@ function AppContent() {
     </Suspense>
   );
 
+  // The status bar's live readouts, in the desktop bar or the mobile shell's.
+  const statusBarItems = (
+    <>
+      <StatusBarButton
+        icon={
+          activeConnectionView.state.status === 'connecting' ? (
+            <ConnectIcon
+              animated
+              className={`h-3.5 w-3.5 ${headerIconClass('warn')}`}
+              size={14}
+              aria-hidden="true"
+            />
+          ) : (
+            <span
+              aria-hidden="true"
+              className={`h-2 w-2 shrink-0 rounded-full ${headerDotClass(deviceVariant)}`}
+            />
+          )
+        }
+        ariaLabel={radioStatusAria}
+        textClass={headerTextClass(deviceVariant)}
+        onClick={() => {
+          openSlotPanel('Connection');
+        }}
+      >
+        {radioStatusText}
+      </StatusBarButton>
+      {capabilities.hasMqttConnectionPanel && (
+        <StatusBarButton
+          icon={<HeaderMqttGlobeIcon variant={mqttVariant} />}
+          ariaLabel={mqttStatusLabel}
+          textClass={headerTextClass(mqttVariant)}
+          onClick={() => {
+            openSlotPanel('Connection');
+          }}
+        >
+          {mqttStatusLabel}
+        </StatusBarButton>
+      )}
+      {capabilities.hasTakPanel && (
+        <StatusBarButton
+          icon={<TakStatusIcon variant={takVariant} />}
+          ariaLabel={takStatusAriaLabel}
+          textClass={headerTextClass(takVariant)}
+          onClick={() => {
+            openSlotPanel('TAK');
+          }}
+        >
+          {takStatusLabel}
+        </StatusBarButton>
+      )}
+      {/* Queue status badge: absolute thresholds for LoRa; ratio for Reticulum */}
+      {queueShowBadge && activeQueue && (
+        <HelpTooltip text={queueTooltipText} className="shrink-0 px-1">
+          <div
+            aria-label={t('app.queueBadge', {
+              used: queueUsed,
+              max: activeQueue.maxlen,
+            })}
+            className={`text-label flex h-5 shrink-0 items-center rounded px-1.5 font-medium ${queueColorClass}`}
+          >
+            {t('app.queueBadge', { used: queueUsed, max: activeQueue.maxlen })}
+          </div>
+        </HelpTooltip>
+      )}
+      {showMeshcoreWaitingMessagesIndicator && (
+        <MeshcoreWaitingMessagesHeaderIndicator
+          waitingMessagesCount={meshcoreWaitingMessagesInput.waitingMessagesCount}
+          waitingMessagesSyncActive={meshcoreWaitingMessagesInput.waitingMessagesSyncActive}
+          waitingMessagesSyncProgress={meshcoreWaitingMessagesInput.waitingMessagesSyncProgress}
+          waitingMessagesSilentDrainActive={
+            meshcoreWaitingMessagesInput.waitingMessagesSilentDrainActive
+          }
+          waitingMessagesDrainDeferred={meshcoreWaitingMessagesInput.waitingMessagesDrainDeferred}
+          connectionType={meshcoreWaitingMessagesInput.connectionType}
+          onSync={() => void handleMeshcoreSyncWaitingMessages()}
+        />
+      )}
+      {reticulumTxBuffering && (
+        <ReticulumTxBufferingHeaderIndicator
+          buffering
+          interfaceName={reticulumQueueIfaceName || null}
+        />
+      )}
+    </>
+  );
+
   return (
     <>
       <GlobalInstantTooltip />
@@ -4201,9 +4316,10 @@ function AppContent() {
           panel never covers a control and keyboard focus never lands under it. */}
       <div
         data-app-shell=""
+        data-wide={mobileWebShell ? 'false' : undefined}
         className={`bg-app-bg flex h-screen w-screen min-w-0 flex-col overflow-hidden ${
           logPanelVisible ? 'lg:pr-[28rem]' : ''
-        }`}
+        } ${mobileWebShell ? MOBILE_APP_SHELL_CLASS : ''}`}
       >
         <div className="flex min-h-0 min-w-0 flex-1">
           {!shellCompact && (
@@ -4236,6 +4352,15 @@ function AppContent() {
               onTabSelect={setActiveTab}
               actions={
                 <>
+                  {mobileWebShell && enabledProtocols.length > 1 ? (
+                    <MobileProtocolSwitcher
+                      live
+                      protocol={protocol}
+                      protocols={enabledProtocols}
+                      contexts={mobileProtocolChooserContexts}
+                      onSelect={handleProtocolChange}
+                    />
+                  ) : null}
                   {capabilities.hasRoomServersPanel ? (
                     <MeshcoreFloodAdvertHeaderButton
                       disabled={!isOperational}
@@ -4243,20 +4368,25 @@ function AppContent() {
                       onSendZeroHop={meshcorePanelActions.sendZeroHopAdvert}
                     />
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={toggleLauncher}
-                    aria-haspopup="dialog"
-                    aria-expanded={launcherOpen}
-                    aria-label={launcherButtonLabel}
-                    title={launcherButtonLabel}
-                    className="text-muted hover:bg-sidebar-active-bg hover:text-ink-200 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors"
-                  >
-                    <Search aria-hidden className={ICON_MD} size={16} />
-                  </button>
-                  <div className="shrink-0">
-                    <LanguageSelector />
-                  </div>
+                  {/* On a phone the launcher opens from More, the language from App settings. */}
+                  {!mobileWebShell && (
+                    <button
+                      type="button"
+                      onClick={toggleLauncher}
+                      aria-haspopup="dialog"
+                      aria-expanded={launcherOpen}
+                      aria-label={launcherButtonLabel}
+                      title={launcherButtonLabel}
+                      className="text-muted hover:bg-sidebar-active-bg hover:text-ink-200 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors"
+                    >
+                      <Search aria-hidden className={ICON_MD} size={16} />
+                    </button>
+                  )}
+                  {!mobileWebShell && (
+                    <div className="shrink-0">
+                      <LanguageSelector />
+                    </div>
+                  )}
                   {/* A browser tab cannot quit the shared headless server. */}
                   {!isWebHost() && <QuitButton />}
                 </>
@@ -5926,148 +6056,80 @@ function AppContent() {
           </div>
         </div>
 
-        <StatusBar
-          liveStatus={deviceStatusText}
-          stats={t('app.footerStats', {
-            nodeCount: footerNodeCount,
-            nodeLabel: nodeCountLabel,
-            messageCount: activeUiMessages.length,
-          })}
-          update={
-            <UpdateStatusIndicator
-              updateState={updateState}
-              onCheck={() => {
-                void window.electronAPI.update.check().catch((e: unknown) => {
-                  console.warn('[App] update check failed ' + errLikeToLogString(e));
-                  setUpdateState((s) => ({ ...s, phase: 'error' }));
-                });
-              }}
-              onDownload={() => {
-                void window.electronAPI.update.download().catch((e: unknown) => {
-                  console.warn('[App] update download failed ' + errLikeToLogString(e));
-                  setUpdateState((s) => ({
-                    ...s,
-                    phase: 'error',
-                    errorMessage: errLikeToLogString(e),
-                  }));
-                });
-              }}
-              onInstall={() => {
-                runUpdateAction(
-                  () => window.electronAPI.update.install(),
-                  setUpdateState,
-                  'update install',
-                );
-              }}
-              onViewRelease={() => {
-                void window.electronAPI.update
-                  .openReleases(updateState.releaseUrl)
-                  .catch((e: unknown) => {
-                    console.warn('[App] open release failed ' + errLikeToLogString(e));
+        {mobileWebShell ? (
+          <MobileAppStatusBar liveStatus={deviceStatusText}>{statusBarItems}</MobileAppStatusBar>
+        ) : (
+          <StatusBar
+            liveStatus={deviceStatusText}
+            stats={t('app.footerStats', {
+              nodeCount: footerNodeCount,
+              nodeLabel: nodeCountLabel,
+              messageCount: activeUiMessages.length,
+            })}
+            update={
+              <UpdateStatusIndicator
+                updateState={updateState}
+                onCheck={() => {
+                  void window.electronAPI.update.check().catch((e: unknown) => {
+                    console.warn('[App] update check failed ' + errLikeToLogString(e));
+                    setUpdateState((s) => ({ ...s, phase: 'error' }));
+                  });
+                }}
+                onDownload={() => {
+                  void window.electronAPI.update.download().catch((e: unknown) => {
+                    console.warn('[App] update download failed ' + errLikeToLogString(e));
                     setUpdateState((s) => ({
                       ...s,
                       phase: 'error',
                       errorMessage: errLikeToLogString(e),
                     }));
                   });
-              }}
-            />
-          }
-        >
-          <StatusBarButton
-            icon={
-              activeConnectionView.state.status === 'connecting' ? (
-                <ConnectIcon
-                  animated
-                  className={`h-3.5 w-3.5 ${headerIconClass('warn')}`}
-                  size={14}
-                  aria-hidden="true"
-                />
-              ) : (
-                <span
-                  aria-hidden="true"
-                  className={`h-2 w-2 shrink-0 rounded-full ${headerDotClass(deviceVariant)}`}
-                />
-              )
+                }}
+                onInstall={() => {
+                  runUpdateAction(
+                    () => window.electronAPI.update.install(),
+                    setUpdateState,
+                    'update install',
+                  );
+                }}
+                onViewRelease={() => {
+                  void window.electronAPI.update
+                    .openReleases(updateState.releaseUrl)
+                    .catch((e: unknown) => {
+                      console.warn('[App] open release failed ' + errLikeToLogString(e));
+                      setUpdateState((s) => ({
+                        ...s,
+                        phase: 'error',
+                        errorMessage: errLikeToLogString(e),
+                      }));
+                    });
+                }}
+              />
             }
-            ariaLabel={radioStatusAria}
-            textClass={headerTextClass(deviceVariant)}
-            onClick={() => {
-              openSlotPanel('Connection');
-            }}
           >
-            {radioStatusText}
-          </StatusBarButton>
-          {capabilities.hasMqttConnectionPanel && (
-            <StatusBarButton
-              icon={<HeaderMqttGlobeIcon variant={mqttVariant} />}
-              ariaLabel={mqttStatusLabel}
-              textClass={headerTextClass(mqttVariant)}
-              onClick={() => {
-                openSlotPanel('Connection');
-              }}
-            >
-              {mqttStatusLabel}
-            </StatusBarButton>
-          )}
-          {capabilities.hasTakPanel && (
-            <StatusBarButton
-              icon={<TakStatusIcon variant={takVariant} />}
-              ariaLabel={takStatusAriaLabel}
-              textClass={headerTextClass(takVariant)}
-              onClick={() => {
-                openSlotPanel('TAK');
-              }}
-            >
-              {takStatusLabel}
-            </StatusBarButton>
-          )}
-          {/* Queue status badge: absolute thresholds for LoRa; ratio for Reticulum */}
-          {queueShowBadge && activeQueue && (
-            <HelpTooltip text={queueTooltipText} className="shrink-0 px-1">
-              <div
-                aria-label={t('app.queueBadge', {
-                  used: queueUsed,
-                  max: activeQueue.maxlen,
-                })}
-                className={`text-label flex h-5 shrink-0 items-center rounded px-1.5 font-medium ${queueColorClass}`}
-              >
-                {t('app.queueBadge', { used: queueUsed, max: activeQueue.maxlen })}
-              </div>
-            </HelpTooltip>
-          )}
-          {showMeshcoreWaitingMessagesIndicator && (
-            <MeshcoreWaitingMessagesHeaderIndicator
-              waitingMessagesCount={meshcoreWaitingMessagesInput.waitingMessagesCount}
-              waitingMessagesSyncActive={meshcoreWaitingMessagesInput.waitingMessagesSyncActive}
-              waitingMessagesSyncProgress={meshcoreWaitingMessagesInput.waitingMessagesSyncProgress}
-              waitingMessagesSilentDrainActive={
-                meshcoreWaitingMessagesInput.waitingMessagesSilentDrainActive
-              }
-              waitingMessagesDrainDeferred={
-                meshcoreWaitingMessagesInput.waitingMessagesDrainDeferred
-              }
-              connectionType={meshcoreWaitingMessagesInput.connectionType}
-              onSync={() => void handleMeshcoreSyncWaitingMessages()}
-            />
-          )}
-          {reticulumTxBuffering && (
-            <ReticulumTxBufferingHeaderIndicator
-              buffering
-              interfaceName={reticulumQueueIfaceName || null}
-            />
-          )}
-        </StatusBar>
-        {shellCompact && (
-          <BottomNav
-            sections={navSections}
-            activeSectionId={activeNavSection?.id}
-            badgeCounts={navBadgeCounts}
-            onSectionSelect={handleNavSectionSelect}
-            moreOpen={launcherOpen}
-            onMore={toggleLauncher}
-          />
+            {statusBarItems}
+          </StatusBar>
         )}
+        {shellCompact &&
+          (mobileWebShell ? (
+            <MobileAppNav
+              sections={navSections}
+              activeSectionId={activeNavSection?.id}
+              badgeCounts={navBadgeCounts}
+              onSectionSelect={handleNavSectionSelect}
+              moreOpen={launcherOpen}
+              onMore={toggleLauncher}
+            />
+          ) : (
+            <BottomNav
+              sections={navSections}
+              activeSectionId={activeNavSection?.id}
+              badgeCounts={navBadgeCounts}
+              onSectionSelect={handleNavSectionSelect}
+              moreOpen={launcherOpen}
+              onMore={toggleLauncher}
+            />
+          ))}
       </div>
 
       {launcherOpen && (

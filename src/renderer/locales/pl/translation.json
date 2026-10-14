@@ -7458,5 +7458,12 @@
     "sampleCounts": "3 rozmowy, przykład",
     "connection": "Połączenie",
     "futurePanels": "W aplikacji natywnej planowane są kolejne panele."
+  },
+  "mobileApp": {
+    "linkReady": "Radio połączone",
+    "noRadio": "Brak radia",
+    "notConnected": "Nie połączono",
+    "statusBar": "Stan połączenia",
+    "unread": "Nieprzeczytane: {{count}}"
   }
 }

@@ -7336,5 +7336,12 @@
     "directMessage": "Messaggio diretto",
     "app": "App",
     "connection": "Connessione"
+  },
+  "mobileApp": {
+    "linkReady": "Radio collegata",
+    "noRadio": "Nessuna radio",
+    "notConnected": "Non collegata",
+    "statusBar": "Stato della connessione",
+    "unread": "{{count}} non letti"
   }
 }

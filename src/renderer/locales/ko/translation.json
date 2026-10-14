@@ -7336,5 +7336,12 @@
     "sampleCounts": "대화 3개, 예시",
     "connection": "연결",
     "futurePanels": "네이티브 앱에는 더 많은 패널을 추가할 예정입니다."
+  },
+  "mobileApp": {
+    "linkReady": "라디오 연결됨",
+    "noRadio": "라디오 없음",
+    "notConnected": "연결되지 않음",
+    "statusBar": "연결 상태",
+    "unread": "읽지 않음 {{count}}개"
   }
 }

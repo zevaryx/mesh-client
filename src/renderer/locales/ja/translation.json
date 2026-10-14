@@ -7336,5 +7336,12 @@
     "sampleCounts": "3件の会話、サンプル",
     "connection": "接続",
     "futurePanels": "ネイティブアプリには、さらにパネルを追加する予定です。"
+  },
+  "mobileApp": {
+    "linkReady": "無線機が接続されています",
+    "noRadio": "無線機なし",
+    "notConnected": "未接続",
+    "statusBar": "接続状態",
+    "unread": "未読 {{count}} 件"
   }
 }
