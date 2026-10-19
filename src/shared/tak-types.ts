@@ -63,6 +63,25 @@ export function isTakIconsetPath(value: string): boolean {
   return segments.length === 3 && segments.every(isIconsetPathSegment);
 }
 
+/** Uid of the GeoOps icon set, as ATAK names it once the set is imported. */
+export const TAK_GEOOPS_ICONSET_UID =
+  '83198b4872a8c34eb9c549da8a4de5a28f07821185b39a2277948f66c24ac17a';
+
+/**
+ * GeoOps WildFire icons that suit radio sites and the people around them, offered as presets
+ * for an icon path. Names are the ones the set gives each icon, so they are not translated.
+ * The list matches MeshCore TAK Bridge's, so both apps draw the same sites alike.
+ */
+export const TAK_GEOOPS_ICONS: readonly { name: string; path: string }[] = [
+  'Repeater',
+  'Repeater Mobile Relay',
+  'Internet Access',
+  'Telephone',
+  'Lookout',
+  'Incident Command Post',
+  'Ranger Station',
+].map((name) => ({ name, path: `${TAK_GEOOPS_ICONSET_UID}/WildFire/${name}.png` }));
+
 /** ATAK team colors accepted as `<__group name>`. */
 export const TAK_TEAM_COLORS = [
   'White',
@@ -154,10 +173,12 @@ export interface TakStyleSettings {
   /** Relay nodes no filter matches; off sends only matched nodes. */
   sendUnmatched: boolean;
   /**
-   * Icon set path for nodes that advertise a relay role (repeaters, routers, room servers,
-   * interfaces) and that no filter matches. Unset keeps the plain installation symbol.
+   * Icon set path for repeaters (MeshCore repeaters, Meshtastic routers, Reticulum
+   * interfaces), whether or not a filter restyles them. Unset keeps the unit type's symbol.
    */
   relayIconsetPath?: string;
+  /** Icon set path for room servers, in the same way. Unset keeps the unit type's symbol. */
+  roomIconsetPath?: string;
 }
 
 export const DEFAULT_TAK_STYLE_SETTINGS: TakStyleSettings = { filters: [], sendUnmatched: true };
@@ -177,6 +198,12 @@ export interface TakRelayExtras {
   stale_sec?: number;
   /** Fixed network infrastructure with no advertised role, such as an RMAP interface. */
   infrastructure?: boolean;
+  /**
+   * This app can send the node a direct message: a MeshCore contact whose key it holds, or any
+   * Meshtastic node. Main gives the marker a chat endpoint only when the node is a companion and
+   * direct messages are on for its radio.
+   */
+  chatReachable?: boolean;
 }
 
 /** One node position pushed from the renderer to the TAK sinks. */
@@ -200,7 +227,7 @@ export interface TAKNodeUpdate extends TakRelayExtras {
   source?: 'rf' | 'mqtt';
 }
 
-/** A heard mesh channel message mirrored one way into a TAK GeoChat room. */
+/** One GeoChat line in a named room: what the CoT builders write. */
 export interface TAKGeochatMessage {
   /** GeoChat room (chatroom) name. */
   room: string;
@@ -213,25 +240,112 @@ export interface TAKGeochatMessage {
   longitude?: number;
 }
 
-/** A GeoChat message a local TAK client sent to the server, for the mesh channel bridge. */
+/**
+ * A mesh channel served to TAK clients as one contact. Messages heard on it reach them from the
+ * contact; when `send` is on, a message to the contact goes out on the channel.
+ */
+export interface TakChatChannel {
+  /** Channel identity key (`channelIdentityKey.ts`, 16 hex digits); the contact uid comes from it. */
+  key: string;
+  /** Contact name shown in ATAK, e.g. `#MC Public` or `#MT 🔒 Ops`. */
+  name: string;
+  /** TAK clients may send to the channel; off, it is receive only. */
+  send: boolean;
+  /** Also stream the channel to the remote TAK server, read only. */
+  remote: boolean;
+}
+
+/** A message heard on a served mesh channel, for TAK clients. */
+export interface TAKChannelChatMessage {
+  /** Identity key of the served channel it was heard on. */
+  channelKey: string;
+  senderCallsign: string;
+  text: string;
+  /** When the message was sent, epoch milliseconds. */
+  timeMs: number;
+  /** Sender's last known position; omitted when unknown. */
+  latitude?: number;
+  longitude?: number;
+}
+
+/** Radios whose companions (on Reticulum, LXMF peers) TAK clients may message directly. */
+export const TAK_DM_PROTOCOLS = ['meshcore', 'meshtastic', 'reticulum'] as const;
+export type TakDmProtocol = (typeof TAK_DM_PROTOCOLS)[number];
+
+export function isTakDmProtocol(value: unknown): value is TakDmProtocol {
+  return (TAK_DM_PROTOCOLS as readonly unknown[]).includes(value);
+}
+
+/** Where a TAK client's message goes: a served channel, or one companion as a direct message. */
+export type TakChatTarget =
+  | { kind: 'channel'; channelKey: string }
+  | { kind: 'direct'; protocol: TakDmProtocol; nodeId: number };
+
+/** A message a local TAK client sent to a channel's or a companion's contact, for the mesh. */
 export interface TAKInboundChat {
-  /** GeoChat room (chatroom) the client addressed. */
-  room: string;
+  target: TakChatTarget;
   senderCallsign: string;
   text: string;
   /** Server-side id of the client connection that sent it. */
   clientId: string;
   /** When the server received it, epoch milliseconds. */
   timeMs: number;
+  /**
+   * For a direct message: main's id for it, handed back with {@link TakDmStatusUpdate} so the
+   * device that wrote hears how it went.
+   */
+  dmRef?: string;
 }
 
 /**
- * Uid prefix of the contact that stands for a GeoChat room TAK clients may send to. A client
- * reaches the room's mesh channel by messaging that contact.
+ * How a direct message from a TAK client ended: acknowledged by the companion, still not
+ * acknowledged after the last automatic resend, or never sent at all.
+ */
+export const TAK_DM_OUTCOMES = ['delivered', 'unconfirmed', 'not-sent'] as const;
+export type TakDmOutcome = (typeof TAK_DM_OUTCOMES)[number];
+
+/** The outcome of one direct message from a TAK client, for main. */
+export interface TakDmStatusUpdate {
+  /** {@link TAKInboundChat.dmRef} of the message. */
+  dmRef: string;
+  outcome: TakDmOutcome;
+}
+
+/**
+ * A peer this app already has a direct conversation with, which TAK clients may message even
+ * with no marker on the map: main gives it a contact at 0, 0 while it has none.
+ */
+export interface TakDirectPeer {
+  protocol: TakDmProtocol;
+  nodeId: number;
+  /** The name it is shown by when it has no marker. */
+  callsign: string;
+}
+
+/** Most conversation peers the renderer hands main; the most recent come first. */
+export const TAK_DIRECT_PEERS_MAX = 64;
+
+/** A direct message heard from a companion, for TAK clients. */
+export interface TAKDirectMessage {
+  protocol: TakDmProtocol;
+  /** The companion's node id; its ATAK contact uid comes from it. */
+  nodeId: number;
+  /** Its name as heard, used when TAK has no marker for it. */
+  senderCallsign: string;
+  text: string;
+  /** When the message was sent, epoch milliseconds. */
+  timeMs: number;
+}
+
+/**
+ * Uid prefix of the contact that stands for a served mesh channel. A client reaches the channel
+ * by messaging that contact.
  */
 export const TAK_CHAT_ROOM_UID_PREFIX = 'MESHROOM-';
-/** Most rooms the renderer may register as open for TAK clients to send to. */
-export const TAK_CHAT_SEND_ROOMS_MAX = 64;
+/** Most channels the renderer may serve to TAK clients. */
+export const TAK_CHAT_CHANNELS_MAX = 64;
+/** Heard channel messages held while no TAK client is connected. */
+export const TAK_CHAT_HELD_MAX = 50;
 
 export const TAK_GEOCHAT_TEXT_MAX_LEN = 1024;
 export const TAK_GEOCHAT_ROOM_MAX_LEN = 64;

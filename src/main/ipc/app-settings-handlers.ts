@@ -104,7 +104,12 @@ export function registerAppSettingsIpcHandlers(deps: AppSettingsIpcDeps): void {
       }[];
       const out: Record<string, string> = {};
       for (const row of rows) {
-        if (typeof row.key === 'string' && typeof row.value === 'string') {
+        // The AI provider config holds an API key: main reads it, renderers never do.
+        if (
+          row.key !== 'aiProviderConfig' &&
+          typeof row.key === 'string' &&
+          typeof row.value === 'string'
+        ) {
           out[row.key] = row.value;
         }
       }

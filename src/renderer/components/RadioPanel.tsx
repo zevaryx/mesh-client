@@ -31,6 +31,19 @@ import {
   meshtasticConfigSliceHydrated,
   stripMeshtasticProtobufMeta,
 } from '@/renderer/lib/meshtastic/meshtasticConfigApply';
+import {
+  isMeshtasticConfigApplyTimeout,
+  withMeshtasticConfigApplyTimeout,
+} from '@/renderer/lib/meshtastic/meshtasticConfigApplyTimeout';
+import {
+  DEVICE_EXTRA_FIELDS,
+  DISPLAY_EXTRA_FIELDS,
+  LORA_EXTRA_FIELDS,
+  MESHTASTIC_ADDRESS_MODE_STATIC,
+  NETWORK_EXTRA_FIELDS,
+  POSITION_EXTRA_FIELDS,
+  POWER_EXTRA_FIELDS,
+} from '@/renderer/lib/meshtastic/meshtasticExtraConfigFields';
 import type { MeshtasticLockdownAuthRequest } from '@/renderer/lib/meshtastic/meshtasticLockdown';
 import {
   filterMeshtasticPresetsForRegion,
@@ -103,10 +116,15 @@ function setOwnerApplyErrorMessage(
   }
   return err instanceof Error ? err.message : t('common.unknown');
 }
+import type { MeshcoreCompanionCliActions } from '../hooks/meshcore/useMeshcoreCompanionCli';
 import {
   type OffloadContactsFromRadioFn,
   useMeshcoreContactCapacity,
 } from '../hooks/useMeshcoreContactCapacity';
+import {
+  type MeshtasticExtraConfigFieldsState,
+  useMeshtasticExtraConfigFields,
+} from '../hooks/useMeshtasticExtraConfigFields';
 import { useSyncFormFromConfig } from '../hooks/useSyncFormFromConfig';
 import { getAppSettingsRaw, mergeAppSetting } from '../lib/appSettingsStorage';
 import { DEFAULT_APP_SETTINGS_SHARED } from '../lib/defaultAppSettings';
@@ -142,12 +160,17 @@ import { ConfigApplyNotice } from './ConfigApplyNotice';
 import { ConfirmModal } from './ConfirmModal';
 import { HelpTooltip } from './HelpTooltip';
 import LockdownSection from './LockdownSection';
+import MeshcoreCompanionCliSection from './MeshcoreCompanionCliSection';
 import MeshcoreContactSettingsSection from './MeshcoreContactSettingsSection';
 import {
   type MeshcoreFloodScopeHandle,
   MeshcoreFloodScopeSection,
 } from './MeshcoreFloodScopeSection';
 import MeshcoreTelemetryPrivacySection from './MeshcoreTelemetryPrivacySection';
+import {
+  MeshtasticAdvancedHardwareGroup,
+  MeshtasticExtraConfigField,
+} from './MeshtasticExtraConfigField';
 import QrCodeImage from './QrCodeImage';
 import QrIngestControl from './QrIngestControl';
 import { RadioXmodemSection } from './RadioXmodemSection';
@@ -242,6 +265,8 @@ interface Props {
     telemetryModeLoc: number;
     telemetryModeEnv: number;
   }) => Promise<void>;
+  /** MeshCore companion CLI (firmware v1.18+): device, radio tuning, WiFi, power, console. */
+  meshcoreCompanionCli?: MeshcoreCompanionCliActions;
   meshcoreAutoadd?: MeshcoreAutoaddWireState | null;
   meshtasticLoraConfig?: MeshtasticLoraConfig | null;
   /** Cached Meshtastic ModuleConfig slices for merge-on-apply (local device or remote snapshot). */
@@ -848,6 +873,7 @@ export default function RadioPanel({
   meshcoreSelfInfo,
   meshcoreContactsForTelemetry,
   onApplyMeshcoreTelemetryPrivacy,
+  meshcoreCompanionCli,
   meshcoreAutoadd,
   onApplyMeshcoreContactAutoAdd,
   onRefreshMeshcoreAutoaddFromDevice,
@@ -1094,8 +1120,8 @@ export default function RadioPanel({
     if (typeof cfg.fixedPosition === 'boolean') setFixedPosition(cfg.fixedPosition);
     if (typeof cfg.gpsMode === 'number') setGpsMode(cfg.gpsMode);
     if (typeof cfg.positionPrecision === 'number') setPositionPrecision(cfg.positionPrecision);
-    if (typeof cfg.smartPositionEnabled === 'boolean') {
-      setSmartPositionEnabled(cfg.smartPositionEnabled);
+    if (typeof cfg.positionBroadcastSmartEnabled === 'boolean') {
+      setSmartPositionEnabled(cfg.positionBroadcastSmartEnabled);
     }
     if (typeof cfg.broadcastSmartMinimumDistance === 'number') {
       setSmartPositionMinDistance(cfg.broadcastSmartMinimumDistance);
@@ -1123,6 +1149,31 @@ export default function RadioPanel({
     if (typeof cfg.ntpServer === 'string') setNtpServer(cfg.ntpServer);
     if (typeof cfg.ethEnabled === 'boolean') setEthEnabled(cfg.ethEnabled);
   });
+
+  const deviceExtra = useMeshtasticExtraConfigFields(
+    meshtasticConfigSlices?.device,
+    DEVICE_EXTRA_FIELDS,
+  );
+  const displayExtra = useMeshtasticExtraConfigFields(
+    meshtasticConfigSlices?.display,
+    DISPLAY_EXTRA_FIELDS,
+  );
+  const positionExtra = useMeshtasticExtraConfigFields(
+    meshtasticConfigSlices?.position,
+    POSITION_EXTRA_FIELDS,
+  );
+  const powerExtra = useMeshtasticExtraConfigFields(
+    meshtasticConfigSlices?.power,
+    POWER_EXTRA_FIELDS,
+  );
+  const networkExtra = useMeshtasticExtraConfigFields(
+    meshtasticConfigSlices?.network,
+    NETWORK_EXTRA_FIELDS,
+  );
+  const loraExtra = useMeshtasticExtraConfigFields(
+    meshtasticLoraConfig ?? meshtasticConfigSlices?.lora,
+    LORA_EXTRA_FIELDS,
+  );
 
   useEffect(() => {
     const loraRaw = meshtasticLoraConfig ?? meshtasticConfigSlices?.lora;
@@ -1186,6 +1237,14 @@ export default function RadioPanel({
 
   // ─── Shared state ─────────────────────────────────────────────
   const [applyingSection, setApplyingSection] = useState<string | null>(null);
+  const applyGenerationRef = useRef(0);
+  // Unlock Apply when the radio drops mid-setConfig/commit (SDK promise may never settle).
+  useEffect(() => {
+    if (isConnected) return;
+    if (applyingSection == null) return;
+    applyGenerationRef.current += 1;
+    setApplyingSection(null);
+  }, [isConnected, applyingSection]);
   /** Current status plus the section it belongs to; a null section means panel-level. */
   const [status, setStatus] = useState<(PanelStatus & { section: string | null }) | null>(null);
   /** Report an apply result inline under the given section's Apply button. */
@@ -1369,7 +1428,12 @@ export default function RadioPanel({
   const powerConfigReady = meshtasticConfigSliceHydrated(meshtasticConfigSlices?.power);
   const positionConfigReady = meshtasticConfigSliceHydrated(meshtasticConfigSlices?.position);
   const networkConfigReady = meshtasticConfigSliceHydrated(meshtasticConfigSlices?.network);
-  const deviceApplyDisabled = disabled || !deviceConfigReady;
+  const mqttModuleConfigReady = meshtasticConfigSliceHydrated(moduleConfigs?.mqtt);
+  // Client Mute follow-up writes MQTT module config; do not Apply until that slice is live.
+  const deviceApplyDisabled =
+    disabled ||
+    !deviceConfigReady ||
+    (deviceRole === MESHTASTIC_CLIENT_MUTE_ROLE && !!onSetModuleConfig && !mqttModuleConfigReady);
   const displayApplyDisabled = disabled || !displayConfigReady;
   const btFixedPinWireValue = parseMeshtasticBluetoothPin(btFixedPin);
   const bluetoothApplyDisabled =
@@ -1423,7 +1487,13 @@ export default function RadioPanel({
       return false;
     }
     clearMeshtasticClientNotification();
+    const applyGen = ++applyGenerationRef.current;
     setApplyingSection(configCase);
+    const stillCurrent = () => applyGen === applyGenerationRef.current;
+    const formatApplyErr = (err: unknown): string =>
+      isMeshtasticConfigApplyTimeout(err)
+        ? t('modulePanel.errors.timeout')
+        : formatMeshtasticModuleApplyError(err, t);
     showSectionStatus(
       configCase,
       t('radioPanel.applyStatusApplying', { section: sectionLabel }),
@@ -1435,14 +1505,18 @@ export default function RadioPanel({
         : meshtasticConfigSlices?.[configCase];
     const merged = mergeMeshtasticConfigApplyValue(deviceSlice, configValue);
     try {
-      await onSetConfig({
-        payloadVariant: {
-          case: configCase,
-          value: merged,
-        },
-      });
+      await withMeshtasticConfigApplyTimeout(
+        onSetConfig({
+          payloadVariant: {
+            case: configCase,
+            value: merged,
+          },
+        }),
+      );
+      if (!stillCurrent()) return false;
       try {
-        await onCommit();
+        await withMeshtasticConfigApplyTimeout(onCommit());
+        if (!stillCurrent()) return false;
         showSectionStatus(
           configCase,
           t('radioPanel.applyStatusSuccess', { section: sectionLabel }),
@@ -1451,29 +1525,50 @@ export default function RadioPanel({
         return true;
       } catch (err: unknown) {
         // catch-no-log-ok commit failure surfaced in panel status text
+        if (!stillCurrent()) return false;
         showSectionStatus(
           configCase,
           t('radioPanel.applyStatusCommitFailed', {
             section: sectionLabel,
-            message: formatMeshtasticModuleApplyError(err, t),
+            message: formatApplyErr(err),
           }),
           'error',
         );
         return false;
       }
     } catch (err) {
+      if (!stillCurrent()) return false;
       console.warn('[RadioPanel] apply section failed ' + errLikeToLogString(err));
       showSectionStatus(
         configCase,
         t('radioPanel.applyStatusFailed', {
-          message: formatMeshtasticModuleApplyError(err, t),
+          message: formatApplyErr(err),
         }),
         'error',
       );
       return false;
     } finally {
-      setApplyingSection(null);
+      if (stillCurrent()) {
+        setApplyingSection(null);
+      }
     }
+  };
+
+  const applyConfigWithExtra = (
+    sectionLabel: string,
+    configCase: string,
+    configValue: Record<string, unknown>,
+    extra: MeshtasticExtraConfigFieldsState,
+  ): Promise<boolean> => {
+    if (!extra.result.ok) {
+      showSectionStatus(
+        configCase,
+        t('meshtasticExtraConfig.applyInvalid', { section: sectionLabel }),
+        'error',
+      );
+      return Promise.resolve(false);
+    }
+    return applyConfig(sectionLabel, configCase, { ...configValue, ...extra.result.overrides });
   };
 
   const handleSendAdvert = async () => {
@@ -2087,29 +2182,34 @@ export default function RadioPanel({
           anchorId="radio.lora.section"
           title={t('radioPanel.sectionLora')}
           onApply={() =>
-            applyConfig(t('radioPanel.sectionLora'), 'lora', {
-              region,
-              modemPreset,
-              usePreset,
-              hopLimit,
-              txEnabled,
-              channelNum,
-              overrideDutyCycle,
-              overrideFrequency,
-              frequencyOffset,
-              paFanDisabled,
-              ignoreMqtt,
-              configOkToMqtt,
-              ...(usePreset
-                ? {}
-                : {
-                    bandwidth,
-                    spreadFactor,
-                    codingRate,
-                    txPower,
-                    sx126xRxBoostedGain: rxBoostedGain,
-                  }),
-            })
+            applyConfigWithExtra(
+              t('radioPanel.sectionLora'),
+              'lora',
+              {
+                region,
+                modemPreset,
+                usePreset,
+                hopLimit,
+                txEnabled,
+                channelNum,
+                overrideDutyCycle,
+                overrideFrequency,
+                frequencyOffset,
+                paFanDisabled,
+                ignoreMqtt,
+                configOkToMqtt,
+                ...(usePreset
+                  ? {}
+                  : {
+                      bandwidth,
+                      spreadFactor,
+                      codingRate,
+                      txPower,
+                      sx126xRxBoostedGain: rxBoostedGain,
+                    }),
+              },
+              loraExtra,
+            )
           }
           applying={applyingSection === 'lora'}
           status={sectionStatus('lora')}
@@ -2293,6 +2393,23 @@ export default function RadioPanel({
             disabled={meshtasticLoraDisabled || applyingSection !== null}
             description={t('radioPanel.paFanDisabledDesc')}
           />
+          <MeshtasticExtraConfigField
+            anchorId="radio.lora.ignoreIncoming"
+            spec={LORA_EXTRA_FIELDS.ignoreIncoming}
+            state={loraExtra}
+            disabled={meshtasticLoraDisabled || applyingSection !== null}
+          />
+          <MeshtasticExtraConfigField
+            anchorId="radio.lora.femLnaMode"
+            spec={LORA_EXTRA_FIELDS.femLnaMode}
+            state={loraExtra}
+            disabled={meshtasticLoraDisabled || applyingSection !== null}
+          />
+          <MeshtasticExtraConfigField
+            spec={LORA_EXTRA_FIELDS.serialHalOnly}
+            state={loraExtra}
+            disabled={meshtasticLoraDisabled || applyingSection !== null}
+          />
         </ConfigSection>
       )}
 
@@ -2395,18 +2512,28 @@ export default function RadioPanel({
           anchorId="radio.device.section"
           title={t('radioPanel.sectionDeviceRole')}
           onApply={async () => {
-            const applied = await applyConfig(t('radioPanel.sectionDeviceRole'), 'device', {
-              role: deviceRole,
-              rebroadcastMode,
-              nodeInfoBroadcastSecs,
-              doubleTapAsButtonPress,
-              disableTripleClick,
-              tzdef,
-              ledHeartbeatDisabled,
-              buttonGpio,
-              buzzerGpio,
-            });
-            if (applied && deviceRole === MESHTASTIC_CLIENT_MUTE_ROLE && onSetModuleConfig) {
+            const applied = await applyConfigWithExtra(
+              t('radioPanel.sectionDeviceRole'),
+              'device',
+              {
+                role: deviceRole,
+                rebroadcastMode,
+                nodeInfoBroadcastSecs,
+                doubleTapAsButtonPress,
+                disableTripleClick,
+                tzdef,
+                ledHeartbeatDisabled,
+                buttonGpio,
+                buzzerGpio,
+              },
+              deviceExtra,
+            );
+            if (
+              applied &&
+              deviceRole === MESHTASTIC_CLIENT_MUTE_ROLE &&
+              onSetModuleConfig &&
+              mqttModuleConfigReady
+            ) {
               try {
                 clearMeshtasticClientNotification();
                 setApplyingSection('clientMuteGps');
@@ -2493,6 +2620,12 @@ export default function RadioPanel({
             disabled={disabled || applyingSection !== null}
             description={t('radioPanel.ledHeartbeatDisabledDesc')}
           />
+          <MeshtasticExtraConfigField
+            anchorId="radio.device.buzzerMode"
+            spec={DEVICE_EXTRA_FIELDS.buzzerMode}
+            state={deviceExtra}
+            disabled={disabled || applyingSection !== null}
+          />
           <ConfigNumber
             anchorId="radio.device.buttonGpio"
             label={t('radioPanel.buttonGpioLabel')}
@@ -2536,16 +2669,21 @@ export default function RadioPanel({
           capabilities?.hasFullPositionConfig === false
             ? undefined
             : () =>
-                applyConfig(t('radioPanel.sectionPositionGps'), 'position', {
-                  positionBroadcastSecs,
-                  gpsUpdateInterval,
-                  fixedPosition,
-                  gpsMode,
-                  positionPrecision,
-                  smartPositionEnabled,
-                  broadcastSmartMinimumDistance: smartPositionMinDistance,
-                  broadcastSmartMinimumIntervalSecs: smartPositionMinInterval,
-                })
+                applyConfigWithExtra(
+                  t('radioPanel.sectionPositionGps'),
+                  'position',
+                  {
+                    positionBroadcastSecs,
+                    gpsUpdateInterval,
+                    fixedPosition,
+                    gpsMode,
+                    positionPrecision,
+                    positionBroadcastSmartEnabled: smartPositionEnabled,
+                    broadcastSmartMinimumDistance: smartPositionMinDistance,
+                    broadcastSmartMinimumIntervalSecs: smartPositionMinInterval,
+                  },
+                  positionExtra,
+                )
         }
         applying={applyingSection === 'position'}
         status={sectionStatus('position')}
@@ -2643,6 +2781,29 @@ export default function RadioPanel({
               disabled={disabled || applyingSection !== null}
               description={t('radioPanel.fixedPositionDesc')}
             />
+            <MeshtasticExtraConfigField
+              anchorId="radio.position.flags"
+              spec={POSITION_EXTRA_FIELDS.positionFlags}
+              state={positionExtra}
+              disabled={disabled || applyingSection !== null}
+            />
+            <MeshtasticAdvancedHardwareGroup>
+              <MeshtasticExtraConfigField
+                spec={POSITION_EXTRA_FIELDS.rxGpio}
+                state={positionExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+              <MeshtasticExtraConfigField
+                spec={POSITION_EXTRA_FIELDS.txGpio}
+                state={positionExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+              <MeshtasticExtraConfigField
+                spec={POSITION_EXTRA_FIELDS.gpsEnGpio}
+                state={positionExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+            </MeshtasticAdvancedHardwareGroup>
           </>
         )}
         {/* For Meshtastic: lat/lon shown when fixedPosition toggle is on */}
@@ -2796,14 +2957,19 @@ export default function RadioPanel({
           anchorId="radio.power.section"
           title={t('radioPanel.sectionPower')}
           onApply={() =>
-            applyConfig(t('radioPanel.sectionPower'), 'power', {
-              isPowerSaving,
-              minWakeSecs,
-              waitBluetoothSecs,
-              sdsSecs,
-              lsSecs,
-              onBatteryShutdownAfterSecs,
-            })
+            applyConfigWithExtra(
+              t('radioPanel.sectionPower'),
+              'power',
+              {
+                isPowerSaving,
+                minWakeSecs,
+                waitBluetoothSecs,
+                sdsSecs,
+                lsSecs,
+                onBatteryShutdownAfterSecs,
+              },
+              powerExtra,
+            )
           }
           applying={applyingSection === 'power'}
           status={sectionStatus('power')}
@@ -2872,6 +3038,23 @@ export default function RadioPanel({
             unit={t('radioPanel.secondsUnit')}
             description={t('radioPanel.batteryShutdownDesc')}
           />
+          <MeshtasticAdvancedHardwareGroup>
+            <MeshtasticExtraConfigField
+              spec={POWER_EXTRA_FIELDS.adcMultiplierOverride}
+              state={powerExtra}
+              disabled={disabled || applyingSection !== null}
+            />
+            <MeshtasticExtraConfigField
+              spec={POWER_EXTRA_FIELDS.deviceBatteryInaAddress}
+              state={powerExtra}
+              disabled={disabled || applyingSection !== null}
+            />
+            <MeshtasticExtraConfigField
+              spec={POWER_EXTRA_FIELDS.powermonEnables}
+              state={powerExtra}
+              disabled={disabled || applyingSection !== null}
+            />
+          </MeshtasticAdvancedHardwareGroup>
         </ConfigSection>
       )}
 
@@ -2904,19 +3087,33 @@ export default function RadioPanel({
           />
         )}
 
+      {capabilities?.hasCompanionCli && meshcoreCompanionCli && (
+        <MeshcoreCompanionCliSection
+          key={identityId ?? 'meshcore-companion-cli'}
+          cli={meshcoreCompanionCli}
+          disabled={disabled}
+          onToast={addToast}
+        />
+      )}
+
       {/* ═══ WiFi / Network ═══ */}
       {capabilities?.hasWifiConfig !== false && (
         <ConfigSection
           anchorId="radio.wifi.section"
           title={t('radioPanel.sectionWifi')}
           onApply={() =>
-            applyConfig(t('radioPanel.sectionWifi'), 'network', {
-              wifiEnabled,
-              wifiSsid,
-              wifiPsk,
-              ntpServer,
-              ethEnabled,
-            })
+            applyConfigWithExtra(
+              t('radioPanel.sectionWifi'),
+              'network',
+              {
+                wifiEnabled,
+                wifiSsid,
+                wifiPsk,
+                ntpServer,
+                ethEnabled,
+              },
+              networkExtra,
+            )
           }
           applying={applyingSection === 'network'}
           status={sectionStatus('network')}
@@ -2982,6 +3179,52 @@ export default function RadioPanel({
             disabled={disabled || applyingSection !== null}
             description={t('radioPanel.ethernetEnabledDesc')}
           />
+          <MeshtasticExtraConfigField
+            anchorId="radio.wifi.addressMode"
+            spec={NETWORK_EXTRA_FIELDS.addressMode}
+            state={networkExtra}
+            disabled={disabled || applyingSection !== null}
+          />
+          {networkExtra.values.addressMode === MESHTASTIC_ADDRESS_MODE_STATIC && (
+            <div className="border-ink-700 space-y-4 border-l pl-3">
+              <MeshtasticExtraConfigField
+                spec={NETWORK_EXTRA_FIELDS.ip}
+                state={networkExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+              <MeshtasticExtraConfigField
+                spec={NETWORK_EXTRA_FIELDS.gateway}
+                state={networkExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+              <MeshtasticExtraConfigField
+                spec={NETWORK_EXTRA_FIELDS.subnet}
+                state={networkExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+              <MeshtasticExtraConfigField
+                spec={NETWORK_EXTRA_FIELDS.dns}
+                state={networkExtra}
+                disabled={disabled || applyingSection !== null}
+              />
+            </div>
+          )}
+          <MeshtasticExtraConfigField
+            anchorId="radio.wifi.rsyslog"
+            spec={NETWORK_EXTRA_FIELDS.rsyslogServer}
+            state={networkExtra}
+            disabled={disabled || applyingSection !== null}
+          />
+          <MeshtasticExtraConfigField
+            spec={NETWORK_EXTRA_FIELDS.enabledProtocols}
+            state={networkExtra}
+            disabled={disabled || applyingSection !== null}
+          />
+          <MeshtasticExtraConfigField
+            spec={NETWORK_EXTRA_FIELDS.ipv6Enabled}
+            state={networkExtra}
+            disabled={disabled || applyingSection !== null}
+          />
         </ConfigSection>
       )}
 
@@ -2991,19 +3234,24 @@ export default function RadioPanel({
           anchorId="radio.display.section"
           title={t('radioPanel.sectionDisplay')}
           onApply={() =>
-            applyConfig(t('radioPanel.sectionDisplay'), 'display', {
-              screenOnSecs,
-              units: displayUnits,
-              autoScreenCarouselSecs,
-              flipScreen,
-              oled,
-              displaymode,
-              headingBold,
-              wakeOnTapOrMotion,
-              use12hClock,
-              useLongNodeName,
-              enableMessageBubbles,
-            })
+            applyConfigWithExtra(
+              t('radioPanel.sectionDisplay'),
+              'display',
+              {
+                screenOnSecs,
+                units: displayUnits,
+                autoScreenCarouselSecs,
+                flipScreen,
+                oled,
+                displaymode,
+                headingBold,
+                wakeOnTapOrMotion,
+                use12hClock,
+                useLongNodeName,
+                enableMessageBubbles,
+              },
+              displayExtra,
+            )
           }
           applying={applyingSection === 'display'}
           status={sectionStatus('display')}
@@ -3105,6 +3353,17 @@ export default function RadioPanel({
             onChange={setEnableMessageBubbles}
             disabled={disabled || applyingSection !== null}
             description={t('radioPanel.enableMessageBubblesDesc')}
+          />
+          <MeshtasticExtraConfigField
+            anchorId="radio.display.compass"
+            spec={DISPLAY_EXTRA_FIELDS.compassNorthTop}
+            state={displayExtra}
+            disabled={disabled || applyingSection !== null}
+          />
+          <MeshtasticExtraConfigField
+            spec={DISPLAY_EXTRA_FIELDS.compassOrientation}
+            state={displayExtra}
+            disabled={disabled || applyingSection !== null}
           />
         </ConfigSection>
       )}

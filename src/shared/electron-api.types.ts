@@ -1,5 +1,6 @@
 // Single source of truth for the Electron context bridge API surface.
 import type { MeshNode, MQTTSettings, MQTTStatus } from '../renderer/lib/types';
+import type { AiAPI } from './ai-types';
 import type { BeaconFeedApi } from './beacon';
 import type {
   EnvironmentReading,
@@ -72,11 +73,16 @@ import type {
 import type { ServiceAnnouncementFetchResult } from './serviceAnnouncementFeed';
 import type { SupportBundleMode } from './support-bundle.types';
 import type {
+  TAKChannelChatMessage,
+  TakChatChannel,
   TAKClientInfo,
   TAKContact,
   TAKContactsUpdate,
+  TAKDirectMessage,
+  TakDirectPeer,
+  TakDmProtocol,
+  TakDmStatusUpdate,
   TAKEnrollmentRequest,
-  TAKGeochatMessage,
   TAKInboundChat,
   TAKNodeUpdate,
   TAKRemoteCredentialSummary,
@@ -379,6 +385,7 @@ export type BleCoexistenceAcquireScanResult =
 export interface ElectronAPI {
   beacon: BeaconFeedApi;
   translation: TranslationAPI;
+  ai: AiAPI;
   // ─── Database operations ────────────────────────────────────────────────────
   db: {
     saveMessage: (message: {
@@ -1467,13 +1474,35 @@ export interface ElectronAPI {
     remoteEnroll: (request: TAKEnrollmentRequest) => Promise<TAKRemoteCredentialSummary>;
     remoteClearCredentials: () => Promise<TAKRemoteCredentialSummary>;
     onRemoteStatus: (cb: (status: TAKRemoteStatus) => void) => () => void;
-    /** Mirror one heard mesh channel message into TAK GeoChat; dropped while no sink is active. */
-    pushChatMessage: (message: TAKGeochatMessage) => Promise<void>;
+    /** Deliver one message heard on a served channel to TAK clients; dropped with no sink. */
+    pushChatMessage: (message: TAKChannelChatMessage) => Promise<void>;
     /**
-     * Replace the GeoChat rooms TAK clients may send to. Each is announced to clients as a
-     * contact they can message; ignored while no sink has started.
+     * Replace the mesh channels served to TAK clients. Each is announced to clients as a
+     * contact; ignored while no sink has started.
      */
-    setChatSendRooms: (rooms: string[]) => Promise<void>;
+    setChatChannels: (channels: TakChatChannel[]) => Promise<void>;
+    /**
+     * Name the previous version's GeoChat rooms, whose contacts TAK clients should drop;
+     * ignored while no sink has started.
+     */
+    retireChatRooms: (rooms: string[]) => Promise<void>;
+    /** Deliver one direct message heard from a companion to TAK clients; dropped with no sink. */
+    pushDirectMessage: (message: TAKDirectMessage) => Promise<void>;
+    /**
+     * Set the radios whose companions TAK clients may message; ignored while no sink has
+     * started.
+     */
+    setDirectMessaging: (protocols: TakDmProtocol[]) => Promise<void>;
+    /**
+     * Report how a TAK client's direct message ended, so its device gets a receipt or a note;
+     * dropped with no sink.
+     */
+    dmStatus: (update: TakDmStatusUpdate) => Promise<void>;
+    /**
+     * Set the peers this app has a direct conversation with, which TAK clients may message even
+     * with no marker; ignored while no sink has started.
+     */
+    setDirectPeers: (peers: TakDirectPeer[]) => Promise<void>;
     /** How relayed nodes are styled: user unit filters over each node's advertised role. */
     getStyleSettings: () => Promise<TakStyleSettings>;
     /** Validate, save, and apply style settings; resolves with what was saved. */

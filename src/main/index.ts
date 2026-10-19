@@ -41,6 +41,7 @@ import { formatDatabaseSchemaTooNewMessage, showFatalStartupError } from './fata
 import { gattSidecarProxy } from './gatt-sidecar-proxy';
 import { isHarmlessSocketOptionError } from './harmlessSocketOptionError';
 import { validateHttpHost } from './httpHostValidation';
+import { registerAiHandlers } from './ipc/ai-handlers';
 import { registerAppSettingsIpcHandlers } from './ipc/app-settings-handlers';
 import { registerBeaconIpcHandlers } from './ipc/beacon-handlers';
 import { registerBluetoothctlIpcHandlers } from './ipc/bluetoothctl-handlers';
@@ -122,6 +123,10 @@ try {
 
 // Custom scheme for offline map tiles (must register before app.whenReady).
 protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'mesh-ai',
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
+  },
   {
     scheme: 'mesh-tiles',
     privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true },
@@ -1659,6 +1664,20 @@ registerGeoIpcHandlers();
 registerBeaconIpcHandlers();
 registerGpsIpcHandlers();
 registerNotificationSoundHandlers();
+const disposeAi = registerAiHandlers({
+  getSetting: (key) =>
+    (
+      getDatabase().prepareOnce('SELECT value FROM app_settings WHERE key = ?').get(key) as
+        { value: string } | undefined
+    )?.value,
+  setSetting: (key, value) => {
+    getDatabase()
+      .prepareOnce('INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)')
+      .run(key, value);
+  },
+  getWebContents: () => mainWindow?.webContents,
+});
+app.on('before-quit', disposeAi);
 const disposeTranslation = registerTranslationHandlers({
   getSetting: (key) =>
     (

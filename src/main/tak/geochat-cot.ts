@@ -1,15 +1,28 @@
 import { randomUUID } from 'crypto';
 
+import { isChannelIdentityKey } from '../../shared/channelIdentityKey';
 import { isValidLatLon } from '../../shared/geoCoords';
 import {
+  isTakDmProtocol,
+  TAK_CHAT_CHANNELS_MAX,
   TAK_CHAT_ROOM_UID_PREFIX,
-  TAK_CHAT_SEND_ROOMS_MAX,
+  TAK_DIRECT_PEERS_MAX,
+  TAK_DM_OUTCOMES,
+  TAK_DM_PROTOCOLS,
   TAK_GEOCHAT_CALLSIGN_MAX_LEN,
   TAK_GEOCHAT_ROOM_MAX_LEN,
   TAK_GEOCHAT_TEXT_MAX_LEN,
+  type TAKChannelChatMessage,
+  type TakChatChannel,
+  type TAKDirectMessage,
+  type TakDirectPeer,
+  type TakDmOutcome,
+  type TakDmProtocol,
+  type TakDmStatusUpdate,
   type TAKGeochatMessage,
 } from '../../shared/tak-types';
 import { escapeXml } from '../../shared/xmlEscape';
+import { COT_CHAT_ENDPOINT } from './cot-converter';
 
 /** GeoChat messages stay in ATAK's history; stale only bounds how long servers relay them. */
 const GEOCHAT_STALE_MS = 24 * 60 * 60 * 1000;
@@ -33,27 +46,55 @@ export function geochatSenderUid(callsign: string): string {
   return `MESHCHAT-${fnv1aHex(callsign)}`;
 }
 
-/** Stable uid of the contact that stands for a room TAK clients may send to. */
-export function chatRoomContactUid(room: string): string {
+/**
+ * Stable uid of the contact that stands for a served channel, from the channel's identity key:
+ * a channel moved to another slot, or renamed in ATAK's eyes, keeps its contact and history.
+ */
+/**
+ * Uid of the contact the previous version announced for a GeoChat room open for sending. Those
+ * contacts are retired: main tells ATAK devices to drop them after the upgrade.
+ */
+export function retiredRoomContactUid(room: string): string {
   return `${TAK_CHAT_ROOM_UID_PREFIX}${fnv1aHex(room)}`;
 }
 
-/** Validate the renderer's list of rooms TAK clients may send to. Throws when malformed. */
-export function parseTakChatSendRooms(raw: unknown): string[] {
-  const bad = () =>
-    new Error(
-      `tak:setChatSendRooms: expected up to ${TAK_CHAT_SEND_ROOMS_MAX} rooms of 1-${TAK_GEOCHAT_ROOM_MAX_LEN} printable characters`,
-    );
-  if (!Array.isArray(raw) || raw.length > TAK_CHAT_SEND_ROOMS_MAX) throw bad();
-  const rooms = new Set<string>();
-  for (const room of raw) {
-    const trimmed = typeof room === 'string' ? room.trim() : '';
-    if (!trimmed || trimmed.length > TAK_GEOCHAT_ROOM_MAX_LEN || CONTROL_CHARS_RE.test(trimmed)) {
-      throw bad();
-    }
-    rooms.add(trimmed);
+/** Most retired rooms the renderer may hand main. */
+const RETIRED_ROOMS_MAX = 64;
+
+/** Validate the renderer's list of retired room names. Throws when malformed. */
+export function parseTakRetiredRooms(raw: unknown): string[] {
+  const channel = 'tak:retireChatRooms';
+  if (!Array.isArray(raw) || raw.length > RETIRED_ROOMS_MAX) {
+    throw new Error(`${channel}: expected a list of at most ${RETIRED_ROOMS_MAX} room names`);
   }
-  return [...rooms];
+  return [...new Set(raw.map((r) => label(r, TAK_GEOCHAT_ROOM_MAX_LEN, 'room', channel)))];
+}
+
+export function channelContactUid(channelKey: string): string {
+  return `${TAK_CHAT_ROOM_UID_PREFIX}${fnv1aHex(channelKey)}`;
+}
+
+/** Validate the renderer's list of channels served to TAK clients. Throws when malformed. */
+export function parseTakChatChannels(raw: unknown): TakChatChannel[] {
+  const bad = (why: string) => new Error(`tak:setChatChannels: ${why}`);
+  if (!Array.isArray(raw) || raw.length > TAK_CHAT_CHANNELS_MAX) {
+    throw bad(`expected an array of at most ${TAK_CHAT_CHANNELS_MAX} channels`);
+  }
+  const byKey = new Map<string, TakChatChannel>();
+  for (const item of raw as unknown[]) {
+    if (!item || typeof item !== 'object') throw bad('each channel must be an object');
+    const c = item as Record<string, unknown>;
+    if (!isChannelIdentityKey(c.key)) throw bad('key must be a channel identity key');
+    const name = typeof c.name === 'string' ? c.name.trim() : '';
+    if (!name || name.length > TAK_GEOCHAT_ROOM_MAX_LEN || CONTROL_CHARS_RE.test(name)) {
+      throw bad(`name must be 1-${TAK_GEOCHAT_ROOM_MAX_LEN} printable characters`);
+    }
+    if (typeof c.send !== 'boolean' || typeof c.remote !== 'boolean') {
+      throw bad('send and remote must be booleans');
+    }
+    byKey.set(c.key, { key: c.key, name, send: c.send, remote: c.remote });
+  }
+  return [...byKey.values()];
 }
 
 /** A TAK client the server can address: the uid and callsign from its own position report. */
@@ -62,51 +103,67 @@ export interface GeochatRecipient {
   callsign: string;
 }
 
-/** How long a room contact stays in ATAK without being announced again. */
+/** How long a channel contact stays in ATAK without being announced again. */
 export const CHAT_ROOM_CONTACT_STALE_MS = GEOCHAT_STALE_MS;
 
+/** Sender name on notes the server itself writes into a channel's conversation. */
+export const CHANNEL_NOTE_SENDER = 'mesh-client';
+
 /**
- * The contact that stands for a room TAK clients may send to. ATAK only transmits chat to a
- * contact it can reach, and `endpoint="*:-1:stcp"` says this one is reached through the server
- * connection. A contact needs a point; a room has no place, so it sits at 0, 0.
+ * The contact that stands for a served channel. ATAK only transmits chat to a contact it can
+ * reach, and `endpoint="*:-1:stcp"` says this one is reached through the server connection, so
+ * only a channel TAK clients may send to carries it: a receive-only channel offers no way to
+ * type to it. A contact needs a point; a channel has no place, so it sits at 0, 0.
  */
-export function buildChatRoomContactCot(room: string, nowMs: number = Date.now()): string {
-  const uid = escapeXml(chatRoomContactUid(room));
+export function buildChannelContactCot(
+  channel: TakChatChannel,
+  nowMs: number = Date.now(),
+): string {
+  const uid = escapeXml(channelContactUid(channel.key));
   const time = new Date(nowMs).toISOString();
   const stale = new Date(nowMs + CHAT_ROOM_CONTACT_STALE_MS).toISOString();
+  const endpoint = channel.send ? ` endpoint="${COT_CHAT_ENDPOINT}"` : '';
   return (
     `<event version="2.0" uid="${uid}" type="a-f-G-U-C" time="${time}" start="${time}"` +
     ` stale="${stale}" how="h-g-i-g-o">` +
     `<point lat="0" lon="0" hae="${UNKNOWN_ALTITUDE}" ce="9999999" le="9999999"/>` +
     `<detail>` +
-    `<contact callsign="${escapeXml(room)}" endpoint="*:-1:stcp"/>` +
+    `<contact callsign="${escapeXml(channel.name)}"${endpoint}/>` +
     `<__group name="White" role="Team Member"/>` +
     `</detail>` +
     `</event>`
   );
 }
 
+/** One line in a channel's conversation: who said it, what, and when. */
+export interface ChannelChatLine {
+  senderCallsign: string;
+  text: string;
+  timeMs: number;
+}
+
 /**
- * One message in a send-enabled room, as a direct message to `recipient` from the room's
- * contact. ATAK files it under that contact, and a reply there comes back addressed to the
- * contact's uid, which names the room. The original sender's name leads the text because every
- * line in the conversation comes from the same contact.
+ * One line on a served channel, as a direct message to `recipient` from the channel's contact.
+ * ATAK files it under that contact, and a reply there comes back addressed to the contact's
+ * uid, which names the channel. The original sender's name leads the text because every line
+ * in the conversation comes from the same contact.
  */
-export function buildRoomContactChatCot(
-  msg: TAKGeochatMessage,
+export function buildChannelChatCot(
+  channel: TakChatChannel,
+  line: ChannelChatLine,
   recipient: GeochatRecipient,
   nowMs: number = Date.now(),
   messageId: string = randomUUID(),
 ): string {
   return geochatEvent(
     {
-      ...msg,
-      latitude: undefined,
-      longitude: undefined,
-      text: `${msg.senderCallsign}: ${msg.text}`,
+      room: channel.name,
+      senderCallsign: line.senderCallsign,
+      timeMs: line.timeMs,
+      text: `${line.senderCallsign}: ${line.text}`,
     },
-    chatRoomContactUid(msg.room),
-    msg.room,
+    channelContactUid(channel.key),
+    channel.name,
     recipient.callsign,
     recipient.uid,
     nowMs,
@@ -114,31 +171,54 @@ export function buildRoomContactChatCot(
   );
 }
 
-/** A trimmed single-line label of 1 to `max` characters; throws naming `field` otherwise. */
-function label(value: unknown, max: number, field: string): string {
-  if (typeof value !== 'string') throw new Error(`tak:pushChatMessage: ${field} must be a string`);
+/**
+ * A trimmed single-line label of 1 to `max` characters; throws naming the IPC `channel` and
+ * `field` otherwise.
+ */
+function label(value: unknown, max: number, field: string, channel: string): string {
+  if (typeof value !== 'string') throw new Error(`${channel}: ${field} must be a string`);
   const trimmed = value.trim();
   if (!trimmed || trimmed.length > max || CONTROL_CHARS_RE.test(trimmed)) {
-    throw new Error(`tak:pushChatMessage: ${field} must be 1-${max} printable characters`);
+    throw new Error(`${channel}: ${field} must be 1-${max} printable characters`);
   }
   return trimmed;
 }
 
-/** Validate an untrusted GeoChat message from the renderer. Throws when malformed. */
-export function parseTakGeochatMessage(raw: unknown): TAKGeochatMessage {
+/** Message text of 1 to the GeoChat maximum, and a positive send time; throws otherwise. */
+function textAndTime(
+  m: Record<string, unknown>,
+  channel: string,
+): { text: string; timeMs: number } {
+  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > TAK_GEOCHAT_TEXT_MAX_LEN) {
+    throw new Error(`${channel}: text must be 1-${TAK_GEOCHAT_TEXT_MAX_LEN} characters`);
+  }
+  if (typeof m.timeMs !== 'number' || !Number.isFinite(m.timeMs) || m.timeMs <= 0) {
+    throw new Error(`${channel}: timeMs must be a positive number`);
+  }
+  return { text: m.text.trim(), timeMs: m.timeMs };
+}
+
+/** Validate an untrusted heard channel message from the renderer. Throws when malformed. */
+export function parseTakChannelChatMessage(raw: unknown): TAKChannelChatMessage {
   if (!raw || typeof raw !== 'object') {
     throw new Error('tak:pushChatMessage: message must be an object');
   }
   const m = raw as Record<string, unknown>;
-  const room = label(m.room, TAK_GEOCHAT_ROOM_MAX_LEN, 'room');
-  const senderCallsign = label(m.senderCallsign, TAK_GEOCHAT_CALLSIGN_MAX_LEN, 'senderCallsign');
-  if (typeof m.text !== 'string' || !m.text.trim() || m.text.length > TAK_GEOCHAT_TEXT_MAX_LEN) {
-    throw new Error(`tak:pushChatMessage: text must be 1-${TAK_GEOCHAT_TEXT_MAX_LEN} characters`);
+  if (!isChannelIdentityKey(m.channelKey)) {
+    throw new Error('tak:pushChatMessage: channelKey must be a channel identity key');
   }
-  if (typeof m.timeMs !== 'number' || !Number.isFinite(m.timeMs) || m.timeMs <= 0) {
-    throw new Error('tak:pushChatMessage: timeMs must be a positive number');
-  }
-  const msg: TAKGeochatMessage = { room, senderCallsign, text: m.text.trim(), timeMs: m.timeMs };
+  const channelKey = m.channelKey;
+  const senderCallsign = label(
+    m.senderCallsign,
+    TAK_GEOCHAT_CALLSIGN_MAX_LEN,
+    'senderCallsign',
+    'tak:pushChatMessage',
+  );
+  const msg: TAKChannelChatMessage = {
+    channelKey,
+    senderCallsign,
+    ...textAndTime(m, 'tak:pushChatMessage'),
+  };
   if (m.latitude != null || m.longitude != null) {
     if (
       typeof m.latitude !== 'number' ||
@@ -151,6 +231,183 @@ export function parseTakGeochatMessage(raw: unknown): TAKGeochatMessage {
     msg.longitude = m.longitude;
   }
   return msg;
+}
+
+const MAX_NODE_ID = 0xffffffff;
+
+/** Validate an untrusted heard direct message from the renderer. Throws when malformed. */
+export function parseTakDirectMessage(raw: unknown): TAKDirectMessage {
+  const channel = 'tak:pushDirectMessage';
+  if (!raw || typeof raw !== 'object') throw new Error(`${channel}: message must be an object`);
+  const m = raw as Record<string, unknown>;
+  if (!isTakDmProtocol(m.protocol)) {
+    throw new Error(`${channel}: protocol must be one of ${TAK_DM_PROTOCOLS.join(', ')}`);
+  }
+  const nodeId = m.nodeId;
+  if (
+    typeof nodeId !== 'number' ||
+    !Number.isInteger(nodeId) ||
+    nodeId <= 0 ||
+    nodeId > MAX_NODE_ID
+  ) {
+    throw new Error(`${channel}: nodeId must be a node number`);
+  }
+  return {
+    protocol: m.protocol,
+    nodeId,
+    senderCallsign: label(
+      m.senderCallsign,
+      TAK_GEOCHAT_CALLSIGN_MAX_LEN,
+      'senderCallsign',
+      channel,
+    ),
+    ...textAndTime(m, channel),
+  };
+}
+
+/** Validate the renderer's list of radios with direct messages on. Throws when malformed. */
+export function parseTakDmProtocols(raw: unknown): TakDmProtocol[] {
+  if (!Array.isArray(raw) || !raw.every(isTakDmProtocol)) {
+    throw new Error(`tak:setDirectMessaging: expected a list of ${TAK_DM_PROTOCOLS.join(', ')}`);
+  }
+  return [...new Set(raw)];
+}
+
+/** Validate the renderer's list of conversation peers. Throws when malformed. */
+export function parseTakDirectPeers(raw: unknown): TakDirectPeer[] {
+  const channel = 'tak:setDirectPeers';
+  if (!Array.isArray(raw) || raw.length > TAK_DIRECT_PEERS_MAX) {
+    throw new Error(`${channel}: expected a list of at most ${TAK_DIRECT_PEERS_MAX} peers`);
+  }
+  const byKey = new Map<string, TakDirectPeer>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') throw new Error(`${channel}: peer must be an object`);
+    const p = item as Record<string, unknown>;
+    if (!isTakDmProtocol(p.protocol)) {
+      throw new Error(`${channel}: protocol must be one of ${TAK_DM_PROTOCOLS.join(', ')}`);
+    }
+    const nodeId = p.nodeId;
+    if (
+      typeof nodeId !== 'number' ||
+      !Number.isInteger(nodeId) ||
+      nodeId <= 0 ||
+      nodeId > MAX_NODE_ID
+    ) {
+      throw new Error(`${channel}: nodeId must be a node number`);
+    }
+    const callsign = label(p.callsign, TAK_GEOCHAT_CALLSIGN_MAX_LEN, 'callsign', channel);
+    const key = `${p.protocol}:${nodeId}`;
+    if (!byKey.has(key)) byKey.set(key, { protocol: p.protocol, nodeId, callsign });
+  }
+  return [...byKey.values()];
+}
+
+const DM_REF_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Validate an untrusted direct message outcome from the renderer. Throws when malformed. */
+export function parseTakDmStatus(raw: unknown): TakDmStatusUpdate {
+  const channel = 'tak:dmStatus';
+  if (!raw || typeof raw !== 'object') throw new Error(`${channel}: update must be an object`);
+  const m = raw as Record<string, unknown>;
+  if (typeof m.dmRef !== 'string' || !DM_REF_RE.test(m.dmRef)) {
+    throw new Error(`${channel}: dmRef must be a message reference`);
+  }
+  if (!(TAK_DM_OUTCOMES as readonly unknown[]).includes(m.outcome)) {
+    throw new Error(`${channel}: outcome must be one of ${TAK_DM_OUTCOMES.join(', ')}`);
+  }
+  return { dmRef: m.dmRef, outcome: m.outcome as TakDmOutcome };
+}
+
+/** How long a companion keeps its contact without a marker after the last direct message. */
+export const DIRECT_CONTACT_TTL_MS = 24 * 60 * 60 * 1000;
+
+/** A companion as a chat contact: its marker's uid and the callsign ATAK shows for it. */
+export interface DirectChatContact {
+  uid: string;
+  callsign: string;
+}
+
+/** One line of a direct conversation. */
+export interface DirectChatLine {
+  text: string;
+  timeMs: number;
+}
+
+/**
+ * Contact for a companion a direct message has passed with but that has no marker on the map
+ * (no position, or hidden by the filters or the age limit). It sits at 0, 0, under the marker's
+ * uid, so a marker arriving later takes its place, and goes stale a day after `lastDmMs`.
+ */
+export function buildDirectContactCot(
+  contact: DirectChatContact,
+  lastDmMs: number,
+  nowMs: number = Date.now(),
+): string {
+  const time = new Date(nowMs).toISOString();
+  const stale = new Date(Math.max(lastDmMs + DIRECT_CONTACT_TTL_MS, nowMs)).toISOString();
+  return (
+    `<event version="2.0" uid="${escapeXml(contact.uid)}" type="a-f-G-U-C" time="${time}"` +
+    ` start="${time}" stale="${stale}" how="h-g-i-g-o">` +
+    `<point lat="0" lon="0" hae="${UNKNOWN_ALTITUDE}" ce="9999999" le="9999999"/>` +
+    `<detail>` +
+    `<contact callsign="${escapeXml(contact.callsign)}" endpoint="${COT_CHAT_ENDPOINT}"/>` +
+    `</detail>` +
+    `</event>`
+  );
+}
+
+/**
+ * A direct message to `recipient` from a companion's contact. ATAK files it under that contact,
+ * and a reply there comes back addressed to the companion's uid.
+ */
+export function buildDirectChatCot(
+  contact: DirectChatContact,
+  line: DirectChatLine,
+  recipient: GeochatRecipient,
+  nowMs: number = Date.now(),
+  messageId: string = randomUUID(),
+): string {
+  return geochatEvent(
+    { room: contact.callsign, senderCallsign: contact.callsign, ...line },
+    contact.uid,
+    contact.callsign,
+    recipient.callsign,
+    recipient.uid,
+    nowMs,
+    messageId,
+  );
+}
+
+/**
+ * Delivery receipt (`b-t-f-d`) for the message `messageId` a TAK client sent to a companion's
+ * contact: the companion acknowledged it, so ATAK marks it delivered. It describes that
+ * conversation as the client filed it (`chatroom`, the companion's uid as its id) and comes
+ * from the companion's contact.
+ */
+export function buildDirectReceiptCot(
+  contact: DirectChatContact,
+  chatroom: string,
+  recipient: GeochatRecipient,
+  messageId: string,
+  nowMs: number = Date.now(),
+): string {
+  const time = new Date(nowMs).toISOString();
+  const stale = new Date(nowMs + GEOCHAT_STALE_MS).toISOString();
+  const uid = escapeXml(contact.uid);
+  const id = escapeXml(messageId);
+  return (
+    `<event version="2.0" uid="${id}" type="b-t-f-d" time="${time}" start="${time}"` +
+    ` stale="${stale}" how="h-g-i-g-o">` +
+    `<point lat="0" lon="0" hae="${UNKNOWN_ALTITUDE}" ce="9999999" le="9999999"/>` +
+    `<detail>` +
+    `<__chatreceipt parent="RootContactGroup" groupOwner="false" messageId="${id}"` +
+    ` chatroom="${escapeXml(chatroom)}" id="${uid}" senderCallsign="${escapeXml(contact.callsign)}">` +
+    `<chatgrp uid0="${escapeXml(recipient.uid)}" uid1="${uid}" id="${uid}"/>` +
+    `</__chatreceipt>` +
+    `<link uid="${uid}" type="a-f-G-U-C" relation="p-p"/>` +
+    `</detail>` +
+    `</event>`
+  );
 }
 
 /**

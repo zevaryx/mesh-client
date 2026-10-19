@@ -250,6 +250,23 @@ const {
     deleteMeshcoreChannel: vi.fn().mockResolvedValue(undefined),
     setRadioParams: vi.fn().mockResolvedValue(undefined),
     applyMeshcoreTelemetryPrivacyPolicy: vi.fn().mockResolvedValue(undefined),
+    companionCli: {
+      available: false,
+      run: vi.fn(),
+      rebootAndReconnect: vi.fn().mockResolvedValue(undefined),
+      powerOff: vi.fn().mockResolvedValue(undefined),
+    },
+    companionRemote: {
+      getRemoteCliAllowed: vi.fn().mockResolvedValue(null),
+      setRemoteCliAllowed: vi.fn().mockResolvedValue(null),
+      sendRemoteCli: vi.fn().mockResolvedValue(''),
+    },
+    telemetryPush: {
+      subscriptions: new Map(),
+      subscribe: vi.fn(),
+      unsubscribe: vi.fn().mockResolvedValue(undefined),
+      clearAll: vi.fn(),
+    },
     applyMeshcoreContactAutoAdd: vi.fn().mockResolvedValue(undefined),
     refreshMeshcoreAutoaddFromDevice: vi.fn().mockResolvedValue(undefined),
     clearAllMeshcoreContacts: vi.fn().mockResolvedValue(undefined),
@@ -1340,14 +1357,14 @@ describe('App accessibility', () => {
     renderApp();
 
     const deviceLabel = await within(screen.getByRole('contentinfo')).findByRole('button', {
-      name: /^Radio: Reconnecting \(BLE\)/,
+      name: /^Radio: Reconnecting \(Bluetooth\)/,
     });
     const deviceText = deviceLabel.querySelector('span.truncate');
     expect(deviceText).toHaveClass('text-red-400');
     expect(deviceText).not.toHaveClass('animate-pulse');
     expect(deviceLabel.querySelector('.rounded-full')).toHaveClass('animate-pulse');
     expect(
-      screen.getByText('Reconnecting (BLE)', { selector: '[role="status"]' }),
+      screen.getByText('Reconnecting (Bluetooth)', { selector: '[role="status"]' }),
     ).toBeInTheDocument();
   });
 

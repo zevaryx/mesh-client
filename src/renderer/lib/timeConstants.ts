@@ -260,6 +260,12 @@ export const MESHTASTIC_GET_METADATA_AFTER_CONFIGURE_RETRY_MS = 30 * MS_PER_SECO
 export const MESHTASTIC_BLE_CONFIGURE_TIMEOUT_MS = 120 * MS_PER_SECOND;
 
 /**
+ * ModulePanel setModuleConfig + commitEditSettings can hang when the TCP/BLE link drops
+ * mid-admin without rejecting the SDK promise — unlock Apply after this budget.
+ */
+export const MESHTASTIC_MODULE_APPLY_TIMEOUT_MS = 45 * MS_PER_SECOND;
+
+/**
  * Coalesce `mqtt.updateChannelKeys` while RF channel configs stream in one-by-one.
  * Main-process topic→index is also merge-safe; this cuts IPC churn during configure.
  */
@@ -300,6 +306,9 @@ export const MESHCORE_BLE_DEVICE_QUERY_TIMEOUT_MS = 8_000;
 
 /** Exponential backoff cap for RF auto-reconnect (2s × 2^attempt, max this value). */
 export const MESHCORE_MAX_RECONNECT_DELAY_MS = 32_000;
+
+/** First reconnect backoff after a user-requested companion reboot (boot + BLE re-advertise). */
+export const MESHCORE_PLANNED_REBOOT_RECONNECT_DELAY_MS = 8 * MS_PER_SECOND;
 
 /** Hop-scaled timeout base for repeater status / telemetry / neighbors RPCs (USB serial queue). */
 export const MESHCORE_REPEATER_RPC_TIMEOUT_BASE_MS = 30_000;

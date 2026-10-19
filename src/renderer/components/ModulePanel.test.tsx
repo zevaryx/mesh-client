@@ -1,8 +1,9 @@
-import { screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithToast } from '../lib/testRenderHelpers';
+import { MESHTASTIC_MODULE_APPLY_TIMEOUT_MS } from '../lib/timeConstants';
 import ModulePanel from './ModulePanel';
 
 const baseProps = {
@@ -24,6 +25,10 @@ const baseProps = {
 describe('ModulePanel', () => {
   beforeEach(() => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('shows connect banner when disconnected', () => {
@@ -125,6 +130,204 @@ describe('ModulePanel', () => {
       });
       expect(onCommit).toHaveBeenCalled();
     });
+  });
+
+  it('unlocks global Apply lock when the radio disconnects mid-apply', async () => {
+    const user = userEvent.setup();
+    let resolveSet: (() => void) | undefined;
+    const onSetModuleConfig = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSet = resolve;
+        }),
+    );
+    const onCommit = vi.fn().mockResolvedValue(undefined);
+
+    const { rerender } = renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{
+          telemetry: {
+            deviceUpdateInterval: 1800,
+            environmentUpdateInterval: 1800,
+            environmentMeasurementEnabled: false,
+            powerMeasurementEnabled: false,
+            airQualityEnabled: false,
+          },
+          neighborInfo: {
+            enabled: false,
+            updateInterval: 900,
+            transmitOverLora: false,
+          },
+        }}
+        onSetModuleConfig={onSetModuleConfig}
+        onCommit={onCommit}
+      />,
+    );
+
+    const telemetryDetails = [...document.querySelectorAll('details')].find((d) => {
+      const span = d.querySelector(':scope > summary > span');
+      return span?.textContent?.trim() === 'Telemetry Module';
+    });
+    expect(telemetryDetails).toBeDefined();
+    await user.click(telemetryDetails!.querySelector('summary')!);
+    await user.click(screen.getByRole('button', { name: 'Apply Telemetry Module' }));
+
+    await waitFor(() => {
+      expect(onSetModuleConfig).toHaveBeenCalled();
+    });
+
+    const neighborDetails = [...document.querySelectorAll('details')].find((d) => {
+      const span = d.querySelector(':scope > summary > span');
+      return span?.textContent?.trim() === 'Neighbor Info Module';
+    });
+    expect(neighborDetails).toBeDefined();
+    await user.click(neighborDetails!.querySelector('summary')!);
+    expect(screen.getByRole('button', { name: 'Apply Neighbor Info Module' })).toBeDisabled();
+
+    rerender(
+      <ModulePanel
+        {...baseProps}
+        isConnected={false}
+        moduleConfigs={{
+          telemetry: {
+            deviceUpdateInterval: 1800,
+            environmentUpdateInterval: 1800,
+            environmentMeasurementEnabled: false,
+            powerMeasurementEnabled: false,
+            airQualityEnabled: false,
+          },
+          neighborInfo: {
+            enabled: false,
+            updateInterval: 900,
+            transmitOverLora: false,
+          },
+        }}
+        onSetModuleConfig={onSetModuleConfig}
+        onCommit={onCommit}
+      />,
+    );
+
+    rerender(
+      <ModulePanel
+        {...baseProps}
+        isConnected={true}
+        moduleConfigs={{
+          telemetry: {
+            deviceUpdateInterval: 1800,
+            environmentUpdateInterval: 1800,
+            environmentMeasurementEnabled: false,
+            powerMeasurementEnabled: false,
+            airQualityEnabled: false,
+          },
+          neighborInfo: {
+            enabled: false,
+            updateInterval: 900,
+            transmitOverLora: false,
+          },
+        }}
+        onSetModuleConfig={onSetModuleConfig}
+        onCommit={onCommit}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Apply Neighbor Info Module' })).not.toBeDisabled();
+    });
+
+    resolveSet?.();
+  });
+
+  it('times out a hung setModuleConfig and unlocks Apply while still connected', async () => {
+    vi.useFakeTimers();
+    const onSetModuleConfig = vi.fn(() => new Promise<void>(() => {}));
+    const onCommit = vi.fn().mockResolvedValue(undefined);
+
+    renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{
+          telemetry: {
+            deviceUpdateInterval: 1800,
+            environmentUpdateInterval: 1800,
+            environmentMeasurementEnabled: false,
+            powerMeasurementEnabled: false,
+            airQualityEnabled: false,
+          },
+          neighborInfo: {
+            enabled: false,
+            updateInterval: 900,
+            transmitOverLora: false,
+          },
+        }}
+        onSetModuleConfig={onSetModuleConfig}
+        onCommit={onCommit}
+      />,
+    );
+
+    const telemetryDetails = [...document.querySelectorAll('details')].find((d) => {
+      const span = d.querySelector(':scope > summary > span');
+      return span?.textContent?.trim() === 'Telemetry Module';
+    });
+    expect(telemetryDetails).toBeDefined();
+    fireEvent.click(telemetryDetails!.querySelector('summary')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Apply Telemetry Module' }));
+    expect(onSetModuleConfig).toHaveBeenCalled();
+
+    const neighborDetails = [...document.querySelectorAll('details')].find((d) => {
+      const span = d.querySelector(':scope > summary > span');
+      return span?.textContent?.trim() === 'Neighbor Info Module';
+    });
+    expect(neighborDetails).toBeDefined();
+    fireEvent.click(neighborDetails!.querySelector('summary')!);
+    expect(screen.getByRole('button', { name: 'Apply Neighbor Info Module' })).toBeDisabled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(MESHTASTIC_MODULE_APPLY_TIMEOUT_MS);
+    });
+
+    expect(screen.getByText(/The device did not respond in time/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply Neighbor Info Module' })).not.toBeDisabled();
+  });
+
+  it('does not treat last-known-only modules as Apply-ready', async () => {
+    const user = userEvent.setup();
+    renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{
+          telemetry: {
+            deviceUpdateInterval: 1800,
+            environmentUpdateInterval: 1800,
+            environmentMeasurementEnabled: false,
+            powerMeasurementEnabled: false,
+            airQualityEnabled: false,
+          },
+          tak: { team: 1, role: 2 },
+        }}
+        liveModuleConfigs={{
+          telemetry: {
+            deviceUpdateInterval: 1800,
+            environmentUpdateInterval: 1800,
+            environmentMeasurementEnabled: false,
+            powerMeasurementEnabled: false,
+            airQualityEnabled: false,
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getByText('TAK Module')).toBeInTheDocument();
+    const takDetails = [...document.querySelectorAll('details')].find((d) => {
+      const span = d.querySelector(':scope > summary > span');
+      return span?.textContent?.trim() === 'TAK Module';
+    });
+    expect(takDetails).toBeDefined();
+    await user.click(takDetails!.querySelector('summary')!);
+    expect(screen.getByRole('button', { name: 'Apply TAK Module' })).toBeDisabled();
+    expect(
+      screen.getByText(/Waiting for TAK Module settings from the device/i),
+    ).toBeInTheDocument();
   });
 
   it('preserves isServer and uses records field for Store & Forward apply', async () => {
@@ -664,5 +867,93 @@ describe('ModulePanel', () => {
         screen.getByRole('button', { name: 'Apply MQTT Relay (Device-Side)' }),
       ).not.toBeDisabled();
     });
+  });
+
+  it('applies the Status Message module with a trimmed status', async () => {
+    const user = userEvent.setup();
+    const onSetModuleConfig = vi.fn().mockResolvedValue(undefined);
+    renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{ ...baseProps.moduleConfigs, statusmessage: { nodeStatus: 'Old' } }}
+        onSetModuleConfig={onSetModuleConfig}
+      />,
+    );
+    await user.click(screen.getByText('Status Message Module'));
+    const input = screen.getByRole('textbox', { name: 'Node status' });
+    await user.clear(input);
+    await user.type(input, '  At base  ');
+    await user.click(screen.getByRole('button', { name: 'Apply Status Message Module' }));
+    await waitFor(() => {
+      expect(onSetModuleConfig).toHaveBeenCalledWith({
+        payloadVariant: { case: 'statusmessage', value: { nodeStatus: 'At base' } },
+      });
+    });
+  });
+
+  it('applies Audio module config and keeps the pin fields', async () => {
+    const user = userEvent.setup();
+    const onSetModuleConfig = vi.fn().mockResolvedValue(undefined);
+    renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{
+          ...baseProps.moduleConfigs,
+          audio: { codec2Enabled: false, bitrate: 0, pttPin: 12, i2sSck: 5 },
+        }}
+        onSetModuleConfig={onSetModuleConfig}
+      />,
+    );
+    await user.click(screen.getByText('Audio module'));
+    await user.click(screen.getByRole('switch', { name: 'Codec2 voice enabled' }));
+    await user.click(screen.getByRole('button', { name: 'Apply Audio module' }));
+    await waitFor(() => {
+      expect(onSetModuleConfig).toHaveBeenCalledWith({
+        payloadVariant: {
+          case: 'audio',
+          value: expect.objectContaining({ codec2Enabled: true, pttPin: 12, i2sSck: 5 }),
+        },
+      });
+    });
+  });
+
+  it('lists remote hardware pins read-only', () => {
+    renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{
+          ...baseProps.moduleConfigs,
+          remoteHardware: {
+            enabled: true,
+            availablePins: [{ gpioPin: 4, name: 'Relay', type: 2 }],
+          },
+        }}
+      />,
+    );
+    expect(screen.getByText('GPIO 4: Relay (Digital Write)')).toBeInTheDocument();
+  });
+
+  it('shows 2.8 module sections only when the radio reports them', () => {
+    const { unmount } = renderWithToast(<ModulePanel {...baseProps} />);
+    expect(screen.queryByText('Mesh Beacon Module')).toBeNull();
+    expect(screen.queryByText('Status Message Module')).toBeNull();
+    unmount();
+
+    renderWithToast(
+      <ModulePanel
+        {...baseProps}
+        moduleConfigs={{
+          ...baseProps.moduleConfigs,
+          meshBeacon: { flags: 1, broadcastIntervalSecs: 3600 },
+          statusmessage: { nodeStatus: '' },
+        }}
+        meshBeacons={new Map()}
+        onSetChannel={vi.fn().mockResolvedValue(undefined)}
+        onSetConfig={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+    expect(screen.getByText('Mesh Beacon Module')).toBeInTheDocument();
+    expect(screen.getByText('Status Message Module')).toBeInTheDocument();
+    expect(screen.getByText('Heard beacons')).toBeInTheDocument();
   });
 });

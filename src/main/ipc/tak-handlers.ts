@@ -15,7 +15,15 @@ import { MS_PER_MINUTE } from '../../shared/timeConstants';
 import { createIpcRateLimiter } from '../ipcRateLimit';
 import { sanitizeLogMessage } from '../log-service';
 import { enrollTakClientCertificate } from '../tak/enrollment';
-import { parseTakChatSendRooms, parseTakGeochatMessage } from '../tak/geochat-cot';
+import {
+  parseTakChannelChatMessage,
+  parseTakChatChannels,
+  parseTakDirectMessage,
+  parseTakDirectPeers,
+  parseTakDmProtocols,
+  parseTakDmStatus,
+  parseTakRetiredRooms,
+} from '../tak/geochat-cot';
 import { parseTakNodeUpdate } from '../tak/node-update';
 import {
   clearTakRemoteCredentials,
@@ -244,21 +252,89 @@ export function registerTakIpcHandlers(deps: TakIpcDeps): void {
     const m = getTakServerManager();
     if (!m?.hasActiveSink()) return;
     chatPushes.checkOrThrow();
-    m.sendChat(parseTakGeochatMessage(message));
+    m.sendChat(parseTakChannelChatMessage(message));
   });
 
-  const chatSendRoomUpdates = createIpcRateLimiter({
+  const chatChannelUpdates = createIpcRateLimiter({
     max: 60,
     windowMs: MS_PER_MINUTE,
-    label: 'tak:setChatSendRooms',
+    label: 'tak:setChatChannels',
   });
-  ipcMain.handle('tak:setChatSendRooms', (event, rooms: unknown) => {
-    assertIpcSender(event, 'tak:setChatSendRooms');
+  ipcMain.handle('tak:setChatChannels', (event, channels: unknown) => {
+    assertIpcSender(event, 'tak:setChatChannels');
     // No manager yet means no sink has started; the renderer sends the list again when one does.
     const m = getTakServerManager();
     if (!m) return;
-    chatSendRoomUpdates.checkOrThrow();
-    m.setChatSendRooms(parseTakChatSendRooms(rooms));
+    chatChannelUpdates.checkOrThrow();
+    m.setChatChannels(parseTakChatChannels(channels));
+  });
+
+  const retiredRoomUpdates = createIpcRateLimiter({
+    max: 10,
+    windowMs: MS_PER_MINUTE,
+    label: 'tak:retireChatRooms',
+  });
+  ipcMain.handle('tak:retireChatRooms', (event, rooms: unknown) => {
+    assertIpcSender(event, 'tak:retireChatRooms');
+    // As for channels: the renderer sends the list again when a sink starts.
+    const m = getTakServerManager();
+    if (!m) return;
+    retiredRoomUpdates.checkOrThrow();
+    m.retireChatRooms(parseTakRetiredRooms(rooms));
+  });
+
+  const directPushes = createIpcRateLimiter({
+    max: 120,
+    windowMs: MS_PER_MINUTE,
+    label: 'tak:pushDirectMessage',
+  });
+  ipcMain.handle('tak:pushDirectMessage', (event, message: unknown) => {
+    assertIpcSender(event, 'tak:pushDirectMessage');
+    const m = getTakServerManager();
+    if (!m?.hasActiveSink()) return;
+    directPushes.checkOrThrow();
+    m.sendDirectMessage(parseTakDirectMessage(message));
+  });
+
+  const directMessagingUpdates = createIpcRateLimiter({
+    max: 60,
+    windowMs: MS_PER_MINUTE,
+    label: 'tak:setDirectMessaging',
+  });
+  ipcMain.handle('tak:setDirectMessaging', (event, protocols: unknown) => {
+    assertIpcSender(event, 'tak:setDirectMessaging');
+    // As for channels: the renderer sends the setting again when a sink starts.
+    const m = getTakServerManager();
+    if (!m) return;
+    directMessagingUpdates.checkOrThrow();
+    m.setDirectMessaging(parseTakDmProtocols(protocols));
+  });
+
+  const directPeerUpdates = createIpcRateLimiter({
+    max: 60,
+    windowMs: MS_PER_MINUTE,
+    label: 'tak:setDirectPeers',
+  });
+  ipcMain.handle('tak:setDirectPeers', (event, peers: unknown) => {
+    assertIpcSender(event, 'tak:setDirectPeers');
+    // As for channels: the renderer sends the list again when a sink starts.
+    const m = getTakServerManager();
+    if (!m) return;
+    directPeerUpdates.checkOrThrow();
+    m.setDirectPeers(parseTakDirectPeers(peers));
+  });
+
+  const dmStatusUpdates = createIpcRateLimiter({
+    max: 120,
+    windowMs: MS_PER_MINUTE,
+    label: 'tak:dmStatus',
+  });
+  ipcMain.handle('tak:dmStatus', (event, update: unknown) => {
+    assertIpcSender(event, 'tak:dmStatus');
+    const m = getTakServerManager();
+    if (!m?.hasActiveSink()) return;
+    dmStatusUpdates.checkOrThrow();
+    m.reportDmOutcome(parseTakDmStatus(update));
   });
 
   // ─── Relayed node styling ────────────────────────────────────────

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useMessageStore } from '../../stores/messageStore';
 import { upsertNode } from '../../stores/nodeStore';
+import { setTakChannels, useTakChannelStore } from '../../stores/takChannelStore';
 import { useTakRelayPrefsStore } from '../../stores/takRelayPrefsStore';
 import { setTakSinkActive } from '../../stores/takSinkStore';
 import { packetRouter } from '../drivers/PacketRouter';
@@ -181,7 +182,7 @@ describe('attachMeshtasticIngest', () => {
     session.detach();
   });
 
-  it('exposes hopCount as rxHops through store adapter round-trip', () => {
+  it('exposes per-packet RF measurements through the store adapter round-trip', () => {
     const session = attachMeshtasticIngest(ID, {
       getIsConfiguring: () => false,
       getMyNodeNum: () => 0,
@@ -197,6 +198,8 @@ describe('attachMeshtasticIngest', () => {
           channelIndex: 0,
           timestamp: 8000,
           hopCount: 4,
+          rxSnr: 0,
+          rxRssi: -98,
         },
       },
       ID,
@@ -204,8 +207,58 @@ describe('attachMeshtasticIngest', () => {
     const record = useMessageStore.getState().messages[ID]['77'];
     expect(record.hopCount).toBe(4);
     expect(record).toBeDefined();
-    expect(messageRecordToChatMessage(record).rxHops).toBe(4);
+    expect(messageRecordToChatMessage(record)).toMatchObject({ rxHops: 4, rxSnr: 0, rxRssi: -98 });
     session.detach();
+  });
+
+  it('retains local signal stats when an RF copy follows an MQTT copy with a different id', () => {
+    useMessageStore.setState({
+      messages: {
+        [ID]: {
+          '123': {
+            id: '123',
+            from: 3,
+            to: 0xffffffff,
+            senderName: 'Peer',
+            payload: 'hybrid reception',
+            channelIndex: 0,
+            timestamp: 8000,
+            receivedVia: 'mqtt',
+            rxSnr: 30,
+            rxRssi: -10,
+            rxHops: 8,
+          },
+        },
+      },
+    });
+    const session = attachMeshtasticIngest(ID, {
+      getIsConfiguring: () => false,
+      getMyNodeNum: () => 0,
+    });
+    try {
+      packetRouter.dispatch(
+        {
+          type: 'text_message',
+          payload: {
+            id: '456',
+            from: 3,
+            to: 0xffffffff,
+            payload: 'hybrid reception',
+            channelIndex: 0,
+            timestamp: 9000,
+            hopCount: 2,
+            rxSnr: 0,
+            rxRssi: -98,
+          },
+        },
+        ID,
+      );
+      expect(
+        messageRecordToChatMessage(useMessageStore.getState().messages[ID]['456']),
+      ).toMatchObject({ packetId: 456, receivedVia: 'both', rxHops: 2, rxSnr: 0, rxRssi: -98 });
+    } finally {
+      session.detach();
+    }
   });
 
   it('skips saveNode when node hw_model is a MeshCore contact label', () => {
@@ -264,13 +317,23 @@ describe('meshtastic ingest TAK channel relay', () => {
     vi.spyOn(window.electronAPI.tak, 'pushChatMessage').mockImplementation(pushChatMessage);
     pushChatMessage.mockClear();
     useTakRelayPrefsStore.setState({ byIdentity: {} });
-    useTakRelayPrefsStore.getState().setChatBridge(TAK_ID, 1, 'Mesh Ops');
+    setTakChannels(TAK_ID, [
+      {
+        protocol: 'meshtastic',
+        index: 1,
+        key: '0123456789abcdef',
+        name: 'Ops',
+        atakName: '#MT Ops',
+      },
+    ]);
+    useTakRelayPrefsStore.getState().setChannelMode(TAK_ID, 'all');
     setTakSinkActive(true);
   });
 
   afterEach(() => {
     setTakSinkActive(false);
     useTakRelayPrefsStore.setState({ byIdentity: {} });
+    useTakChannelStore.setState({ channelsByIdentity: {} });
     useMessageStore.setState({ messages: {} });
     vi.restoreAllMocks();
   });
@@ -284,7 +347,7 @@ describe('meshtastic ingest TAK channel relay', () => {
     dispatchText('501', 0xaaaa, 'on scene');
     expect(pushChatMessage).toHaveBeenCalledTimes(1);
     expect(pushChatMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ room: 'Mesh Ops', text: 'on scene' }),
+      expect.objectContaining({ channelKey: '0123456789abcdef', text: 'on scene' }),
     );
     session.detach();
   });

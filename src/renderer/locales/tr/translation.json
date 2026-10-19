@@ -871,7 +871,9 @@
     "cancelAutoResend": "Yeniden denemeyi iptal et",
     "cancelAutoResendAria": "Bu mesajın otomatik yeniden denemesini iptal et",
     "outboxEmergencyWillSend": "Ağ onaylayana kadar yeniden denemeye devam edecek",
-    "outboxEmergencyCancelConfirm": "Bu acil durum mesajını yeniden denemeyi durdur? Ağ bunu asla kabul etmese bile artık yeniden gönderilmeyecektir."
+    "outboxEmergencyCancelConfirm": "Bu acil durum mesajını yeniden denemeyi durdur? Ağ bunu asla kabul etmese bile artık yeniden gönderilmeyecektir.",
+    "sendSignalReport": "Sinyal raporu gönder",
+    "signalReportUnavailable": "Alım istatistikleri mevcut değil veya tek bir yanıta sığmıyor."
   },
   "chatPayload": {
     "mention": "{{label}}'dan bahsedin",
@@ -1043,7 +1045,8 @@
     "reconnectingAttempt": "Yeniden bağlanıyor… {{attempt}}/{{max}} denemesi",
     "serialReselect": "USB seri bağlantısı kesildi — cihazınızı tekrar seçin",
     "serialReselectAction": "Seri port seçin",
-    "statusRegion": "Bağlantı durumu"
+    "statusRegion": "Bağlantı durumu",
+    "rebootingReconnectAttempt": "Radyo yeniden başlatılıyor. Yeniden bağlanıyor… {{attempt}}/{{max}} denemesi"
   },
   "connectionPanel": {
     "maxReconnectAttempts": "Maksimum MQTT yeniden bağlanma denemesi",
@@ -2946,7 +2949,53 @@
       "mapReportPublishInterval": "Harita rapor aralığı (saniye)",
       "mapReportPublishIntervalDesc": "0, bellenim varsayılanını kullanır. Harita raporlaması etkinleştirildiğinde cihazın harita raporlarını yayınlama sıklığı.",
       "mapReportPositionPrecision": "Harita raporu konum hassasiyeti",
-      "mapReportPositionPrecisionDesc": "Harita raporu koordinatları için hassasiyet bitleri (üretici yazılımı ModuleConfig.mqtt.map_report_settings)."
+      "mapReportPositionPrecisionDesc": "Harita raporu koordinatları için hassasiyet bitleri (üretici yazılımı ModuleConfig.mqtt.map_report_settings).",
+      "nodeStatus": "Düğüm durumu",
+      "nodeStatusDesc": "Bu düğümün ağa yayınladığı kısa serbest metin durumu (örneğin \"Devriyede\"). Temizlemek için boş bırakın.",
+      "mbListenEnabled": "İşaretleri dinle",
+      "mbListenEnabledDesc": "Diğer düğümlerden işaretler alın. İşaret metni gelen kutusuna gider; Katılmanız için sunulan herhangi bir kanal veya ön ayar burada gösterilir. Hiçbir şey otomatik olarak uygulanmaz.",
+      "mbBroadcastEnabled": "Yayın işaretçileri",
+      "mbBroadcastEnabledDesc": "Yakındaki düğümlerin bu ağı keşfedebilmesi için bu düğümden periyodik olarak bir işaret gönderin.",
+      "mbLegacySplit": "Eski metin bölümü",
+      "mbLegacySplitDesc": "Metni ayrı bir kısa mesaj olarak gönderin, böylece işaretçilerin kodunu çözemeyen eski donanım yazılımı onu göstermeye devam eder. Daha fazla yayın süresi kullanır.",
+      "mbMessage": "İşaret mesajı",
+      "mbMessageDesc": "Her işaret kopyasıyla birlikte gönderilir, o yüzden kısa tutun.",
+      "mbMessageBytes": "{{used}}/{{max}} bayt",
+      "mbInterval": "Yayın aralığı",
+      "mbIntervalDesc": "İşaretin ne sıklıkla gönderileceği. Minimum 3600 saniye (1 saat).",
+      "mbOfferHeading": "Örgü teklifi",
+      "mbOfferHint": "İsteğe bağlı olarak dinleyicilerin katılmayı seçebileceği bir kanalın ve radyo ayarlarının reklamını yapın.",
+      "mbOfferChannel": "Sunulan kanal",
+      "mbOfferChannelDesc": "Kanal adını ve anahtarını işaretçiye kopyalar. Bunu duyan herkes bu kanala katılabilir.",
+      "mbOfferChannelNone": "Hiçbiri",
+      "mbOfferChannelKeep": "Güncelliği koru ({{name}})",
+      "mbChannelOption": "{{index}}: {{name}}",
+      "mbPrimaryChannel": "Öncelik",
+      "mbOfferRegion": "Sunulan bölge",
+      "mbOfferRegionNone": "Reklamı yapılmadı",
+      "mbOfferPreset": "Sunulan modem ön ayarı",
+      "mbOfferPresetNone": "Reklamı yapılmadı",
+      "mbOfferSlot": "Sunulan frekans yuvası",
+      "mbOfferSlotDesc": "Bunu yalnızca ağ varsayılan olmayan bir yuva kullandığında ayarlayın. 0 dinleyicilerin bunu türetmesine izin verir.",
+      "mbTargetsHeading": "Yayın hedefleri",
+      "mbTargetsHint": "Radyoyu sırayla her hedefin ayarlarına geçirerek hedef başına bir işaret kopyası gönderin. Hiçbir hedef olmadığında, mevcut ayarlarda birincil kanal üzerinden bir işaret gönderilir.",
+      "mbTargetLabel": "Hedef {{n}}",
+      "mbTargetRemove": "{{n}} hedefini kaldır",
+      "mbTargetAdd": "Hedef ekle",
+      "mbTargetPreset": "Modem ön ayarı",
+      "mbTargetPresetRunning": "Geçerli ön ayar",
+      "mbTargetRegion": "Bölge",
+      "mbTargetRegionRunning": "Mevcut bölge",
+      "mbTargetChannel": "Kanal",
+      "mbTargetChannelDefault": "Ön ayar için varsayılan kanal",
+      "mbTargetSlot": "Frekans yuvası",
+      "mbTargetSlotDesc": "0, slotu bölgeden ve kanal adından türetir.",
+      "mbTargetsInvalid": "Uygulamadan önce vurgulanan yayın hedeflerini düzeltin.",
+      "mbTargetErrors": {
+        "channelIndexRange": "Kanal dizini 0 ile 7 arasında olmalıdır.",
+        "channelNotConfigured": "Bu kanal bu radyoda yapılandırılmamış.",
+        "frequencySlot": "Frekans yuvasının türetilmesi için 1 veya daha yüksek ya da 0 olması gerekir."
+      }
     },
     "applySection": "{{section}} uygula",
     "applyingButton": "Başvuruluyor...",
@@ -3118,6 +3167,40 @@
       "8": {
         "label": "K9"
       }
+    },
+    "sectionMeshBeacon": "Mesh İşaret Modülü",
+    "sectionStatusMessage": "Durum Mesajı Modülü",
+    "beacon": {
+      "heardTitle": "İşaretleri duydum",
+      "none": "Henüz işaret sesi duyulmadı. Bunları almak için İşaretleri dinle'yi açın.",
+      "remoteHint": "Bir teklife katılmak yalnızca bağlı radyo için mümkündür.",
+      "itemAria": "{{name}}'dan işaret",
+      "offerChannel": "Kanal: {{name}}",
+      "offerRegion": "Bölge: {{region}}",
+      "offerPreset": "Modem ön ayarı: {{preset}}",
+      "offerSlot": "Frekans yuvası: {{slot}}",
+      "unnamedChannel": "(isimsiz)",
+      "joinChannel": "Kanala katıl",
+      "joinChannelAria": "{{node}} tarafından sunulan {{name}} kanalına katılın",
+      "alreadyJoined": "Kanal zaten bu radyoda (yuva {{index}})",
+      "noFreeSlot": "Bu kanala katılmak için ücretsiz kanal yuvası yok.",
+      "applyRadio": "Radyo ayarlarını kullan",
+      "applyRadioAria": "{{node}} tarafından sunulan radyo ayarlarını kullanın",
+      "regionMismatch": "{{offer}} için reklam yapıldı; bu radyo {{local}} olarak ayarlı.",
+      "alreadyMatching": "Radyo ayarları zaten eşleşiyor.",
+      "changeRegion": "bölge {{value}}",
+      "changePreset": "modem ön ayarı {{value}}",
+      "changeSlot": "frekans yuvası {{value}}",
+      "changeSlotDerived": "türetilmiş frekans yuvası",
+      "confirmChannelTitle": "Kanala katılmak ister misiniz?",
+      "confirmChannelMessage": "{{node}}'den {{slot}} kanal yuvasına “{{name}}” ekleyin. Bu kanalın anahtarına sahip olan herkes mesajlarını okuyabilir.",
+      "confirmChannelLabel": "Katılmak",
+      "confirmRadioTitle": "Radyo ayarları değiştirilsin mi?",
+      "confirmRadioMessage": "{{changes}} uygulayın. Telsiz yeniden başlatılacak ve mevcut ağınızla bağlantısını kaybedebilir.",
+      "confirmRadioLabel": "Uygula ve yeniden başlat",
+      "joined": "{{name}} kanalına katıldı.",
+      "radioApplied": "Radyo ayarları gönderildi.",
+      "joinFailed": "Katılım başarısız oldu: {{message}}"
     }
   },
   "networkPanel": {
@@ -3430,7 +3513,11 @@
     "savedPathHeading": "Kaydedilen yol",
     "savedPathHint": "Kaydedilmiş geçmişte en yüksek puanlı yol. Telsizin mevcut gönderim yolundan veya alınan bir düğüm duyurusunun yolundan farklı olabilir.",
     "bearingRange": "{{bearing}} · {{distance}}",
-    "bearingRangeTitle": "Güvenilir konumunuza yön ve mesafe"
+    "bearingRangeTitle": "Güvenilir konumunuza yön ve mesafe",
+    "nodeStatus": {
+      "heading": "Durum",
+      "updated": "{{ago}} güncellendi"
+    }
   },
   "nodeInfoBody": {
     "longName": "Uzun Ad",
@@ -5678,13 +5765,9 @@
     "unitTypeInstallation": "Kurulum",
     "unitTypeSensor": "Sensörü",
     "unitTypeAir": "Hava aracı",
-    "channelRelayTitle": "MeshCore kanaldan TAK kanalına",
     "channelRelayTrackers": "İzleyici düzeltmeleri",
-    "channelRelayRoom": "{{channel}} için GeoChat odası",
-    "channelRelayRoomPlaceholder": "GeoChat odası (kapalı)",
     "channelRelayNoChannels": "Kanallarını listelemek için bir MeshCore radyo bağlayın.",
     "channelRelayUnnamed": "Kanal {{n}}",
-    "channelRelayTitleMeshtastic": "Meshtastic kanalları TAK'ye",
     "channelRelayNoChannelsMeshtastic": "Kanallarını listelemek için bir Meshtastic radyo bağlayın.",
     "unitStylesPreviewKind": "Test edilecek düğüm türü",
     "unitStylesPreviewProtocol": "Test edilecek protokol",
@@ -5696,7 +5779,35 @@
     "unitKindRepeater": "Tekrarlayıcılar ve yönlendiriciler",
     "unitKindRoom": "Oda sunucuları",
     "unitKindSensor": "Sensörleri",
-    "unitKindTracker": "İzleyiciler"
+    "unitKindTracker": "İzleyiciler",
+    "unitStylesRepeaterIcon": "Tekrarlayıcılar ve yönlendiriciler için simge",
+    "unitStylesRepeaterIconPreset": "Tekrarlayıcılar ve yönlendiriciler için GeoOps simgesi",
+    "unitStylesRelayIconHint": "Her ikisi de isteğe bağlıdır. Her biri, UID/grup/dosya adı olarak ayarlanan bir atak simgesi kümesindeki bir yoldur veya listeden seçilen bir GeoOps simgesidir. Bir filtrenin düğümü yeniden biçimlendirip yeniden biçimlendirmediği geçerlidir. Bu simge kümesine sahip olmayan cihazlar, birim türünün simgesini gösterir.",
+    "unitStylesRoomIcon": "Oda sunucuları için simge",
+    "unitStylesRoomIconPreset": "Oda sunucuları için GeoOps simgesi",
+    "unitIconPresetPrompt": "GeoOps simgesi…",
+    "unitIconInvalid": "UID/grup/dosya adı ayarlayın.",
+    "messagingTitleMeshcore": "Atak'ta MeshCore mesajlaşma",
+    "messagingIntroMeshcore": "ATAK'ta hangi MeshCore kanallarının görüneceğini seçin. Her biri bağlı her atak cihazında bir kontak haline gelir ve kanalın duyduğu şey o kontaktan gelir. ATAK'ın gönderim yapabilmesi ile, gönderenin çağrı işareti ile ön ekli olan bu telsizden kanaldan kişiye bir mesaj gider; kapalıyken, sadece kanal alınır. Uzak sunucu ayrıca kanalı salt okunur olarak uzak TAK sunucusuna aktarır. Tracker fixes turns MeshCore tracker position messages (!MT1) harita işaretleyicilerine yerleştirin. Hiçbir atak cihazı bağlı değilken (bir gün boyunca 50 'ye kadar) duyulan mesajlar, bağlanan ilk cihaz için ve yalnızca o cihaz için tutulur.",
+    "messagingTitleMeshtastic": "Atak'ta Meshtastic mesajlaşma",
+    "messagingIntroMeshtastic": "ATAK'ta hangi Meshtastic kanallarının görüneceğini seçin. Her biri bağlı her atak cihazında bir kişi olur ve MQTT dahil olmak üzere kanalın duydukları bu kişiden gelir. ATAK'ın gönderim yapabilmesi ile, gönderenin çağrı işareti ile ön ekli olan bu telsizden kanaldan kişiye bir mesaj gider; kapalıyken, sadece kanal alınır. Uzak sunucu ayrıca kanalı salt okunur olarak uzak TAK sunucusuna aktarır. Hiçbir atak cihazı bağlı değilken (bir gün boyunca 50 'ye kadar) duyulan mesajlar, bağlanan ilk cihaz için ve yalnızca o cihaz için tutulur.",
+    "channelModeLabel": "Atak'taki kanallar",
+    "channelModeOff": "Kapalı",
+    "channelModeAll": "Tüm Kanallar",
+    "channelModeSelected": "Seçilen kanallar",
+    "channelServe": "Atak'ta",
+    "channelAtakNameLabel": "Atak adı",
+    "channelAtakNameFor": "{{channel}} için atak adı",
+    "channelServeFor": "Atak'ta {{channel}} göster",
+    "channelSend": "Atak gönderebilir",
+    "channelSendFor": "Atak cihazlarının {{channel}} adresine göndermesine izin verin",
+    "channelRemote": "Uzak sunucu",
+    "channelRemoteFor": "{{channel}} 'ı uzaktaki TAK sunucusuna aktarın",
+    "channelTrackersFor": "{{channel}} 'dan itibaren izleyici düzeltmeleri",
+    "directMessages": "Direkt Mesajlar",
+    "directMessagesHint": "Atak cihazları bu radyonun arkadaşlarına mesaj göndersin. Bu telsiz mesajının her arkadaşı atak'ta bir sohbet seçeneği alır ve bu telsizden gönderenin çağrı işareti ile başlayan bir mesaj çıkar. Yanıtları, en son kendisine yazan atak cihazına veya hiçbiri yazmadığında her cihaza gider. Pozisyonu olmayan bir refakatçi, bir mesajdan sonra bir gün boyunca 0, 0 'da görünür.",
+    "messagingTitleReticulum": "Atak'ta Reticulum mesajlaşma",
+    "messagingIntroReticulum": "Atak cihazlarının LXMF akranlarına mesaj göndermesine izin verin. Bir pozisyona sahip bir akran, işaretçisinden mesajlaşabilir; mesh-client onunla bir konuşma yaptıktan sonra 0, 0 konumunda olmayan bir akran görünür, bu nedenle kişi listesi duyulan her akranla dolu değildir."
   },
   "telemetryPanel": {
     "title": "Telemetri",
@@ -7343,5 +7454,354 @@
     "notConnected": "Bağlı değil",
     "statusBar": "Bağlantı durumu",
     "unread": "{{count}} okunmamış"
+  },
+  "meshcoreCompanionCli": {
+    "summary": "Refakatçi cihaz ayarları",
+    "description": "Bağlı yardımcı radyoda depolanan ayarlar, komut satırıyla okunur ve yazılır (MeshCore bellenim v1.18 veya daha yeni).",
+    "requiresFirmware": "Bu ayarları kullanmak için refakatçiyi MeshCore firmware v1.18 veya daha yenisine güncelleyin.",
+    "loading": "Radyodan ayarlar okunuyor…",
+    "loadFailed": "Radyodan ayarlar okunamadı. Bağlantıyı kontrol edin ve tekrar deneyin.",
+    "refresh": "Radyodan yenile",
+    "apply": "Uygula",
+    "applying": "Uygulayan",
+    "applied": "Refakatçi ayarları kaydedildi.",
+    "appliedWithErrors": "Bazı ayarlar kaydedilmedi ({{count}}). Vurgulanan alanlara bakın.",
+    "applyFailed": "Radyo bu değeri kabul etmedi.",
+    "unsupported": "Bu radyo tarafından desteklenmiyor",
+    "secretPlaceholder": "Değişemedi",
+    "showSecret": "Göster",
+    "hideSecret": "Gizle",
+    "revealFailed": "Kaydedilen şifre radyodan okunamadı.",
+    "rebootPending": "Bazı değişiklikler radyo yeniden başlatıldıktan sonra yürürlüğe girer.",
+    "rebootNow": "Şimdi yeniden başlat",
+    "rebooting": "Radyonun yeniden başlatılması. mesh-client otomatik olarak yeniden bağlanacaktır.",
+    "actionFailed": "Radyo bu eylemi tamamlamadı.",
+    "reboot": "Yeniden başlatın ve yeniden bağlanın",
+    "powerOff": "Güç kapalı",
+    "powerHint": "Yeniden başlatma, aynı bağlantıda otomatik olarak yeniden bağlanır. Kapatma bağlantısı kesilir; yeniden bağlanmak için radyoyu tekrar açın.",
+    "clearWifi": "WiFi yapılandırmasını temizle",
+    "copyIp": "IP Adresini Kopyala@ action: inmenu interface connection properties",
+    "ipCopied": "IP adresi kopyalandı.",
+    "wifiTcpHint": "WiFi üzerinden bağlanmak için Bağlantı'da TCP/IP'yi seçin ve {{ip}} girin.",
+    "wifiUnsupported": "Bu radyonun ürün yazılımı WiFi olmadan oluşturulmuştur.",
+    "consoleHint": "Panoya özgü olanlar da dahil olmak üzere herhangi bir yardımcı komutu çalıştırın. Yanıtlar aşağıda görünür.",
+    "consoleLog": "Refakatçi komuta geçmişi",
+    "consoleInput": "Refakatçi komutu",
+    "consolePlaceholder": "ör. get radio",
+    "consoleSend": "Gönder",
+    "groups": {
+      "device": "Cihaz",
+      "radio": "Radyo ayarlama",
+      "wifi": "WiFi",
+      "power": "Güç",
+      "console": "Komuta konsolu"
+    },
+    "validation": {
+      "required": "Bir değer girin",
+      "notNumber": "Bir sayı girin.",
+      "notInteger": "Lütfen bir tam sayı girin.",
+      "outOfRange": "Değer aralık dışında",
+      "tooLong": "Değer fazla uzun.",
+      "invalidChars": "Satır sonlarına izin verilmez.",
+      "pinFormat": "Rastgele bir PIN kodu için 6 basamak veya 0 girin."
+    },
+    "settings": {
+      "ver": {
+        "label": "Cihaz yazılım sürümü"
+      },
+      "board": {
+        "label": "Kart"
+      },
+      "tz_offset": {
+        "label": "Saat dilimi farkı (saat)",
+        "hint": "Radyonun kendi ekranı tarafından kullanılır. -12 'den +14' e kadar."
+      },
+      "pin": {
+        "label": "Bluetooth PIN",
+        "hint": "6 hane veya rastgele bir PIN için 0. Yeniden başlatmadan sonra etkinleşir; tekrar eşleştirmeniz gerekecektir."
+      },
+      "af": {
+        "label": "Yayın süresi faktörü",
+        "hint": "0 ila 9. Daha yüksek değerler iletimler arasında daha uzun süre bekler."
+      },
+      "dutycycle": {
+        "label": "Görev döngüsü"
+      },
+      "int_thresh": {
+        "label": "Parazit eşiği",
+        "hint": "0 ila 255. 0 girişim algılamayı kapatır."
+      },
+      "cad": {
+        "label": "Kanal etkinliği algılama",
+        "hint": "İletmeden önce dinleyin."
+      },
+      "radio_rxgain": {
+        "label": "Arttırılmış kazanç",
+        "hint": "Her radyo çipi bunu desteklemez."
+      },
+      "rxdelay": {
+        "label": "Gecikme matrahını al",
+        "hint": "0 ila 20"
+      },
+      "agc_reset_interval": {
+        "label": "AGC sıfırlama aralığı (saniye)",
+        "hint": "0 ila 1020, 4 'ün katlarına yuvarlanır. 0 onu kapatır."
+      },
+      "txdelay": {
+        "label": "Taşkın iletim gecikme faktörü",
+        "hint": "To 2:"
+      },
+      "direct_txdelay": {
+        "label": "Doğrudan iletim gecikme faktörü",
+        "hint": "To 2:"
+      },
+      "wifi_enabled": {
+        "label": "WiFi",
+        "hint": "Yeniden başlatmadan sonra etkinleşir."
+      },
+      "wifi_ssid": {
+        "label": "Ağ adı (SSID)",
+        "hint": "32 karaktere kadar. Yeniden başlatmadan sonra etkinleşir."
+      },
+      "wifi_pwd": {
+        "label": "Şifre",
+        "hint": "63 karaktere kadar. Açık bir ağ için boş bırakın. Yeniden başlatmadan sonra etkinleşir."
+      },
+      "wifi_status": {
+        "label": "Durum"
+      },
+      "wifi_ip": {
+        "label": "IP adresi"
+      }
+    },
+    "confirm": {
+      "reboot": {
+        "title": "Radyoyu yeniden başlat?",
+        "message": "Radyo yeniden başlatılır ve mesh-client otomatik olarak yeniden bağlanır. Yeniden başlatma sırasında gönderilen mesajlar sıraya alındı.",
+        "confirm": "Yeniden başlat"
+      },
+      "poweroff": {
+        "title": "Radyoyu kapat?",
+        "message": "Radyo kapanır ve mesh-client bağlantısı kesilir. Tekrar açmak için fiziksel erişime ihtiyacınız olacak.",
+        "confirm": "Güç kapalı"
+      },
+      "clearWifi": {
+        "title": "WiFi yapılandırması silinsin mi?",
+        "message": "Kaydedilen ağ adı ve parola silinir. WiFi, bir sonraki yeniden başlatmadan sonra durur.",
+        "confirm": "Temizle"
+      }
+    }
+  },
+  "meshcoreRemoteCli": {
+    "summary": "Uzaktan komut satırı",
+    "allowLabel": "Bu kişinin radyomda komut çalıştırmasına izin ver",
+    "allowDescription": "Varsayılan olarak kapalıdır. Bu kişi açık olduğunda, WiFi ve BLE PIN dahil olmak üzere arkadaşınızın radyosundaki herhangi bir ayarı değiştirebilir.",
+    "notOnRadio": "Bu kişi telsizinizde olmadığından uzak komut satırı izni ayarlanamıyor.",
+    "flagReadFailed": "Bu kişinin izni radyonuzdan okunamadı.",
+    "flagWriteFailed": "Bu kişinin radyonuzdaki izni güncellenemedi.",
+    "consoleHint": "Bu kişinin yardımcı radyosunda komutları çalıştırır. MeshCore donanım yazılımı v1.18 veya daha yenisine ihtiyaç duyar ve telsizinizin komutları çalıştırmasına izin vermelidir. Bu olmadan komutlara yanıt verilmez.",
+    "consoleLog": "Uzaktan komut satırı çıkışı",
+    "consoleInput": "Uzaktan komut",
+    "consolePlaceholder": "örneğin ver",
+    "send": "Göndermek",
+    "sending": "Gönderiliyor…",
+    "confirmAllow": {
+      "title": "Uzaktan komutlara izin verilsin mi?",
+      "message": "Bu kişi radyonuzdaki herhangi bir ayarı değiştirebilir, yeniden başlatabilir veya kapatabilir. Yalnızca tamamen güvendiğiniz kişilere izin verin.",
+      "confirm": "İzin ver"
+    }
+  },
+  "meshcoreTelemetryPush": {
+    "summary": "Canlı telemetri",
+    "enableLabel": "Bu sensörden güncellemeleri aktarın",
+    "enableDescription": "Bir değer aşağıdaki miktarlardan daha fazla değiştiğinde sensör bir okuma gönderir. Sensör donanım yazılımı v1.18 veya daha yeni bir sürüme ihtiyaç duyar. Uygulama, bağlıyken aboneliği yeniler.",
+    "thresholdsLegend": "Değişiklik en azından olduğunda gönder",
+    "thresholdsHint": "Bu değeri yoksaymak için bir alanı boş bırakın. Yalnızca sensör raporlarının izlendiği değerler izlenir.",
+    "metric": {
+      "temperature": "Sıcaklık (°C)",
+      "humidity": "Nem (%)",
+      "voltage": "Gerilim (V)",
+      "pressure": "Basınç (hPa)"
+    },
+    "leaseLabel": "Abonelik süresi (dakika)",
+    "leaseHint": "Uygulama çevrimdışı olursa sensör bu kadar süre sonra gönderimi durdurur.",
+    "waitingForPush": "Abone olundu. İlk değişikliği bekliyorum.",
+    "lastPush": "Son güncelleme: {{time}}",
+    "errorNoMetrics": "Bu sensör seçilen değerlerden hiçbirini raporlamaz. Önce telemetri isteyin veya bir eşik ayarlayın.",
+    "errorRejected": "Sensör aboneliği reddetti. Ürün yazılımı sürümünü ve oturum açma bilgilerinizi kontrol edin.",
+    "errorFailed": "Sensöre ulaşılamadı. Tekrar deneyin."
+  },
+  "meshtasticExtraConfig": {
+    "advancedHardware": "Gelişmiş donanım",
+    "invalidValue": "{{field}} geçersiz bir değere sahip.",
+    "applyInvalid": "Uygulamadan önce {{section}}'da vurgulanan alanları düzeltin.",
+    "buzzerMode": "Zil modu",
+    "buzzerModeDesc": "Hangi olaylar zil sesi çıkarır?",
+    "buzzerModes": {
+      "allEnabled": "Tüm sesler",
+      "disabled": "Sessiz",
+      "notificationsOnly": "Yalnızca bildirimler",
+      "systemOnly": "Yalnızca sistem sesleri",
+      "directMsgOnly": "Yalnızca doğrudan mesajlar"
+    },
+    "compassNorthTop": "Kuzey pusulası üstte",
+    "compassNorthTopDesc": "Yön ile dönmek yerine pusula ekranının üst kısmında kuzeyi tutun.",
+    "compassOrientation": "Pusula yönü",
+    "positionFlags": "Dahil edilecek konum alanları",
+    "positionFlagsDesc": "Radyonun her konum paketine eklediği ekstra veriler. Daha fazla alan paketleri büyütür.",
+    "gpsRxGpio": "GPS RX pini",
+    "gpsTxGpio": "GPS TX pini",
+    "gpsEnGpio": "GPS etkinleştirme pini",
+    "adcMultiplierOverride": "Pil ADC çarpanı",
+    "adcMultiplierOverrideDesc": "Akü voltajı okumasını kalibre eder. 0, pano varsayılanını kullanır.",
+    "deviceBatteryInaAddress": "Pil INA sensörü I2C adresi",
+    "deviceBatteryInaAddressDesc": "Pil okumaları için kullanılan bir INA güç monitörünün I2C adresi. 0 devre dışı bırakır.",
+    "powermonEnables": "Güç monitörü kanalları",
+    "powermonEnablesDesc": "Güç izleme günlük kanallarının bit maskesi (geliştirici ayarı). Hiçbiri için boş bırakın.",
+    "addressMode": "IP adresi modu",
+    "addressModes": {
+      "dhcp": "DHCP",
+      "static": "Statik"
+    },
+    "ipv4Address": "IP adresi",
+    "ipv4Gateway": "Geçit",
+    "ipv4Subnet": "Alt ağ maskesi",
+    "ipv4Dns": "DNS sunucusu",
+    "rsyslogServer": "Sistem günlüğü sunucusu",
+    "rsyslogServerDesc": "Cihaz günlüklerini uzak bir sistem günlüğü sunucusuna (ana bilgisayar:bağlantı noktası) gönderin.",
+    "enabledProtocols": "Ağ protokolleri",
+    "udpBroadcast": "UDP yayını üzerinden ağ oluşturma",
+    "ipv6Enabled": "IPv6'yı etkinleştir",
+    "ignoreIncoming": "Yoksayılan düğümler",
+    "ignoreIncomingDesc": "Paketleri radyonun düşürdüğü, virgülle ayrılmış düğüm kimlikleri (örneğin !a1b2c3d4).",
+    "femLnaMode": "Ön uç LNA",
+    "femLnaModeDesc": "Ön uç modüllü kartlarda düşük gürültülü amplifikatör.",
+    "femLnaModes": {
+      "disabled": "Engelli",
+      "enabled": "Etkinleştirilmiş",
+      "notPresent": "Mevcut değil"
+    },
+    "serialHalOnly": "Yalnızca seri HAL",
+    "serialHalOnlyDesc": "LoRa radyoyu yalnızca seri donanım katmanı (özel kartlar) aracılığıyla kullanın.",
+    "packetSignaturePolicy": "Paket imza politikası",
+    "packetSignaturePolicyDesc": "Radyonun diğer düğümlerden imzalanmış paketlere ne kadar sıkı ihtiyaç duyduğu.",
+    "packetSignaturePolicies": {
+      "compatible": "Uyumlu",
+      "balanced": "Dengeli",
+      "strict": "Sıkı"
+    },
+    "codec2Enabled": "Codec2 ses etkin",
+    "audioBitrate": "Codec2 bit hızı",
+    "pttPin": "Bas-konuş pini",
+    "i2sWs": "I2S kelime seçme pini",
+    "i2sSd": "I2S veri çıkış pini",
+    "i2sDin": "Pindeki I2S verileri",
+    "i2sSck": "I2S saat pimi",
+    "detectionTriggerType": "Tetikleyici türü",
+    "usePullup": "Dahili çekmeyi kullan",
+    "monitorPin": "Monitör pimi",
+    "wifiThreshold": "Wi-Fi RSSI eşiği",
+    "bleThreshold": "Bluetooth RSSI eşiği",
+    "rssiThresholdDesc": "Bu sinyal seviyesinden (dBm) daha zayıf olan cihazları dikkate almayın.",
+    "healthMeasurementEnabled": "Sağlık telemetrisi",
+    "healthMeasurementEnabledDesc": "Takılı sağlık sensörlerinden kalp atış hızını, SpO2'yi ve sıcaklığı bildirin.",
+    "healthUpdateInterval": "Sağlık güncelleme aralığı",
+    "healthScreenEnabled": "Sağlığı ekranda göster",
+    "airQualityScreenEnabled": "Hava kalitesini ekranda göster",
+    "clearOnReboot": "Yeniden başlatma sırasında kayıtlı sonuçları temizle",
+    "shouldReportLocation": "Konumu ekle",
+    "shouldReportLocationDesc": "Bu düğümün konumunu harita raporlarına ekleyin.",
+    "availablePins": "Mevcut pinler",
+    "availablePinsNone": "Radyoda tanımlanmış pin yok.",
+    "availablePinRow": "GPIO {{pin}}: {{name}} ({{type}})"
+  },
+  "aiSummary": {
+    "catchUp": "Yakalama",
+    "scope": "Özet aralığı",
+    "unread": "Tümü okunmadı",
+    "hours_one": "Son {{count}} saat",
+    "hours_other": "Son {{count}} saat",
+    "customHours": "Özel saatler",
+    "loaded": "Tüm Ürünler Yüklendi",
+    "copy": "Kopyala",
+    "copyFailed": "Kopyalanamadı. Özet metni seçin ve manuel olarak kopyalayın.",
+    "regenerate": "Canlandırmak",
+    "cancel": "İptal",
+    "dismiss": "Yok say",
+    "settings": "YZ Ayarları",
+    "working": "Özet hazırlanıyor…",
+    "sentTo": "{{host}} adresine gönderildi",
+    "onDevice": "Bu cihazda işlendi",
+    "truncated": "Yalnızca en yeni uygun mesajlar dahil edildi. Eski tarih de saklama ile kaldırılmış olabilir.",
+    "verify": "Yapay zeka özetleri ayrıntıları gözden kaçırabilir veya yanlış okuyabilir. Orijinal mesajları kontrol edin.",
+    "settingsTitle": "Yapay zeka konuşma özetleri",
+    "enabled": "Yapay zeka özetlerini etkinleştir",
+    "optIn": "Yapay zekâ varsayılan olarak kapalıdır. Etkinleştirip bir motor seçene kadar hiçbir şey çalışmaz. Özetler asla otomatik olarak paylaşılmaz.",
+    "engine": "Motor",
+    "chooseEngine": "Bir motor seçin",
+    "osEngine": "Dahili OS AI (bu cihazda önerilir)",
+    "bundledEngine": "İndirilen model (çevrimdışı)",
+    "localEngine": "Yerel sunucu",
+    "remoteEngine": "Uzak sağlayıcı",
+    "osAvailability": "OS AI: {{model}}",
+    "osUnavailable": "Bu cihazda veya kurulumda kullanılamıyor",
+    "catalog": "Çevrimdışı modeller",
+    "download": "İndir",
+    "downloadModel": "İndir {{model}}",
+    "remove": "Kaldır",
+    "removeModel": "{{model}} Kaldır",
+    "useModel": "{{model}} kullanın",
+    "select": "Arazi Kullanım Modeli",
+    "selected": "Seçildi",
+    "format": "API Tarih Biçimi",
+    "baseUrl": "Sunucu temel URL'si",
+    "model": "Model",
+    "apiKey": "API anahtarı (şifrelenmiş olarak saklanır)",
+    "keySaved": "Anahtar kaydedildi; saklamak için boş bırakın",
+    "clearKey": "Kaydedilen anahtarı temizle",
+    "allowRemote": "Konuşma metninin bu cihazdan çıkacağını ve bu https sağlayıcısına gönderileceğini anlıyorum.",
+    "urlHint": "Lan sunucuları konuşma metni alır. OpenAI uyumlu çıplak ana bilgisayarlar/v1 kullanır; özel ağ geçitleri için bir yol içerir. Test etmeden önce kaydedin.",
+    "save": "Yapılandırmayı Kaydet",
+    "saved": "Yapılandırma Kaydedildi",
+    "test": "Test bağlantısı",
+    "testOk": "Motor hazırdır.",
+    "refreshModels": "Modelleri yenile",
+    "settingsError": "Bu eylem tamamlanamadı. Motoru, URL'yi, modeli, güvenli anahtar depolamayı ve sağlayıcı erişimini kontrol edin, ardından tekrar deneyin.",
+    "error": {
+      "disabled": "Ayarlarda Etkinleştir",
+      "noMessages": "Bu aralıkta mesaj yok. Daha geniş bir aralık seçin.",
+      "notConfigured": "Yapay zeka ayarlarında bir motor seçin ve kaydedin.",
+      "engineNotReady": "Motor mevcut değil. İşletim sistemi yapay zeka kullanılabilirliğini kontrol edin veya bir model indirip seçin.",
+      "remoteNotAcknowledged": "Https kullanın ve AI ayarlarında konuşma metni göndermeyi onaylayın.",
+      "rateLimited": "Çok fazla istek var. Bir dakika bekleyin ve yeniden deneyin.",
+      "busy": "Başka bir özet çalışıyor. İptal edin veya bekleyin.",
+      "timeout": "Motor çok uzun sürdü. Daha küçük bir ürün yelpazesi veya daha hızlı bir model deneyin.",
+      "tooLarge": "Konuşma veya yanıt çok büyük. Daha küçük bir aralık deneyin.",
+      "httpError": "Sağlayıcı isteği başarısız oldu. Bağlantıyı ve kimlik bilgilerini kontrol edin.",
+      "invalidResponse": "Motor eksik veya desteklenmeyen bir yanıt verdi.",
+      "cancelled": "Özet iptal edildi.",
+      "error": "Özetlenemedi. AI ayarlarını kontrol edin ve yeniden deneyin.",
+      "repetitiveOutput": "Model kendini tekrarlamaya başladı. Daha büyük bir model veya daha kısa bir aralık deneyin."
+    },
+    "loadingModel": "Model bu cihaza yükleniyor...",
+    "readingMessages": "Bu cihazdaki mesajlar okunuyor. CPU'nun işlenmesi birkaç dakika sürebilir...",
+    "providerIncluded_one": "{{provider}} · {{model}} · {{included}} of {{count}} toplanan mesaj dahil",
+    "providerIncluded_other": "{{provider}} · {{model}} · {{included}} of {{count}} toplanan mesajlar dahil",
+    "providerCollected_one": "{{provider}} · {{model}} · {{count}} mesaj toplandı",
+    "providerCollected_other": "{{provider}} · {{model}} · {{count}} toplanan mesajlar",
+    "offlineSummaryHint": "İndirmeler interneti bir kez kullanır. Özetler bu cihazda çevrimdışı çalışır. İndirilen modellerle büyük konuşmalar birkaç dakika sürebilir. Daha büyük modeller daha fazla belleğe ihtiyaç duyar.",
+    "countSnapshot": "Sayımlar bu özet anlık görüntüsünü açıklar; canlı okunmamış rozetler farklı olabilir.",
+    "timeoutSeconds": "Özet zaman aşımı (saniye)",
+    "timeoutHint": "Model yüklemesi de dahil olmak üzere bir özet için maksimum süre. 30 -1800 saniye seçin. İstediğiniz zaman iptal edebilirsiniz.",
+    "insecureKeyWarning": "Bu HTTP uç noktası, API anahtarınızı ve mesajlarınızı taşıma şifrelemesi olmadan gönderir. Ağınızdaki bir sunucu için https kullanın.",
+    "setupCatchUp": "Özetleri ayarla",
+    "queued": "Lütfen bekleyin — başka bir özet oluşturuluyor...",
+    "chunkProgress": "{{total}} 'in {{current}} bölümü özetleniyor…",
+    "mergeProgress": "Sindirimlerin birleştirilmesi {{current}} of {{total}}…",
+    "ceilingTruncated": "{{count}} mesajdan sonra durduruldu — daha fazlasını eklemek için Yapay Zeka ayarlarındaki Yakalama mesajı sınırını yükseltin.",
+    "maxCollectedMessages": "Mesaj sınırını yakala",
+    "maxCollectedMessagesHint": "Bir Yakalamanın toplayabileceği maksimum mesaj (100 -5000). Varsayılan 2000. Daha yüksek değerler daha uzun sürer ve daha büyük bir zaman aşımı gerekebilir.",
+    "capacityHint": "Yaklaşık {{count}} tipik mesh mesajları bu motorla bir çıkarım geçişine uyar (önce daha yeni). Yetişme, birden fazla paso aracılığıyla {{ceiling}} kadar mesajı işleyebilir. Daha uzun mesajlarda her pasodan daha fazla kullanılır. Büyük aralıkların daha uzun bir zaman aşımına ihtiyacı vardır.",
+    "capacityHintChooseEngine": "Yerleşik işletim sistemi yapay zekası ve indirilen modeller, geçiş başına yaklaşık {{onDevice}} tipik mesaja uyar; {{endpoint}} hakkında yerel veya uzak bir sunucu. Arayı kapatmak {{ceiling}} kadar mesajı çoklu geçişle kapatabilir. Meşgul ağlar için mesaj sınırını ve zaman aşımını artırın."
   }
 }

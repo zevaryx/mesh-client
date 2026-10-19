@@ -21,8 +21,26 @@ import {
 
 const ROOT = path.resolve(__dirname, '../../..');
 
-/** Not ported to headless yet, by plan step (none left). */
-const HEADLESS_PENDING_CHANNELS: Record<string, readonly string[]> = {};
+/** Not ported to headless yet, by plan step. */
+const HEADLESS_PENDING_CHANNELS: Record<string, readonly string[]> = {
+  // AI conversation summaries (upstream `ipc/ai-handlers.ts`), ported next.
+  aiSummaries: [
+    'ai:cancel',
+    'ai:cancelLocalModel',
+    'ai:getHistory',
+    'ai:getStatus',
+    'ai:installLocalModel',
+    'ai:listEndpointModels',
+    'ai:listLocalModels',
+    'ai:probeOsAi',
+    'ai:removeLocalModel',
+    'ai:selectLocalModel',
+    'ai:setConfig',
+    'ai:setEnabled',
+    'ai:summarize',
+    'ai:testConfig',
+  ],
+};
 
 async function headlessHandledChannels(): Promise<Set<string>> {
   const result = await esbuild.build({

@@ -19,6 +19,7 @@ const hasDisplay = (ctx: SettingsSearchContext) => ctx.capabilities.hasDisplayCo
 const hasBluetooth = (ctx: SettingsSearchContext) => ctx.capabilities.hasBluetoothConfig;
 const hasTelemetryPrivacy = (ctx: SettingsSearchContext) =>
   ctx.capabilities.hasCompanionTelemetryPrivacyConfig;
+const hasCompanionCli = (ctx: SettingsSearchContext) => ctx.capabilities.hasCompanionCli;
 
 const USER = 'radioPanel.sectionDeviceUser';
 const LORA = 'radioPanel.sectionLora';
@@ -33,6 +34,7 @@ const ACTIONS = 'radioPanel.deviceActions';
 const CONTACTS = 'meshcoreContactSettings.contactManagement';
 const CONTACTS_APP = 'meshcoreContactSettings.contactsListAppHeading';
 const TELEMETRY_PRIVACY = 'meshcoreTelemetryPrivacy.summary';
+const COMPANION_CLI = 'meshcoreCompanionCli.summary';
 
 const radioEntries: readonly SettingSearchEntry[] = [
   {
@@ -314,6 +316,22 @@ const radioEntries: readonly SettingSearchEntry[] = [
     keywords: ['fan', 'amplifier', 'pa'],
     visible: hasMeshtasticLora,
   },
+  {
+    id: 'radio.lora.ignoreIncoming',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.ignoreIncoming',
+    sectionKey: LORA,
+    keywords: ['ignore', 'block', 'drop', 'node'],
+    visible: hasMeshtasticLora,
+  },
+  {
+    id: 'radio.lora.femLnaMode',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.femLnaMode',
+    sectionKey: LORA,
+    keywords: ['fem', 'lna', 'amplifier', 'front end'],
+    visible: hasMeshtasticLora,
+  },
 
   // Channels
   {
@@ -508,6 +526,14 @@ const radioEntries: readonly SettingSearchEntry[] = [
     visible: hasDeviceRole,
   },
   {
+    id: 'radio.device.buzzerMode',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.buzzerMode',
+    sectionKey: DEVICE,
+    keywords: ['buzzer', 'sound', 'beep', 'silent'],
+    visible: hasDeviceRole,
+  },
+  {
     id: 'radio.device.buttonGpio',
     slot: 'Radio',
     labelKey: 'radioPanel.buttonGpioLabel',
@@ -602,6 +628,14 @@ const radioEntries: readonly SettingSearchEntry[] = [
     labelKey: 'radioPanel.fixedPositionLabel',
     sectionKey: POSITION,
     keywords: ['fixed', 'static', 'manual', 'location'],
+    visible: hasFullPosition,
+  },
+  {
+    id: 'radio.position.flags',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.positionFlags',
+    sectionKey: POSITION,
+    keywords: ['altitude', 'heading', 'speed', 'satellites', 'flags'],
     visible: hasFullPosition,
   },
   {
@@ -703,6 +737,55 @@ const radioEntries: readonly SettingSearchEntry[] = [
     visible: hasTelemetryPrivacy,
   },
 
+  // MeshCore companion CLI (firmware v1.18+)
+  {
+    id: 'radio.companionCli.section',
+    slot: 'Radio',
+    labelKey: COMPANION_CLI,
+    keywords: ['cli', 'companion', 'advanced', 'firmware'],
+    visible: hasCompanionCli,
+  },
+  {
+    id: 'radio.companionCli.device',
+    slot: 'Radio',
+    labelKey: 'meshcoreCompanionCli.groups.device',
+    sectionKey: COMPANION_CLI,
+    keywords: ['pin', 'pairing', 'timezone', 'board', 'version'],
+    visible: hasCompanionCli,
+  },
+  {
+    id: 'radio.companionCli.radio',
+    slot: 'Radio',
+    labelKey: 'meshcoreCompanionCli.groups.radio',
+    sectionKey: COMPANION_CLI,
+    keywords: ['airtime', 'cad', 'rx gain', 'tx delay', 'rx delay', 'agc', 'interference'],
+    visible: hasCompanionCli,
+  },
+  {
+    id: 'radio.companionCli.wifi',
+    slot: 'Radio',
+    labelKey: 'meshcoreCompanionCli.groups.wifi',
+    sectionKey: COMPANION_CLI,
+    keywords: ['wifi', 'wireless', 'ssid', 'password', 'network', 'ip'],
+    visible: hasCompanionCli,
+  },
+  {
+    id: 'radio.companionCli.power',
+    slot: 'Radio',
+    labelKey: 'meshcoreCompanionCli.groups.power',
+    sectionKey: COMPANION_CLI,
+    keywords: ['reboot', 'restart', 'power off', 'shutdown'],
+    visible: hasCompanionCli,
+  },
+  {
+    id: 'radio.companionCli.console',
+    slot: 'Radio',
+    labelKey: 'meshcoreCompanionCli.groups.console',
+    sectionKey: COMPANION_CLI,
+    keywords: ['cli', 'console', 'terminal', 'command'],
+    visible: hasCompanionCli,
+  },
+
   // WiFi / network
   {
     id: 'radio.wifi.section',
@@ -749,6 +832,22 @@ const radioEntries: readonly SettingSearchEntry[] = [
     labelKey: 'radioPanel.ethernetEnabledLabel',
     sectionKey: WIFI,
     keywords: ['ethernet', 'wired', 'lan'],
+    visible: hasWifi,
+  },
+  {
+    id: 'radio.wifi.addressMode',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.addressMode',
+    sectionKey: WIFI,
+    keywords: ['dhcp', 'static ip', 'gateway', 'dns', 'subnet'],
+    visible: hasWifi,
+  },
+  {
+    id: 'radio.wifi.rsyslog',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.rsyslogServer',
+    sectionKey: WIFI,
+    keywords: ['syslog', 'rsyslog', 'logs'],
     visible: hasWifi,
   },
 
@@ -848,6 +947,14 @@ const radioEntries: readonly SettingSearchEntry[] = [
     keywords: ['bubbles', 'messages', 'chat'],
     visible: hasDisplay,
   },
+  {
+    id: 'radio.display.compass',
+    slot: 'Radio',
+    labelKey: 'meshtasticExtraConfig.compassNorthTop',
+    sectionKey: DISPLAY,
+    keywords: ['compass', 'north', 'orientation'],
+    visible: hasDisplay,
+  },
 
   // Bluetooth
   {
@@ -934,9 +1041,11 @@ export const radioSurface: SettingsSearchSurface = {
     { path: 'src/renderer/components/MeshcoreFloodScopeSection.tsx', sweepAllKeys: true },
     { path: 'src/renderer/components/MeshcoreContactSettingsSection.tsx', sweepAllKeys: true },
     { path: 'src/renderer/components/MeshcoreTelemetryPrivacySection.tsx', sweepAllKeys: true },
+    { path: 'src/renderer/components/MeshcoreCompanionCliSection.tsx', sweepAllKeys: true },
     { path: 'src/renderer/components/LockdownSection.tsx', sweepAllKeys: true },
   ],
   exempt: {
+    'meshtasticExtraConfig.applyInvalid': 'validation status text, not a control',
     'radioPanel.*Desc': 'help text under a control; the control is indexed',
     'radioPanel.*Description': 'help text under a control; the control is indexed',
     'radioPanel.*Hint*': 'help text under a control; the control is indexed',
@@ -1051,6 +1160,7 @@ export const radioSurface: SettingsSearchSurface = {
     'appPanel.meshcorePathHashDeviceReported': 'status text under the indexed path hash mode',
     'modulePanel.applySection': 'section Apply button; the section is indexed',
     'modulePanel.applyingButton': 'busy label of a section Apply button',
+    'modulePanel.errors.*': 'apply/error toast copy shared with Modules, not a control',
     'configureNode.loading': 'remote config loading status text',
     'qrIngest.*': 'QR paste hint and import toasts, not a setting',
     'meshcoreContactSettings.*Desc': 'help text under a control; the control is indexed',
@@ -1079,6 +1189,23 @@ export const radioSurface: SettingsSearchSurface = {
     'meshcoreTelemetryPrivacy.allowAll*': 'option description inside an indexed telemetry row',
     'meshcoreTelemetryPrivacy.deny*': 'option description inside an indexed telemetry row',
     'meshcoreTelemetryPrivacy.*SpecificContacts': 'option label inside an indexed telemetry row',
+    'meshcoreCompanionCli.description': 'intro text of the indexed companion CLI section',
+    'meshcoreCompanionCli.requiresFirmware': 'firmware notice inside the indexed section',
+    'meshcoreCompanionCli.load*': 'settings read status text, not a control',
+    'meshcoreCompanionCli.refresh': 're-read button inside the indexed section',
+    'meshcoreCompanionCli.appl*': 'Apply button and result status of the indexed groups',
+    'meshcoreCompanionCli.*Failed': 'error toast or status text, not a control',
+    'meshcoreCompanionCli.unsupported': 'unsupported-on-this-build status text',
+    'meshcoreCompanionCli.*Secret': 'show/hide toggle of a secret field in an indexed group',
+    'meshcoreCompanionCli.secretPlaceholder': 'input placeholder inside an indexed group',
+    'meshcoreCompanionCli.reboot*': 'reboot buttons and status inside the indexed Power group',
+    'meshcoreCompanionCli.powerOff': 'power-off button inside the indexed Power group',
+    'meshcoreCompanionCli.powerHint': 'help text of the indexed Power group',
+    'meshcoreCompanionCli.wifi*': 'WiFi hints and status inside the indexed WiFi group',
+    'meshcoreCompanionCli.clearWifi': 'clear-credentials button inside the indexed WiFi group',
+    'meshcoreCompanionCli.copyIp': 'copy-IP button inside the indexed WiFi group',
+    'meshcoreCompanionCli.ipCopied': 'copy-IP toast, not a control',
+    'meshcoreCompanionCli.console*': 'console log, input and send inside the indexed Console group',
     'meshcoreTelemetryPrivacy.contactCount': 'option description inside an indexed telemetry row',
     'meshcoreTelemetryPrivacy.description': 'card prose; its rows are indexed',
     'meshcoreTelemetryPrivacy.applyButton': 'card Apply button; the card is indexed',

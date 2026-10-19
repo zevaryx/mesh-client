@@ -1,32 +1,50 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { MeshProtocol } from '@/shared/meshProtocol';
 import type { TAKInboundChat } from '@/shared/tak-types';
 
-import { type IdentityRecord, useIdentityStore } from '../../stores/identityStore';
+import {
+  getTakChannels,
+  setTakChannels,
+  setTakRadio,
+  useTakChannelStore,
+} from '../../stores/takChannelStore';
 import { useTakRelayPrefsStore } from '../../stores/takRelayPrefsStore';
 import { consumeTakEcho, resetTakEchoForTests } from './takEchoGuard';
 import {
   enqueueTakChatRelay,
   findTakSendTargets,
   formatTakMeshText,
-  listTakSendRooms,
   relayTakChatToMesh,
   TAK_MESH_SEND_MAX_BYTES,
   TAK_MESH_SEND_TIMEOUT_MS,
   type TakMeshSendFn,
 } from './takInboundChat';
 
-const NOW = Date.parse('2026-10-11T12:00:00Z');
+/** The identity each protocol's tab uses now, as the identity store resolves it. */
+const currentIdentity: Partial<Record<MeshProtocol, string>> = {
+  meshcore: 'mc',
+  meshtastic: 'mt',
+  reticulum: 'rn',
+};
+/** Reticulum peers whose LXMF destination is known under their own node id. */
+const ownLxmf = new Set<number>();
+vi.mock('./takDirectMessages', () => ({
+  hasOwnLxmfDestination: (nodeId: number) => ownLxmf.has(nodeId),
+}));
 
-/** A minimal identity record of the given protocol. */
-function identity(id: string, type: string): IdentityRecord {
-  return { id, protocol: { type }, signature: id, transports: [] } as unknown as IdentityRecord;
-}
+vi.mock('../identityByProtocol', () => ({
+  getIdentityIdForProtocol: (protocol: MeshProtocol) => currentIdentity[protocol] ?? null,
+}));
+
+const NOW = Date.parse('2026-10-11T12:00:00Z');
+const OPS = '0123456789abcdef';
+const OTHER = 'fedcba9876543210';
 
 /** An inbound TAK chat message with overridable fields. */
 function message(overrides: Partial<TAKInboundChat> = {}): TAKInboundChat {
   return {
-    room: 'Mesh Ops',
+    target: { kind: 'channel', channelKey: OPS },
     senderCallsign: 'VIPER',
     text: 'on scene',
     clientId: 'client-1',
@@ -35,29 +53,40 @@ function message(overrides: Partial<TAKInboundChat> = {}): TAKInboundChat {
   };
 }
 
-/** Bridge a channel to a room and set whether TAK may send to it. */
-function bridge(identityId: string, channel: number, room: string, send: boolean): void {
-  const { setChatBridge, setChatSend } = useTakRelayPrefsStore.getState();
-  setChatBridge(identityId, channel, room);
-  setChatSend(identityId, channel, send);
+const channel = (channelKey: string) => ({ kind: 'channel' as const, channelKey });
+const direct = (protocol: 'meshcore' | 'meshtastic', nodeId: number) => ({
+  kind: 'direct' as const,
+  protocol,
+  nodeId,
+});
+
+/** Serve one channel of a radio to TAK, with sending allowed or not. */
+function serve(
+  identityId: string,
+  protocol: 'meshcore' | 'meshtastic',
+  index: number,
+  key: string,
+  send: boolean,
+): void {
+  setTakChannels(identityId, [
+    ...getTakChannels(identityId),
+    { protocol, index, key, name: `Ch ${index}`, atakName: `#Ch ${index}` },
+  ]);
+  const { setChannelMode, setChatChannel, setChatSend } = useTakRelayPrefsStore.getState();
+  setChannelMode(identityId, 'selected');
+  setChatChannel(identityId, key, true);
+  setChatSend(identityId, key, send);
 }
 
 beforeEach(() => {
   resetTakEchoForTests();
   useTakRelayPrefsStore.setState({ byIdentity: {} });
-  useIdentityStore.setState({
-    identities: {
-      mc: identity('mc', 'meshcore'),
-      mt: identity('mt', 'meshtastic'),
-      rn: identity('rn', 'reticulum'),
-    },
-    activeIdentityId: null,
-  });
+  useTakChannelStore.setState({ channelsByIdentity: {}, radioByProtocol: {} });
 });
 
 afterEach(() => {
   useTakRelayPrefsStore.setState({ byIdentity: {} });
-  useIdentityStore.setState({ identities: {}, activeIdentityId: null });
+  useTakChannelStore.setState({ channelsByIdentity: {}, radioByProtocol: {} });
 });
 
 describe('formatTakMeshText', () => {
@@ -80,53 +109,41 @@ describe('formatTakMeshText', () => {
 });
 
 describe('findTakSendTargets', () => {
-  it('returns bridged channels that allow sending, on every protocol that has them', () => {
-    bridge('mc', 2, 'Mesh Ops', true);
-    bridge('mc', 3, 'Mesh Ops', false);
-    bridge('mc', 4, 'Other', true);
-    bridge('mt', 0, 'Mesh Ops', true);
-    bridge('rn', 1, 'Mesh Ops', true);
-    expect(findTakSendTargets('Mesh Ops')).toEqual([
+  it('returns the served channel with that key that allows sending, on every radio serving it', () => {
+    serve('mc', 'meshcore', 2, OPS, true);
+    serve('mc', 'meshcore', 3, OTHER, true);
+    serve('mc2', 'meshcore', 5, OPS, true);
+    serve('mt', 'meshtastic', 0, OPS, false);
+    expect(findTakSendTargets(channel(OPS))).toEqual([
       { identityId: 'mc', protocol: 'meshcore', channelIndex: 2 },
-      { identityId: 'mt', protocol: 'meshtastic', channelIndex: 0 },
+      { identityId: 'mc2', protocol: 'meshcore', channelIndex: 5 },
     ]);
   });
 
-  it('matches the room name exactly', () => {
-    bridge('mc', 2, 'Mesh Ops', true);
-    expect(findTakSendTargets('mesh ops')).toEqual([]);
-    expect(findTakSendTargets('Mesh')).toEqual([]);
-  });
-
-  it('ignores prefs for an identity that is no longer loaded', () => {
-    bridge('gone', 2, 'Mesh Ops', true);
-    expect(findTakSendTargets('Mesh Ops')).toEqual([]);
-  });
-});
-
-describe('listTakSendRooms', () => {
-  it('lists each room some loaded identity lets TAK send to, once', () => {
-    bridge('mc', 2, 'Mesh Ops', true);
-    bridge('mc', 3, 'Listen Only', false);
-    bridge('mt', 0, 'Mesh Ops', true);
-    bridge('mt', 1, 'Alpha', true);
-    bridge('gone', 2, 'Ghost', true);
-    expect(listTakSendRooms()).toEqual(['Alpha', 'Mesh Ops']);
+  it('finds nothing for a receive-only channel, an unserved one, or an unknown key', () => {
+    serve('mc', 'meshcore', 2, OPS, false);
+    setTakChannels('mt', [
+      { protocol: 'meshtastic', index: 1, key: OTHER, name: 'x', atakName: '#MT x' },
+    ]);
+    useTakRelayPrefsStore.getState().setChatSend('mt', OTHER, true);
+    expect(findTakSendTargets(channel(OPS))).toEqual([]);
+    expect(findTakSendTargets(channel(OTHER))).toEqual([]);
+    expect(findTakSendTargets(channel('0000000000000000'))).toEqual([]);
   });
 });
 
 describe('relayTakChatToMesh', () => {
-  it('sends nothing for a room that is not bridged or does not allow sending', async () => {
-    bridge('mc', 2, 'Mesh Ops', false);
+  it('sends nothing for a channel that does not allow sending', async () => {
+    serve('mc', 'meshcore', 2, OPS, false);
     const send = vi.fn<TakMeshSendFn>().mockResolvedValue(undefined);
     expect(await relayTakChatToMesh(message(), send, NOW)).toBe(0);
-    expect(await relayTakChatToMesh(message({ room: 'Elsewhere' }), send, NOW)).toBe(0);
+    expect(await relayTakChatToMesh(message({ target: channel(OTHER) }), send, NOW)).toBe(0);
     expect(send).not.toHaveBeenCalled();
   });
 
-  it('transmits the prefixed text on each allowed channel and remembers it as an echo', async () => {
-    bridge('mc', 2, 'Mesh Ops', true);
-    bridge('mt', 0, 'Mesh Ops', true);
+  it('transmits the prefixed text on each radio serving the channel and remembers it as an echo', async () => {
+    serve('mc', 'meshcore', 2, OPS, true);
+    serve('mc2', 'meshcore', 0, OPS, true);
     const send = vi.fn<TakMeshSendFn>().mockResolvedValue(undefined);
 
     expect(await relayTakChatToMesh(message(), send, NOW)).toBe(2);
@@ -136,17 +153,17 @@ describe('relayTakChatToMesh', () => {
       '[VIPER] on scene',
     );
     expect(send).toHaveBeenCalledWith(
-      { identityId: 'mt', protocol: 'meshtastic', channelIndex: 0 },
+      { identityId: 'mc2', protocol: 'meshcore', channelIndex: 0 },
       '[VIPER] on scene',
     );
     expect(consumeTakEcho('mc', 2, '[VIPER] on scene', NOW + 1000)).toBe(true);
-    expect(consumeTakEcho('mt', 0, '[VIPER] on scene', NOW + 1000)).toBe(true);
+    expect(consumeTakEcho('mc2', 0, '[VIPER] on scene', NOW + 1000)).toBe(true);
   });
 
   it('keeps going when one channel fails and forgets the echo for the failed send', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    bridge('mc', 2, 'Mesh Ops', true);
-    bridge('mt', 0, 'Mesh Ops', true);
+    serve('mc', 'meshcore', 2, OPS, true);
+    serve('mc2', 'meshcore', 0, OPS, true);
     const send = vi
       .fn<TakMeshSendFn>()
       .mockRejectedValueOnce(new Error('MeshCore not connected'))
@@ -157,7 +174,7 @@ describe('relayTakChatToMesh', () => {
     expect(send).toHaveBeenCalledTimes(2);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('mesh send failed'));
     expect(consumeTakEcho('mc', 2, '[VIPER] on scene', NOW + 1000)).toBe(false);
-    expect(consumeTakEcho('mt', 0, '[VIPER] on scene', NOW + 1000)).toBe(true);
+    expect(consumeTakEcho('mc2', 0, '[VIPER] on scene', NOW + 1000)).toBe(true);
     warn.mockRestore();
   });
 });
@@ -168,7 +185,7 @@ describe('enqueueTakChatRelay', () => {
   });
 
   it('finishes each message before starting the next, in arrival order', async () => {
-    bridge('mc', 2, 'Mesh Ops', true);
+    serve('mc', 'meshcore', 2, OPS, true);
     const started: string[] = [];
     const releases: (() => void)[] = [];
     const send: TakMeshSendFn = (_target, text) =>
@@ -195,7 +212,7 @@ describe('enqueueTakChatRelay', () => {
   it('times out a send that never settles and carries on with the next message', async () => {
     vi.useFakeTimers();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    bridge('mc', 2, 'Mesh Ops', true);
+    serve('mc', 'meshcore', 2, OPS, true);
     const send = vi
       .fn<TakMeshSendFn>()
       .mockImplementationOnce(() => new Promise<void>(() => {}))
@@ -210,5 +227,98 @@ describe('enqueueTakChatRelay', () => {
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('mesh send timed out'));
     expect(consumeTakEcho('mc', 2, '[VIPER] stuck')).toBe(false);
     warn.mockRestore();
+  });
+});
+
+describe('direct messages from TAK', () => {
+  it("goes to the companion on the protocol's TAK radio when it has direct messages on", () => {
+    setTakRadio('meshcore', 'mc');
+    setTakRadio('meshtastic', 'mt');
+    useTakRelayPrefsStore.getState().setDirectMessages('mc', true);
+    expect(findTakSendTargets(direct('meshcore', 123))).toEqual([
+      { identityId: 'mc', protocol: 'meshcore', channelIndex: 0, destination: 123 },
+    ]);
+    // Direct messages are off for the Meshtastic radio, and there may be no radio at all.
+    expect(findTakSendTargets(direct('meshtastic', 456))).toEqual([]);
+    setTakRadio('meshcore', null);
+    expect(findTakSendTargets(direct('meshcore', 123))).toEqual([]);
+  });
+
+  it('sends to a Reticulum peer only while its LXMF destination is its own', () => {
+    setTakRadio('reticulum', 'rn');
+    useTakRelayPrefsStore.getState().setDirectMessages('rn', true);
+    const peer = { kind: 'direct' as const, protocol: 'reticulum' as const, nodeId: 789 };
+    ownLxmf.add(789);
+    expect(findTakSendTargets(peer)).toEqual([
+      { identityId: 'rn', protocol: 'reticulum', channelIndex: 0, destination: 789 },
+    ]);
+    // Its address now remaps to another destination: nothing is sent.
+    ownLxmf.delete(789);
+    expect(findTakSendTargets(peer)).toEqual([]);
+  });
+
+  it('sends nothing while the recorded radio is no longer the one in use for the protocol', () => {
+    setTakRadio('meshcore', 'mc');
+    useTakRelayPrefsStore.getState().setDirectMessages('mc', true);
+    // Another MeshCore radio has just become active; the recorded radio catches up a render later.
+    currentIdentity.meshcore = 'mc-2';
+    expect(findTakSendTargets(direct('meshcore', 123))).toEqual([]);
+    currentIdentity.meshcore = 'mc';
+    expect(findTakSendTargets(direct('meshcore', 123))).toHaveLength(1);
+  });
+
+  it('sends the prefixed text as a direct message, with no echo to wait for', async () => {
+    setTakRadio('meshtastic', 'mt');
+    useTakRelayPrefsStore.getState().setDirectMessages('mt', true);
+    const send = vi.fn<TakMeshSendFn>().mockResolvedValue(undefined);
+    expect(
+      await relayTakChatToMesh(message({ target: direct('meshtastic', 456) }), send, NOW),
+    ).toBe(1);
+    expect(send).toHaveBeenCalledWith(
+      { identityId: 'mt', protocol: 'meshtastic', channelIndex: 0, destination: 456 },
+      '[VIPER] on scene',
+    );
+    expect(consumeTakEcho('mt', 0, '[VIPER] on scene', NOW + 1000)).toBe(false);
+  });
+
+  describe('outcomes', () => {
+    const DM_REF = '0c2f8e1a-5b3d-4c7e-9a10-2b4d6f8a0c1e';
+    const dmStatus = vi.fn().mockResolvedValue(undefined);
+    beforeEach(() => {
+      dmStatus.mockClear();
+      vi.stubGlobal('window', { electronAPI: { tak: { dmStatus } } });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('hands the message reference on to the send, for its outcome', async () => {
+      setTakRadio('meshtastic', 'mt');
+      useTakRelayPrefsStore.getState().setDirectMessages('mt', true);
+      const send = vi.fn<TakMeshSendFn>().mockResolvedValue(undefined);
+      await relayTakChatToMesh(
+        message({ target: direct('meshtastic', 456), dmRef: DM_REF }),
+        send,
+        NOW,
+      );
+      expect(send.mock.calls[0]?.[0]).toMatchObject({ destination: 456, dmRef: DM_REF });
+      expect(dmStatus).not.toHaveBeenCalled();
+    });
+
+    it('reports a direct message not sent when the send fails or no radio can send it', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      setTakRadio('meshtastic', 'mt');
+      useTakRelayPrefsStore.getState().setDirectMessages('mt', true);
+      const failing = vi.fn<TakMeshSendFn>().mockRejectedValue(new Error('rf down'));
+      const msg = message({ target: direct('meshtastic', 456), dmRef: DM_REF });
+      expect(await relayTakChatToMesh(msg, failing, NOW)).toBe(0);
+      expect(dmStatus).toHaveBeenLastCalledWith({ dmRef: DM_REF, outcome: 'not-sent' });
+
+      dmStatus.mockClear();
+      useTakRelayPrefsStore.getState().setDirectMessages('mt', false);
+      expect(await relayTakChatToMesh(msg, failing, NOW)).toBe(0);
+      expect(dmStatus).toHaveBeenCalledWith({ dmRef: DM_REF, outcome: 'not-sent' });
+      warn.mockRestore();
+    });
   });
 });

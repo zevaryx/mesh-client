@@ -23,6 +23,7 @@ import {
   reticulumMessageHashesEqual,
 } from '@/renderer/lib/reticulum/reticulumMessageHash';
 import { reticulumDbRowToMessageRecord } from '@/renderer/lib/storeRecordAdapters';
+import { relayDirectMessageToTak } from '@/renderer/lib/tak/takDirectMessages';
 import type { IdentityId } from '@/renderer/lib/types';
 import { useBlockStore } from '@/renderer/stores/blockStore';
 import type { MessageRecord, MessageStatus } from '@/renderer/stores/messageStore';
@@ -55,6 +56,11 @@ export interface ReticulumLxmfPayload {
   direction?: string;
   reaction_target?: string;
   received_via?: string;
+  /** Sidecar evidence bound to the exact decrypted LXMF frame, never a peer route. */
+  rx_radio_transport?: 'rf' | 'ble';
+  rx_snr?: number | null;
+  rx_rssi?: number | null;
+  rx_hops?: number;
   sent_via?: string;
   delivery_status?: string;
   delivery_method?: string;
@@ -159,6 +165,10 @@ function payloadToMessageRecord(
   const isReaction = Boolean(p.reaction_target);
   const receivedVia = resolvePayloadTransport(p);
   const status = mapDeliveryStatusToMessageStatus(p.delivery_status, p.direction);
+  const radioTransport =
+    p.direction === 'inbound' && (p.rx_radio_transport === 'rf' || p.rx_radio_transport === 'ble')
+      ? p.rx_radio_transport
+      : undefined;
 
   const deliveryMethod = parseReticulumDeliveryMethod(p.delivery_method);
   const replyToHash = isReaction ? p.reaction_target : p.reply_to_hash;
@@ -174,6 +184,16 @@ function payloadToMessageRecord(
     timestamp,
     status,
     ...(receivedVia ? { receivedVia } : {}),
+    ...(radioTransport
+      ? {
+          rxRadioTransport: radioTransport,
+          ...(p.rx_snr != null && Number.isFinite(p.rx_snr) ? { rxSnr: p.rx_snr } : {}),
+          ...(p.rx_rssi != null && Number.isFinite(p.rx_rssi) ? { rxRssi: p.rx_rssi } : {}),
+          ...(p.rx_hops != null && Number.isInteger(p.rx_hops) && p.rx_hops >= 0
+            ? { rxHops: p.rx_hops }
+            : {}),
+        }
+      : {}),
     reticulumMessageHash: messageHash,
     reticulumSenderHash: p.sender_hash,
     ...(isReaction
@@ -195,10 +215,22 @@ export function ingestReticulumLxmfPayload(
   }
   const record = payloadToMessageRecord(p, identityId);
   if (!record) return false;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Identity bucket may be absent at runtime.
-  const existing = useMessageStore.getState().messages[identityId]?.[record.id];
+  // Either level can miss: no messages yet for the identity, or none with this id.
+  const bucket = useMessageStore.getState().messages[identityId] as
+    Record<string, MessageRecord | undefined> | undefined;
+  const existing = bucket?.[record.id];
   const merged = mergeReticulumIngestRecord(existing, record, p, ctx);
   upsertMessage(identityId, merged);
+  // A newly stored LXMF message from a peer goes on to TAK; status updates and our own sends
+  // come through here too and are left out.
+  if (!existing && p.direction === 'inbound' && !record.tapback) {
+    relayDirectMessageToTak(identityId, 'reticulum', {
+      nodeId: record.from,
+      senderName: record.senderName ?? '',
+      text: record.payload,
+      timestampMs: record.timestamp,
+    });
+  }
   return true;
 }
 

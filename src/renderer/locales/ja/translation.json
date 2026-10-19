@@ -871,7 +871,9 @@
     "cancelAutoResend": "再試行をキャンセル",
     "cancelAutoResendAria": "このメッセージの自動再試行をキャンセルする",
     "outboxEmergencyWillSend": "ネットワークが確認するまで再試行します",
-    "outboxEmergencyCancelConfirm": "この緊急メッセージの再試行を停止しますか？ネットワークが認識していなくても、再送信されることはありません。"
+    "outboxEmergencyCancelConfirm": "この緊急メッセージの再試行を停止しますか？ネットワークが認識していなくても、再送信されることはありません。",
+    "sendSignalReport": "シグナルレポートを送信",
+    "signalReportUnavailable": "受信統計が利用できないか、1つの返信に収まらない。"
   },
   "chatPayload": {
     "mention": "{{label}} について言及してください",
@@ -1043,7 +1045,8 @@
     "reconnectingAttempt": "再接続中… {{attempt}}/{{max}} 回目",
     "serialReselect": "USBシリアル接続が失われました—デバイスを再度選択してください",
     "serialReselectAction": "シリアルポートを選択",
-    "statusRegion": "接続状態"
+    "statusRegion": "接続状態",
+    "rebootingReconnectAttempt": "無線を再起動しています。再接続しています… {{attempt}}/{{max}}を試みてください"
   },
   "connectionPanel": {
     "maxReconnectAttempts": "MQTT 再接続の最大試行回数",
@@ -2946,7 +2949,53 @@
       "mapReportPublishInterval": "マップレポート間隔（秒）",
       "mapReportPublishIntervalDesc": "0はファームウェアのデフォルトを使用します。マップレポートが有効になっているときに、デバイスがマップレポートを発行する頻度。",
       "mapReportPositionPrecision": "マップレポートの位置精度",
-      "mapReportPositionPrecisionDesc": "マップレポート座標の精度ビット（ファームウェアModuleConfig.mqtt.map_report_settings ）。"
+      "mapReportPositionPrecisionDesc": "マップレポート座標の精度ビット（ファームウェアModuleConfig.mqtt.map_report_settings ）。",
+      "nodeStatus": "ノードのステータス",
+      "nodeStatusDesc": "このノードがメッシュにブロードキャストする短いフリーテキスト ステータス (たとえば、「パトロール中」)。クリアするには空のままにします。",
+      "mbListenEnabled": "ビーコンを聞く",
+      "mbListenEnabledDesc": "他のノードからビーコンを受信します。ビーコンテキストは受信箱に送られます。提供されているチャンネルまたはプリセットがここに表示され、参加できます。何も自動的に適用されません。",
+      "mbBroadcastEnabled": "ブロードキャストビーコン",
+      "mbBroadcastEnabledDesc": "近くのノードがこのメッシュを検出できるように、このノードから定期的にビーコンを送信します。",
+      "mbLegacySplit": "従来のテキスト分割",
+      "mbLegacySplitDesc": "ビーコンをデコードできない古いファームウェアでもテキストが表示されるように、テキストを別のテキスト メッセージとして送信します。より多くの通信時間を使用します。",
+      "mbMessage": "ビーコンメッセージ",
+      "mbMessageDesc": "ビーコンのコピーごとに送信されるため、短くしてください。",
+      "mbMessageBytes": "{{used}}/{{max}} バイト",
+      "mbInterval": "放送間隔",
+      "mbIntervalDesc": "ビーコンを送信する頻度。最小 3600 秒 (1 時間)。",
+      "mbOfferHeading": "メッシュオファー",
+      "mbOfferHint": "必要に応じて、リスナーが参加を選択できるチャネルとラジオ設定をアドバタイズします。",
+      "mbOfferChannel": "提供チャネル",
+      "mbOfferChannelDesc": "チャネル名とキーをビーコンにコピーします。それを聞いた人は誰でもそのチャンネルに参加できます。",
+      "mbOfferChannelNone": "なし",
+      "mbOfferChannelKeep": "最新の状態に保ちます ({{name}})",
+      "mbChannelOption": "{{index}}: {{name}}",
+      "mbPrimaryChannel": "主要な",
+      "mbOfferRegion": "提供地域",
+      "mbOfferRegionNone": "宣伝されていない",
+      "mbOfferPreset": "提供されるモデム プリセット",
+      "mbOfferPresetNone": "宣伝されていない",
+      "mbOfferSlot": "提供される周波数スロット",
+      "mbOfferSlotDesc": "これは、メッシュがデフォルト以外のスロットを使用する場合にのみ設定します。 0 を指定すると、リスナーがそれを派生できます。",
+      "mbTargetsHeading": "ブロードキャストターゲット",
+      "mbTargetsHint": "ターゲットごとに 1 つのビーコンのコピーを送信し、無線を各ターゲットの設定に順番に切り替えます。ターゲットがない場合、プライマリ チャネル上の現在の設定で 1 つのビーコンが送信されます。",
+      "mbTargetLabel": "ターゲット{{n}}",
+      "mbTargetRemove": "ターゲット {{n}} を削除します",
+      "mbTargetAdd": "ターゲットの追加",
+      "mbTargetPreset": "モデムのプリセット",
+      "mbTargetPresetRunning": "現在のプリセット",
+      "mbTargetRegion": "地域",
+      "mbTargetRegionRunning": "現在の地域",
+      "mbTargetChannel": "チャネル",
+      "mbTargetChannelDefault": "プリセットのデフォルトチャンネル",
+      "mbTargetSlot": "周波数スロット",
+      "mbTargetSlotDesc": "0 は、リージョンとチャンネル名からスロットを派生します。",
+      "mbTargetsInvalid": "適用する前に、強調表示されているブロードキャスト ターゲットを修正してください。",
+      "mbTargetErrors": {
+        "channelIndexRange": "チャネル インデックスは 0 ～ 7 でなければなりません。",
+        "channelNotConfigured": "このチャネルはこの無線では設定されていません。",
+        "frequencySlot": "周波数スロットは 1 以上であるか、それを導出するには 0 である必要があります。"
+      }
     },
     "applySection": "{{section}}を適用",
     "applyingButton": "申請中...",
@@ -3118,6 +3167,40 @@
       "8": {
         "label": "K9"
       }
+    },
+    "sectionMeshBeacon": "メッシュビーコンモジュール",
+    "sectionStatusMessage": "ステータスメッセージモジュール",
+    "beacon": {
+      "heardTitle": "ビーコンを聞いた",
+      "none": "まだビーコンは聞こえません。ビーコンを受信するには、「ビーコンをリッスンする」をオンにします。",
+      "remoteHint": "オファーへの参加は、接続されている無線でのみ利用できます。",
+      "itemAria": "{{name}} からのビーコン",
+      "offerChannel": "チャンネル: {{name}}",
+      "offerRegion": "地域: {{region}}",
+      "offerPreset": "モデムのプリセット: {{preset}}",
+      "offerSlot": "周波数スロット: {{slot}}",
+      "unnamedChannel": "(名前なし)",
+      "joinChannel": "チャンネルに参加する",
+      "joinChannelAria": "{{node}} が提供するチャンネル {{name}} に参加してください",
+      "alreadyJoined": "チャンネルはすでにこの無線 (スロット {{index}}) 上にあります",
+      "noFreeSlot": "このチャンネルに参加するための空きチャンネル スロットがありません。",
+      "applyRadio": "無線設定を使用する",
+      "applyRadioAria": "{{node}} が提供する無線設定を使用する",
+      "regionMismatch": "{{offer}} について宣伝されました。この無線は{{local}}に設定されています。",
+      "alreadyMatching": "無線設定はすでに一致しています。",
+      "changeRegion": "地域{{value}}",
+      "changePreset": "モデムのプリセット {{value}}",
+      "changeSlot": "周波数スロット {{value}}",
+      "changeSlotDerived": "派生周波数スロット",
+      "confirmChannelTitle": "チャンネルに参加しますか？",
+      "confirmChannelMessage": "{{node}} の「{{name}}」をチャネル スロット {{slot}} に追加します。このチャンネルのキーを持っている人は誰でもメッセージを読むことができます。",
+      "confirmChannelLabel": "参加する",
+      "confirmRadioTitle": "無線設定を変更しますか?",
+      "confirmRadioMessage": "{{changes}} を適用します。無線が再起動し、現在のメッシュとの接続が失われる可能性があります。",
+      "confirmRadioLabel": "適用して再起動する",
+      "joined": "チャンネル {{name}} に参加しました。",
+      "radioApplied": "無線設定が送信されました。",
+      "joinFailed": "参加に失敗しました: {{message}}"
     }
   },
   "networkPanel": {
@@ -3430,7 +3513,11 @@
     "savedPathHeading": "保存されたパス",
     "savedPathHint": "保存された履歴で最も評価の高い経路です。無線機の現在の送信経路や、受信したアドバタイズの経路とは異なる場合があります。",
     "bearingRange": "{{bearing}} · {{distance}}",
-    "bearingRangeTitle": "信頼できる位置からの方角と距離"
+    "bearingRangeTitle": "信頼できる位置からの方角と距離",
+    "nodeStatus": {
+      "heading": "状態",
+      "updated": "{{ago}} を更新しました"
+    }
   },
   "nodeInfoBody": {
     "longName": "長い名前",
@@ -5678,13 +5765,9 @@
     "unitTypeInstallation": "設置",
     "unitTypeSensor": "センサー",
     "unitTypeAir": "飛行機",
-    "channelRelayTitle": "MeshCoreチャンネルからTAK",
     "channelRelayTrackers": "トラッカーの修正",
-    "channelRelayRoom": "{{channel}}のGeoChatルーム",
-    "channelRelayRoomPlaceholder": "GeoChatルーム（オフ）",
     "channelRelayNoChannels": "チャンネルを一覧表示するには、MeshCoreラジオを接続してください。",
     "channelRelayUnnamed": "チャンネル{{n}}",
-    "channelRelayTitleMeshtastic": "MeshtasticチャンネルからTAK",
     "channelRelayNoChannelsMeshtastic": "Meshtastic 無線を接続して、そのチャンネルをリストします。",
     "unitStylesPreviewKind": "テストするノードタイプ",
     "unitStylesPreviewProtocol": "テストプロトコル",
@@ -5696,7 +5779,35 @@
     "unitKindRepeater": "リピーターとルーター",
     "unitKindRoom": "ルームサーバー",
     "unitKindSensor": "センサー",
-    "unitKindTracker": "トラッカー"
+    "unitKindTracker": "トラッカー",
+    "unitStylesRepeaterIcon": "リピーターとルーターのアイコン",
+    "unitStylesRepeaterIconPreset": "リピーターとルーターのGeoOpsアイコン",
+    "unitStylesRelayIconHint": "どちらもオプションです。それぞれは、設定されたUID/グループ/ファイル名としてのATAKアイコンセット内のパス、またはリストから選択されたGeoOpsアイコンです。フィルターがノードのスタイルを再設定するかどうかにかかわらず適用されます。そのアイコンセットのないデバイスには、ユニットタイプのシンボルが表示されます。",
+    "unitStylesRoomIcon": "ルームサーバーのアイコン",
+    "unitStylesRoomIconPreset": "ルームサーバーのGeoOpsアイコン",
+    "unitIconPresetPrompt": "GeoOpsアイコン…",
+    "unitIconInvalid": "設定UID/グループ/ファイル名を使用します。",
+    "messagingTitleMeshcore": "ATAKでのMeshCoreメッセージ",
+    "messagingIntroMeshcore": "ATAKに表示されるMeshCoreチャンネルを選択します。それぞれが、接続されているすべてのATAKデバイス上の連絡先になり、チャネルがその連絡先から受信するものになります。ATAKをオンにすると、連絡先へのメッセージが、送信者のコールサインをプレフィックスしたこの無線からチャンネルに送信されます。オフにすると、チャンネルは受信のみになります。リモートサーバーはまた、読み取り専用のチャネルをリモートTAKサーバーにストリーミングします。トラッカーはMeshCoreトラッカーポジションメッセージを修正しました(! ＭＴ １ ）をマップマーカーに入れた。ATAKデバイスが接続されていない間に聴取されたメッセージ（ 1日に最大50件）は、最初に接続されたデバイスに対して保持され、そのデバイスのみが保持されます。",
+    "messagingTitleMeshtastic": "ATAKでのMeshtasticメッセージ",
+    "messagingIntroMeshtastic": "ATAKに表示されるMeshtasticチャンネルを選択します。それぞれが、接続されているすべてのATAKデバイス上の連絡先になり、MQTTを超えるものを含むチャネルがその連絡先から受信します。ATAKをオンにすると、連絡先へのメッセージが、送信者のコールサインをプレフィックスしたこの無線からチャンネルに送信されます。オフにすると、チャンネルは受信のみになります。リモートサーバーはまた、読み取り専用のチャネルをリモートTAKサーバーにストリーミングします。ATAKデバイスが接続されていない間に聴取されたメッセージ（ 1日に最大50件）は、最初に接続されたデバイスに対して保持され、そのデバイスのみが保持されます。",
+    "channelModeLabel": "ATAKのチャンネル",
+    "channelModeOff": "オフ",
+    "channelModeAll": "すべてのチャンネル",
+    "channelModeSelected": "選択したチャンネル",
+    "channelServe": "ATAK内",
+    "channelAtakNameLabel": "ATAK名",
+    "channelAtakNameFor": "{{channel}}のATAK名",
+    "channelServeFor": "ATAKで{{channel}}を表示",
+    "channelSend": "ATAK CAN SEND",
+    "channelSendFor": "ATAKデバイスを{{channel}}に送信する",
+    "channelRemote": "リモートサーバ",
+    "channelRemoteFor": "リモートのTAKサーバーに{{channel}}をストリーミング",
+    "channelTrackersFor": "{{channel}}からのトラッカーの修正",
+    "directMessages": "ダイレクトメッセージ",
+    "directMessagesHint": "ATAKデバイスがこのラジオの仲間にメッセージを送るようにしましょう。このラジオCANメッセージの各コンパニオンは、ATAKでチャットオプションを取得し、送信者のコールサインをプレフィックスしたメッセージがこのラジオから送信されます。応答は、最後に書き込まれたATAKデバイス、または書き込まれていないすべてのデバイスに送信されます。メッセージの1日後、位置のないコンパニオンが0、0に表示されます。",
+    "messagingTitleReticulum": "ATAKでのReticulumメッセージ",
+    "messagingIntroReticulum": "ATAKデバイスがLXMFピアにメッセージを送信できるようにします。ポジションを持つピアは、そのマーカーからメッセージを送ることができます。ポジションを持たないピアは、mesh-clientがそれと会話をすると0、0に表示されるため、連絡先リストはすべてのピアで満たされるわけではありません。"
   },
   "telemetryPanel": {
     "title": "テレメトリー",
@@ -7343,5 +7454,354 @@
     "notConnected": "未接続",
     "statusBar": "接続状態",
     "unread": "未読 {{count}} 件"
+  },
+  "meshcoreCompanionCli": {
+    "summary": "コンパニオンデバイスの設定",
+    "description": "接続されたコンパニオンラジオに保存され、コマンドライン（ MeshCoreファームウェアv 1.18以降）で読み書きされた設定。",
+    "requiresFirmware": "これらの設定を使用するには、コンパニオンをMeshCoreファームウェアv 1.18以降に更新してください。",
+    "loading": "ラジオから設定を読み取っています…",
+    "loadFailed": "ラジオから設定を読み取れませんでした。接続を確認して、もう一度お試しください。",
+    "refresh": "ラジオからリフレッシュ",
+    "apply": "申し込む",
+    "applying": "適応中…",
+    "applied": "コンパニオン設定が保存されました。",
+    "appliedWithErrors": "一部の設定が保存されませんでした（ {{count}} ）。強調表示されたフィールドを参照してください。",
+    "applyFailed": "ラジオはこの値を受け入れませんでした。",
+    "unsupported": "このラジオではサポートされていません",
+    "secretPlaceholder": "変更なし",
+    "showSecret": "表示",
+    "hideSecret": "非表示",
+    "revealFailed": "ラジオから保存されたパスワードを読み取れませんでした。",
+    "rebootPending": "一部の変更は、ラジオが再起動した後に有効になります。",
+    "rebootNow": "今すぐ再起動する",
+    "rebooting": "ラジオを再起動しています。mesh-clientは自動的に再接続します。",
+    "actionFailed": "ラジオはそのアクションを完了しませんでした。",
+    "reboot": "再起動して再接続",
+    "powerOff": "電源を切る",
+    "powerHint": "リブートは、同じ接続で自動的に再接続されます。電源を切ると切断されます。ラジオを再度オンにして再接続してください。",
+    "clearWifi": "Wi-Fi設定をクリア",
+    "copyIp": "IPアドレス",
+    "ipCopied": "IPアドレスをコピーしました。",
+    "wifiTcpHint": "Wi-Fi経由で接続するには、接続でTCP/IPを選択し、{{ip}}と入力します。",
+    "wifiUnsupported": "このラジオのファームウェアはWiFiなしで構築されました。",
+    "consoleHint": "ボード固有のコマンドを含む任意のコンパニオンコマンドを実行します。返信は以下に表示されます。",
+    "consoleLog": "コンパニオンコマンドの履歴",
+    "consoleInput": "コンパニオンコマンド",
+    "consolePlaceholder": "例： GET RADIO",
+    "consoleSend": "送信",
+    "groups": {
+      "device": "デバイス",
+      "radio": "ラジオチューニング",
+      "wifi": "WiFi",
+      "power": "出力",
+      "console": "コマンドコンソール"
+    },
+    "validation": {
+      "required": "値を入力してください",
+      "notNumber": "半角数字で入力してください。",
+      "notInteger": "整数を入力してください。",
+      "outOfRange": "値が範囲外です。",
+      "tooLong": "値が長すぎます。",
+      "invalidChars": "改行は許可されていません。",
+      "pinFormat": "6桁の数字を入力するか、ランダムな暗証番号を0にしてください。"
+    },
+    "settings": {
+      "ver": {
+        "label": "ファームウェアのバージョン"
+      },
+      "board": {
+        "label": "ボード"
+      },
+      "tz_offset": {
+        "label": "タイムゾーンオフセット（時間）",
+        "hint": "ラジオ自体のディスプレイで使用されます。-12から+14。"
+      },
+      "pin": {
+        "label": "Bluetooth PIN",
+        "hint": "6桁、またはランダムなPINの場合は0です。再起動後に有効になります。再度ペアリングする必要があります。"
+      },
+      "af": {
+        "label": "Airtime factor",
+        "hint": "0 ～ 9。値が高いほど、トランスミッション間の待ち時間が長くなります。"
+      },
+      "dutycycle": {
+        "label": "デューティ比"
+      },
+      "int_thresh": {
+        "label": "干渉閾値",
+        "hint": "0 ～ 255. 0は、干渉検出をオフにします。"
+      },
+      "cad": {
+        "label": "チャネルアクティビティ検出",
+        "hint": "送信する前に耳を傾けてください。"
+      },
+      "radio_rxgain": {
+        "label": "ブーストされた受信ゲイン",
+        "hint": "すべてのラジオチップがこれをサポートしているわけではありません"
+      },
+      "rxdelay": {
+        "label": "受信遅延ベース",
+        "hint": "0〜20.0％"
+      },
+      "agc_reset_interval": {
+        "label": "AGCリセット間隔（秒）",
+        "hint": "0から1020、4の倍数に丸めます。0はそれをオフにします。"
+      },
+      "txdelay": {
+        "label": "フラッド送信遅延係数",
+        "hint": "0～2"
+      },
+      "direct_txdelay": {
+        "label": "直接送信遅延係数",
+        "hint": "0～2"
+      },
+      "wifi_enabled": {
+        "label": "WiFi",
+        "hint": "再起動後に有効になります。"
+      },
+      "wifi_ssid": {
+        "label": "ネットワーク名 (SSID)",
+        "hint": "最大32文字。再起動後に有効になります。"
+      },
+      "wifi_pwd": {
+        "label": "パスワード",
+        "hint": "最大63文字。オープンネットワークの場合は空白のままにします。再起動後に有効になります。"
+      },
+      "wifi_status": {
+        "label": "ステータス"
+      },
+      "wifi_ip": {
+        "label": "IP アドレス"
+      }
+    },
+    "confirm": {
+      "reboot": {
+        "title": "ラジオを再起動しますか？",
+        "message": "ラジオが再起動し、mesh-clientが自動的に再接続します。再起動中に送信されたメッセージはキューイングされます。",
+        "confirm": "再起動"
+      },
+      "poweroff": {
+        "title": "ラジオの電源を切りますか？",
+        "message": "ラジオがオフになり、mesh-clientが切断されます。再度オンにするには、物理的なアクセスが必要です。",
+        "confirm": "電源を切る"
+      },
+      "clearWifi": {
+        "title": "Wi-Fi設定をクリアしますか？",
+        "message": "保存されたネットワーク名とパスワードは消去されます。次回の再起動後、Wi-Fiが停止します。",
+        "confirm": "クリア"
+      }
+    }
+  },
+  "meshcoreRemoteCli": {
+    "summary": "遠隔コマンド",
+    "allowLabel": "この連絡先が私のラジオでコマンドを実行できるようにする",
+    "allowDescription": "デフォルトではオフになっています。オンにすると、この連絡先はWiFiやBLE PINを含むコンパニオンラジオの設定を変更できます。",
+    "notOnRadio": "この連絡先は無線ではないため、リモートコマンドラインの権限を設定できません。",
+    "flagReadFailed": "ラジオからこの連絡先の権限を読み取れませんでした。",
+    "flagWriteFailed": "ラジオでこの連絡先の権限を更新できませんでした。",
+    "consoleHint": "この連絡先のコンパニオンラジオでコマンドを実行します。MeshCoreファームウェアv 1.18以降が必要で、無線でコマンドを実行できるようにする必要があります。それがなければ、コマンドは応答しません。",
+    "consoleLog": "リモートコマンドライン出力",
+    "consoleInput": "遠隔コマンド",
+    "consolePlaceholder": "例） ver",
+    "send": "送信",
+    "sending": "送信中・・・",
+    "confirmAllow": {
+      "title": "リモートコマンドを許可しますか？",
+      "message": "この連絡先は、ラジオの設定を変更したり、再起動したり、電源を切ったりすることができます。完全に信頼できる連絡先のみを許可します。",
+      "confirm": "許可"
+    }
+  },
+  "meshcoreTelemetryPush": {
+    "summary": "ライブテレメトリ",
+    "enableLabel": "このセンサーから更新をプッシュします",
+    "enableDescription": "センサーは、値が以下の量を超えて変化すると測定値を送信します。センサーファームウェア v1.18 以降が必要です。アプリは接続中にサブスクリプションを更新します。",
+    "thresholdsLegend": "変更が少なくとも次の時点で送信されます",
+    "thresholdsHint": "その値を無視するには、フィールドを空のままにしておきます。センサーが報告する値のみが監視されます。",
+    "metric": {
+      "temperature": "温度(℃)",
+      "humidity": "湿度(%)",
+      "voltage": "電圧(V)",
+      "pressure": "圧力 (hPa)"
+    },
+    "leaseLabel": "サブスクリプションの長さ (分)",
+    "leaseHint": "アプリがオフラインになると、センサーはこの時間が経過すると送信を停止します。",
+    "waitingForPush": "購読しました。最初の変更を待っています。",
+    "lastPush": "最終更新日: {{time}}",
+    "errorNoMetrics": "このセンサーは、選択された値を何も報告しません。最初にテレメトリを要求するか、しきい値を設定します。",
+    "errorRejected": "センサーがサブスクリプションを拒否しました。ファームウェアのバージョンとログインを確認してください。",
+    "errorFailed": "センサーに到達できませんでした。もう一度やり直してください。"
+  },
+  "meshtasticExtraConfig": {
+    "advancedHardware": "高度なハードウェア",
+    "invalidValue": "{{field}} には無効な値があります。",
+    "applyInvalid": "適用する前に、{{section}} で強調表示されているフィールドを修正してください。",
+    "buzzerMode": "ブザーモード",
+    "buzzerModeDesc": "どのイベントがブザーを鳴らしますか。",
+    "buzzerModes": {
+      "allEnabled": "すべての音",
+      "disabled": "静けさ",
+      "notificationsOnly": "通知のみ",
+      "systemOnly": "システム音のみ",
+      "directMsgOnly": "ダイレクトメッセージのみ"
+    },
+    "compassNorthTop": "上部に北を示すコンパス",
+    "compassNorthTopDesc": "方位に合わせて回転するのではなく、コンパス画面の上部で北を維持してください。",
+    "compassOrientation": "コンパスの向き",
+    "positionFlags": "含める位置フィールド",
+    "positionFlagsDesc": "無線機が各位置パケットに追加する追加データ。フィールドが増えるとパケットが大きくなります。",
+    "gpsRxGpio": "GPS RXピン",
+    "gpsTxGpio": "GPS TX ピン",
+    "gpsEnGpio": "GPSイネーブルピン",
+    "adcMultiplierOverride": "バッテリーADC乗算器",
+    "adcMultiplierOverrideDesc": "バッテリー電圧の読み取り値を校正します。 0 はボードのデフォルトを使用します。",
+    "deviceBatteryInaAddress": "バッテリー INA センサー I2C アドレス",
+    "deviceBatteryInaAddressDesc": "バッテリーの読み取りに使用される INA 電力モニターの I2C アドレス。 0 は無効になります。",
+    "powermonEnables": "パワーモニターチャンネル",
+    "powermonEnablesDesc": "電力監視ログ チャネルのビットマスク (開発者設定)。何も指定しない場合は空のままにしておきます。",
+    "addressMode": "IPアドレスモード",
+    "addressModes": {
+      "dhcp": "DHCP",
+      "static": "静的"
+    },
+    "ipv4Address": "IPアドレス",
+    "ipv4Gateway": "ゲートウェイ",
+    "ipv4Subnet": "サブネットマスク",
+    "ipv4Dns": "DNSサーバー",
+    "rsyslogServer": "Syslogサーバー",
+    "rsyslogServerDesc": "デバイス ログをリモート syslog サーバー (ホスト:ポート) に送信します。",
+    "enabledProtocols": "ネットワークプロトコル",
+    "udpBroadcast": "UDP ブロードキャスト上のメッシュ",
+    "ipv6Enabled": "IPv6を有効にする",
+    "ignoreIncoming": "無視されたノード",
+    "ignoreIncomingDesc": "カンマで区切られた、無線がパケットをドロップするノード ID (例: !a1b2c3d4)。",
+    "femLnaMode": "フロントエンドLNA",
+    "femLnaModeDesc": "フロントエンドモジュールを備えたボード上の低ノイズアンプ。",
+    "femLnaModes": {
+      "disabled": "無効",
+      "enabled": "有効",
+      "notPresent": "存在しません"
+    },
+    "serialHalOnly": "シリアルHALのみ",
+    "serialHalOnlyDesc": "LoRa 無線は、シリアル ハードウェア層 (特殊ボード) 経由でのみ使用してください。",
+    "packetSignaturePolicy": "パケット署名ポリシー",
+    "packetSignaturePolicyDesc": "無線が他のノードからの署名付きパケットをどの程度厳密に要求するか。",
+    "packetSignaturePolicies": {
+      "compatible": "互換性がある",
+      "balanced": "バランスの取れた",
+      "strict": "厳しい"
+    },
+    "codec2Enabled": "Codec2音声対応",
+    "audioBitrate": "コーデック2のビットレート",
+    "pttPin": "プッシュトークピン",
+    "i2sWs": "I2S ワード選択ピン",
+    "i2sSd": "I2S データ出力ピン",
+    "i2sDin": "ピンの I2S データ",
+    "i2sSck": "I2Sクロックピン",
+    "detectionTriggerType": "トリガータイプ",
+    "usePullup": "内部プルアップを使用する",
+    "monitorPin": "モニターピン",
+    "wifiThreshold": "Wi-Fi RSSI しきい値",
+    "bleThreshold": "Bluetooth RSSI しきい値",
+    "rssiThresholdDesc": "この信号レベル (dBm) より弱いデバイスは無視します。",
+    "healthMeasurementEnabled": "ヘルステレメトリ",
+    "healthMeasurementEnabledDesc": "付属の健康センサーから心拍数、SpO2、体温をレポートします。",
+    "healthUpdateInterval": "ヘルス更新間隔",
+    "healthScreenEnabled": "画面上に健康状態を表示",
+    "airQualityScreenEnabled": "空気の質を画面に表示する",
+    "clearOnReboot": "再起動時に保存された結果をクリアする",
+    "shouldReportLocation": "場所を含める",
+    "shouldReportLocationDesc": "このノードの位置をマップ レポートに含めます。",
+    "availablePins": "利用可能なピン",
+    "availablePinsNone": "無線にはピンが定義されていません。",
+    "availablePinRow": "GPIO {{pin}}: {{name}} ({{type}})"
+  },
+  "aiSummary": {
+    "catchUp": "追いつけ",
+    "scope": "要約レンジ",
+    "unread": "すべて未読",
+    "hours_one": "過去{{count}}時間",
+    "hours_other": "過去{{count}}時間",
+    "customHours": "カスタム時間",
+    "loaded": "すべて読み込まれました",
+    "copy": "コピー",
+    "copyFailed": "コピーできませんでした。要約テキストを選択し、手動でコピーしてください。",
+    "regenerate": "再生成",
+    "cancel": "キャンセル",
+    "dismiss": "却下",
+    "settings": "AI 設定",
+    "working": "概要を準備しています…",
+    "sentTo": "{{host}}に送信済み",
+    "onDevice": "このデバイスで処理されました",
+    "truncated": "該当する最新のメッセージのみが含まれていました。古い履歴も保持によって削除された可能性があります。",
+    "verify": "AIサマリーは、詳細を見落としたり誤読したりする可能性があります。元のメッセージを確認してください。",
+    "settingsTitle": "AI会話の要約",
+    "enabled": "AIサマリーを有効にする",
+    "optIn": "AIは初期設定で無効です。有効にしてエンジンを選択するまで動作しません。要約が自動的に投稿されることはありません。",
+    "engine": "Engine",
+    "chooseEngine": "エンジンを選択してください",
+    "osEngine": "組み込みのOS AI （このデバイスで推奨）",
+    "bundledEngine": "ダウンロードしたモデル（オフライン）",
+    "localEngine": "ローカル サーバー",
+    "remoteEngine": "リモートプロバイダ",
+    "osAvailability": "OS AI ： {{model}}",
+    "osUnavailable": "このデバイスまたはインストールでは使用できません",
+    "catalog": "オフラインモデル",
+    "download": "ダウンロード",
+    "downloadModel": "ダウンロード{{model}}",
+    "remove": "削除する",
+    "removeModel": "{{model}}を削除",
+    "useModel": "{{model}}を使用",
+    "select": "モデルを使用",
+    "selected": "選択",
+    "format": "APIフォーマット",
+    "baseUrl": "サーバーベースURL",
+    "model": "モデル",
+    "apiKey": "APIキー（暗号化されて保存）",
+    "keySaved": "キーが保存されました。空白のままにしておきます",
+    "clearKey": "保存したキーをクリア",
+    "allowRemote": "私は、会話テキストがこのデバイスを離れ、このHTTPSプロバイダーに送信されることを理解しています。",
+    "urlHint": "LANサーバーは会話テキストを受信します。OpenAI互換のベアホストは/v 1を使用します。カスタムゲートウェイのパスを含めます。テストする前に保存してください。",
+    "save": "設定を保存",
+    "saved": "設定を保存しました",
+    "test": "テスト接続",
+    "testOk": "エンジンの準備ができました。",
+    "refreshModels": "モデルを更新する",
+    "settingsError": "この操作を完了できませんでした。エンジン、URL、モデル、安全なキーストレージ、プロバイダーアクセスを確認してから、再試行してください。",
+    "error": {
+      "disabled": "設定でAIを有効にします。",
+      "noMessages": "この範囲内にメッセージはありません。より広い範囲を選択してください。",
+      "notConfigured": "AI設定でエンジンを選択して保存します。",
+      "engineNotReady": "エンジンが使用できません。OS AIの可用性を確認するか、ダウンロードしてモデルを選択します。",
+      "remoteNotAcknowledged": "HTTPSを使用し、AI設定で会話テキストの送信を確認します。",
+      "rateLimited": "リクエストが多すぎます。しばらく待ってから再試行してください。",
+      "busy": "別のサマリーが実行されています。キャンセルするか、しばらくお待ちください。",
+      "timeout": "エンジンに時間がかかりすぎました。より小さい範囲またはより速いモデルをお試しください。",
+      "tooLarge": "会話または回答が大きすぎます。範囲を小さくしてみてください。",
+      "httpError": "プロバイダーの要求に失敗しました。接続と認証情報を確認します。",
+      "invalidResponse": "エンジンが不完全またはサポートされていない応答を返しました。",
+      "cancelled": "サマリーがキャンセルされました。",
+      "error": "要約できませんでした。AI設定を確認して再試行してください。",
+      "repetitiveOutput": "モデルはそれ自体を繰り返し始めました。より大きなモデルまたはより短い範囲をお試しください。"
+    },
+    "loadingModel": "このデバイスにモデルを読み込んでいます...",
+    "readingMessages": "このデバイスでメッセージを読んでいます。CPUの処理には数分かかる場合があります...",
+    "providerIncluded_one": "{{provider}} · {{model}} · {{included}}/{{count}}収集したメッセージが含まれています",
+    "providerIncluded_other": "{{provider}} · {{model}} · {{included}}/{{count}}収集したメッセージが含まれています",
+    "providerCollected_one": "{{provider}} · {{model}} · {{count}}メッセージが収集されました",
+    "providerCollected_other": "{{provider}} · {{model}} · {{count}}メッセージを収集しました",
+    "offlineSummaryHint": "ダウンロードは一度インターネットを使用します。要約はこのデバイスでオフラインで実行されます。ダウンロードしたモデルでは、大規模な会話に数分かかる場合があります。より大きなモデルには、より多くのメモリが必要です。",
+    "countSnapshot": "件数はこの要約の作成時点のものです。現在の未読バッジの件数とは異なる場合があります。",
+    "timeoutSeconds": "サマリータイムアウト（秒）",
+    "timeoutHint": "モデルの読み込みを含むサマリーの最大時間。30〜1800秒を選択します。いつでもキャンセルできます。",
+    "insecureKeyWarning": "このHTTPエンドポイントは、トランスポート暗号化なしでAPIキーとメッセージを送信します。ネットワーク上のサーバーにHTTPSを使用します。",
+    "setupCatchUp": "要約を設定",
+    "queued": "しばらくお待ちください。別のサマリーが生成されています…",
+    "chunkProgress": "{{total}}の{{current}}部のまとめ…",
+    "mergeProgress": "ダイジェストのマージ{{current}}/{{total}} …",
+    "ceilingTruncated": "{{count}}メッセージ後に停止— AI設定でキャッチアップメッセージの制限を上げて、より多くを含めます。",
+    "maxCollectedMessages": "キャッチアップメッセージの制限",
+    "maxCollectedMessagesHint": "キャッチアップが集めることができるメッセージの最大数（ 100 -5000 ）。デフォルトは2000です。値が大きいほど時間がかかり、タイムアウトが長くなる場合があります。",
+    "capacityHint": "{{count}}についての典型的なメッシュメッセージは、このエンジンで1つの推論パスに適合します（新しいものが最初）。キャッチアップは、複数のパスを介して最大{{ceiling}}件のメッセージを処理できます。メッセージが長いほど、各パスの使用回数が増えます。大規模な範囲では、より長いタイムアウトが必要です。",
+    "capacityHintChooseEngine": "組み込みのOS AIとダウンロードされたモデルは、パスあたり約{{onDevice}}の典型的なメッセージに適合します。ローカルまたはリモートサーバーは約{{endpoint}}です。キャッチアップは、マルチパスで最大{{ceiling}}件のメッセージをカバーできます。ビジーメッシュのメッセージ制限とタイムアウトを上げます。"
   }
 }

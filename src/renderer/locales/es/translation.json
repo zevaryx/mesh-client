@@ -871,7 +871,9 @@
     "cancelAutoResend": "Cancelar reintento",
     "cancelAutoResendAria": "Cancelar el reintento automático de este mensaje",
     "outboxEmergencyWillSend": "Seguirá intentándolo hasta que la red lo reconozca",
-    "outboxEmergencyCancelConfirm": "¿Quieres dejar de volver a intentar este mensaje de emergencia? Ya no se volverá a enviar, incluso si la red nunca lo reconoció."
+    "outboxEmergencyCancelConfirm": "¿Quieres dejar de volver a intentar este mensaje de emergencia? Ya no se volverá a enviar, incluso si la red nunca lo reconoció.",
+    "sendSignalReport": "Enviar informe de señal",
+    "signalReportUnavailable": "Las estadísticas de recepción no están disponibles o no caben en una respuesta."
   },
   "chatPayload": {
     "mention": "Mencionar {{label}}",
@@ -1043,7 +1045,8 @@
     "reconnectingAttempt": "Volviendo a conectar… intento {{attempt}}/{{max}}",
     "serialReselect": "Conexión serie USB perdida — seleccione su dispositivo de nuevo",
     "serialReselectAction": "Seleccionar puerto serie",
-    "statusRegion": "Estado de conexión"
+    "statusRegion": "Estado de conexión",
+    "rebootingReconnectAttempt": "Reinicio de la radio. Volviendo a conectar… intento {{attempt}}/{{max}}"
   },
   "connectionPanel": {
     "maxReconnectAttempts": "Intentos de reconexión MQTT máximos",
@@ -2946,7 +2949,53 @@
       "mapReportPublishInterval": "Intervalo del informe del mapa (segundos)",
       "mapReportPublishIntervalDesc": "0 utiliza el firmware predeterminado. Con qué frecuencia el dispositivo publica informes de mapas cuando los informes de mapas están habilitados.",
       "mapReportPositionPrecision": "Precisión de la posición del informe del mapa",
-      "mapReportPositionPrecisionDesc": "Bits de precisión para las coordenadas del informe del mapa (firmware ModuleConfig.mqtt.map_report_settings)."
+      "mapReportPositionPrecisionDesc": "Bits de precisión para las coordenadas del informe del mapa (firmware ModuleConfig.mqtt.map_report_settings).",
+      "nodeStatus": "Estado del nodo",
+      "nodeStatusDesc": "Estado breve de texto libre que este nodo transmite a la malla (por ejemplo, \"En patrulla\"). Déjelo vacío para borrarlo.",
+      "mbListenEnabled": "Escuche las balizas",
+      "mbListenEnabledDesc": "Recibir balizas de otros nodos. El texto de la baliza va a la bandeja de entrada; Cualquier canal o preajuste ofrecido se muestra aquí para que usted pueda unirse. Nada se aplica automáticamente.",
+      "mbBroadcastEnabled": "balizas de transmisión",
+      "mbBroadcastEnabledDesc": "Envíe periódicamente una baliza desde este nodo para que los nodos cercanos puedan descubrir esta malla.",
+      "mbLegacySplit": "División de texto heredado",
+      "mbLegacySplitDesc": "Envíe el texto como un mensaje de texto separado para que el firmware antiguo que no puede decodificar balizas aún lo muestre. Utiliza más tiempo aire.",
+      "mbMessage": "Mensaje de baliza",
+      "mbMessageDesc": "Se envía con cada copia de Beacon, así que sea breve.",
+      "mbMessageBytes": "{{used}}/{{max}} bytes",
+      "mbInterval": "Intervalo de transmisión",
+      "mbIntervalDesc": "Con qué frecuencia enviar la baliza. Mínimo 3600 segundos (1 hora).",
+      "mbOfferHeading": "Oferta de malla",
+      "mbOfferHint": "Opcionalmente, anuncie un canal y configuraciones de radio a los que los oyentes puedan elegir unirse.",
+      "mbOfferChannel": "Canal ofrecido",
+      "mbOfferChannelDesc": "Copia el nombre del canal y la clave en la baliza. Cualquiera que lo escuche puede unirse a ese canal.",
+      "mbOfferChannelNone": "Ninguno",
+      "mbOfferChannelKeep": "Mantener actualizado ({{name}})",
+      "mbChannelOption": "{{index}}: {{name}}",
+      "mbPrimaryChannel": "Primario",
+      "mbOfferRegion": "Región ofrecida",
+      "mbOfferRegionNone": "No anunciado",
+      "mbOfferPreset": "Preajuste de módem ofrecido",
+      "mbOfferPresetNone": "No anunciado",
+      "mbOfferSlot": "Ranura de frecuencia ofrecida",
+      "mbOfferSlotDesc": "Configure esto solo cuando la malla use una ranura no predeterminada. 0 permite a los oyentes derivarlo.",
+      "mbTargetsHeading": "Objetivos de transmisión",
+      "mbTargetsHint": "Envíe una copia de baliza por objetivo, cambiando la radio a la configuración de cada objetivo por turno. Sin objetivos, se envía una baliza en la configuración actual a través del canal principal.",
+      "mbTargetLabel": "Objetivo {{n}}",
+      "mbTargetRemove": "Eliminar objetivo {{n}}",
+      "mbTargetAdd": "Agregar objetivo",
+      "mbTargetPreset": "Preajuste del módem",
+      "mbTargetPresetRunning": "Preajuste actual",
+      "mbTargetRegion": "Región",
+      "mbTargetRegionRunning": "Región actual",
+      "mbTargetChannel": "Canal",
+      "mbTargetChannelDefault": "Canal predeterminado para presintonía",
+      "mbTargetSlot": "Ranura de frecuencia",
+      "mbTargetSlotDesc": "0 deriva la ranura del nombre de la región y del canal.",
+      "mbTargetsInvalid": "Corrija los objetivos de transmisión resaltados antes de aplicar.",
+      "mbTargetErrors": {
+        "channelIndexRange": "El índice del canal debe estar entre 0 y 7.",
+        "channelNotConfigured": "Ese canal no está configurado en esta radio.",
+        "frequencySlot": "La ranura de frecuencia debe ser 1 o superior, o 0 para derivarla."
+      }
     },
     "applySection": "Aplicar {{section}}",
     "applyingButton": "Aplicando...",
@@ -3118,6 +3167,40 @@
       "8": {
         "label": "K9"
       }
+    },
+    "sectionMeshBeacon": "Módulo de baliza de malla",
+    "sectionStatusMessage": "Módulo de mensajes de estado",
+    "beacon": {
+      "heardTitle": "balizas escuchadas",
+      "none": "Aún no se escuchan balizas. Active Escuchar balizas para recibirlas.",
+      "remoteHint": "Unirse a una oferta solo está disponible para la radio conectada.",
+      "itemAria": "Baliza de {{name}}",
+      "offerChannel": "Canal: {{name}}",
+      "offerRegion": "Región: {{region}}",
+      "offerPreset": "Preajuste del módem: {{preset}}",
+      "offerSlot": "Ranura de frecuencia: {{slot}}",
+      "unnamedChannel": "(sin nombre)",
+      "joinChannel": "Unirse al canal",
+      "joinChannelAria": "Únete al canal {{name}} ofrecido por {{node}}",
+      "alreadyJoined": "Canal que ya está en esta radio (espacio {{index}})",
+      "noFreeSlot": "No hay espacio libre para unirse a este canal.",
+      "applyRadio": "Usar configuración de radio",
+      "applyRadioAria": "Utilice la configuración de radio ofrecida por {{node}}",
+      "regionMismatch": "Anunciado para {{offer}}; Esta radio está configurada en {{local}}.",
+      "alreadyMatching": "La configuración de la radio ya coincide.",
+      "changeRegion": "región {{value}}",
+      "changePreset": "preajuste del módem {{value}}",
+      "changeSlot": "ranura de frecuencia {{value}}",
+      "changeSlotDerived": "ranura de frecuencia derivada",
+      "confirmChannelTitle": "¿Unirte al canal?",
+      "confirmChannelMessage": "Agregue “{{name}}” de {{node}} a la ranura del canal {{slot}}. Cualquiera que tenga la clave de este canal puede leer sus mensajes.",
+      "confirmChannelLabel": "Unirse",
+      "confirmRadioTitle": "¿Cambiar la configuración de la radio?",
+      "confirmRadioMessage": "Aplicar {{changes}}. La radio se reiniciará y puede perder contacto con su malla actual.",
+      "confirmRadioLabel": "Aplicar y reiniciar",
+      "joined": "Se unió al canal {{name}}.",
+      "radioApplied": "Configuración de radio enviada.",
+      "joinFailed": "Error al unirse: {{message}}"
     }
   },
   "networkPanel": {
@@ -3430,7 +3513,11 @@
     "savedPathHeading": "Ruta guardada",
     "savedPathHint": "Ruta mejor clasificada del historial guardado. Puede diferir de la ruta de envío actual de la radio o de la ruta de un anuncio recibido.",
     "bearingRange": "{{bearing}} · {{distance}}",
-    "bearingRangeTitle": "Rumbo y distancia desde su posición de confianza"
+    "bearingRangeTitle": "Rumbo y distancia desde su posición de confianza",
+    "nodeStatus": {
+      "heading": "Estado",
+      "updated": "Actualizado {{ago}}"
+    }
   },
   "nodeInfoBody": {
     "longName": "Nombre largo",
@@ -5678,13 +5765,9 @@
     "unitTypeInstallation": "Instalación",
     "unitTypeSensor": "Sensor",
     "unitTypeAir": "Aeronave",
-    "channelRelayTitle": "MeshCore canaliza a TAK",
     "channelRelayTrackers": "Correcciones del rastreador",
-    "channelRelayRoom": "Sala GeoChat para {{channel}}",
-    "channelRelayRoomPlaceholder": "Sala GeoChat (desactivada)",
     "channelRelayNoChannels": "Conecta una radio MeshCore para enumerar sus canales.",
     "channelRelayUnnamed": "Canal {{n}}",
-    "channelRelayTitleMeshtastic": "Meshtastic canaliza a TAK",
     "channelRelayNoChannelsMeshtastic": "Conecta una radio Meshtastic para enumerar sus canales.",
     "unitStylesPreviewKind": "Tipo de nodo a probar",
     "unitStylesPreviewProtocol": "Protocolo a probar",
@@ -5696,7 +5779,35 @@
     "unitKindRepeater": "Repetidores y routers",
     "unitKindRoom": "Servidores de sala",
     "unitKindSensor": "Sensores",
-    "unitKindTracker": "Rastreadores"
+    "unitKindTracker": "Rastreadores",
+    "unitStylesRepeaterIcon": "Icono para repetidores y routers",
+    "unitStylesRepeaterIconPreset": "Icono de GeoOps para repetidores y routers",
+    "unitStylesRelayIconHint": "Ambos opcionales. Cada uno es una ruta en un conjunto de iconos ATAK, como UID/grupo/nombre de archivo establecido, o un icono de GeoOps elegido de la lista. Se aplica independientemente de si un filtro rediseña o no el nodo. Los dispositivos sin ese conjunto de iconos muestran el símbolo del tipo de unidad.",
+    "unitStylesRoomIcon": "Icono para servidores de sala",
+    "unitStylesRoomIconPreset": "Icono de GeoOps para servidores de sala",
+    "unitIconPresetPrompt": "Icono de GeoOps...",
+    "unitIconInvalid": "Utilice el UID/grupo/nombre de archivo establecido.",
+    "messagingTitleMeshcore": "MeshCore mensajes en ATAK",
+    "messagingIntroMeshcore": "Elige qué MeshCore canales aparecen en ATAK. Cada uno se convierte en un contacto en cada dispositivo ATAK conectado, y lo que el canal escucha llega de ese contacto. Con ATAK puede enviar, un mensaje al contacto sale en el canal desde esta radio, con el prefijo del indicativo del remitente; con él apagado, el canal solo se recibe. El servidor remoto también transmite el canal, de solo lectura, al servidor remoto TAK. El rastreador corrige los mensajes de posición de los giros MeshCore del rastreador (!MT1) en marcadores de mapa. Los mensajes escuchados mientras no hay ningún dispositivo ATAK conectado (hasta 50, durante un día) se guardan para el primer dispositivo que se conecta, y solo para ese.",
+    "messagingTitleMeshtastic": "Meshtastic mensajes en ATAK",
+    "messagingIntroMeshtastic": "Elige qué Meshtastic canales aparecen en ATAK. Cada uno se convierte en un contacto en cada dispositivo ATAK conectado, y lo que el canal escucha, incluso a través de MQTT, llega de ese contacto. Con ATAK puede enviar, un mensaje al contacto sale en el canal desde esta radio, con el prefijo del indicativo del remitente; con él apagado, el canal solo se recibe. El servidor remoto también transmite el canal, de solo lectura, al servidor remoto TAK. Los mensajes escuchados mientras no hay ningún dispositivo ATAK conectado (hasta 50, durante un día) se guardan para el primer dispositivo que se conecta, y solo para ese.",
+    "channelModeLabel": "Canales en ATAK",
+    "channelModeOff": "Apagado",
+    "channelModeAll": "Todos los canales",
+    "channelModeSelected": "Canales seleccionados",
+    "channelServe": "En ATAK",
+    "channelAtakNameLabel": "Nombre ATAK",
+    "channelAtakNameFor": "Nombre ATAK para {{channel}}",
+    "channelServeFor": "Mostrar {{channel}} en ATAK",
+    "channelSend": "ATAK puede enviar",
+    "channelSendFor": "Permitir que los dispositivos ATAK se envíen a {{channel}}",
+    "channelRemote": "Servidor remoto",
+    "channelRemoteFor": "Transmite {{channel}} al servidor TAK remoto",
+    "channelTrackersFor": "Correcciones del rastreador de {{channel}}",
+    "directMessages": "Mensajes directos",
+    "directMessagesHint": "Deje que los dispositivos ATAK envíen mensajes a los compañeros de esta radio. Cada acompañante de este mensaje de radio Can recibe una opción de chat en ATAK, y sale un mensaje de esta radio, con el prefijo del indicativo del remitente. Sus respuestas van al dispositivo ATAK que le escribió por última vez, o a todos los dispositivos cuando ninguno lo ha hecho. Un compañero sin posición aparece en 0, 0 durante un día después de un mensaje.",
+    "messagingTitleReticulum": "Reticulum mensajes en ATAK",
+    "messagingIntroReticulum": "Permite que los dispositivos ATAK envíen un mensaje a LXMF Peers. Se puede enviar un mensaje a un compañero con una posición desde su marcador; uno sin posición aparece en 0, 0 una vez que mesh-client tiene una conversación con él, por lo que la lista de contactos no se llena con todos los compañeros escuchados."
   },
   "telemetryPanel": {
     "title": "Telemetría",
@@ -7343,5 +7454,354 @@
     "notConnected": "No conectada",
     "statusBar": "Estado de la conexión",
     "unread": "{{count}} sin leer"
+  },
+  "meshcoreCompanionCli": {
+    "summary": "Configuración del dispositivo complementario",
+    "description": "Configuración almacenada en la radio complementaria conectada, leída y escrita con su línea de comandos (firmware MeshCore v1.18 o posterior).",
+    "requiresFirmware": "Actualiza el complemento a MeshCore firmware v1.18 o posterior para usar esta configuración.",
+    "loading": "Leyendo la configuración de la radio...",
+    "loadFailed": "No se ha podido leer la configuración de la radio. Compruebe la conexión e inténtelo de nuevo.",
+    "refresh": "Actualizar desde la radio",
+    "apply": "Aplicar",
+    "applying": "Aplicando…",
+    "applied": "Ajustes complementarios guardados.",
+    "appliedWithErrors": "Algunos ajustes no se han guardado ({{count}}). Ver los campos resaltados.",
+    "applyFailed": "La radio no aceptó este valor.",
+    "unsupported": "No compatible con esta radio",
+    "secretPlaceholder": "No ha cambiado",
+    "showSecret": "Mostrar",
+    "hideSecret": "Ocultar",
+    "revealFailed": "No se ha podido leer la contraseña guardada de la radio.",
+    "rebootPending": "Algunos cambios surten efecto después de que la radio se reinicia.",
+    "rebootNow": "Reinicie ahora",
+    "rebooting": "Reiniciar la radio. mesh-client se volverá a conectar automáticamente.",
+    "actionFailed": "La radio no completó esa acción.",
+    "reboot": "Reiniciar y volver a conectar",
+    "powerOff": "Apagar",
+    "powerHint": "El reinicio se vuelve a conectar automáticamente en la misma conexión. Apagar las desconexiones; vuelva a encender la radio para volver a conectarla.",
+    "clearWifi": "Borrar configuración WiFi",
+    "copyIp": "Copiar dirección IP",
+    "ipCopied": "Dirección IP copiada.",
+    "wifiTcpHint": "Para conectarte a través de WiFi, selecciona TCP/IP en Conexión e ingresa {{ip}}.",
+    "wifiUnsupported": "El firmware de esta radio se construyó sin WiFi.",
+    "consoleHint": "Ejecute cualquier comando complementario, incluidos los específicos del tablero. Las respuestas aparecen a continuación.",
+    "consoleLog": "Historial de comandos de acompañante",
+    "consoleInput": "Comando de acompañamiento",
+    "consolePlaceholder": "por ejemplo, obtener radio",
+    "consoleSend": "Enviar",
+    "groups": {
+      "device": "Dispositivo",
+      "radio": "[sintonización de radio]",
+      "wifi": "WIFI",
+      "power": "Potencia",
+      "console": "bastidor de control"
+    },
+    "validation": {
+      "required": "Introduzca un valor.",
+      "notNumber": "Introduzca un número.",
+      "notInteger": "Introduzca un número entero.",
+      "outOfRange": "El valor está fuera de rango.",
+      "tooLong": "El valor es demasiado largo",
+      "invalidChars": "No se permiten saltos de línea.",
+      "pinFormat": "Introduzca 6 dígitos, o 0 para un PIN aleatorio."
+    },
+    "settings": {
+      "ver": {
+        "label": "Versión de firmware"
+      },
+      "board": {
+        "label": "Órgano"
+      },
+      "tz_offset": {
+        "label": "Desplazamiento de zona horaria (horas)",
+        "hint": "Utilizado por la propia pantalla de la radio. De -12 a +14."
+      },
+      "pin": {
+        "label": "PIN BLUETOOTH",
+        "hint": "6 dígitos, o 0 para un PIN aleatorio. Tiene efecto después de un reinicio; tendrás que emparejarte de nuevo."
+      },
+      "af": {
+        "label": "Factor de tiempo de aire",
+        "hint": "0 a 9. Los valores más altos esperan más tiempo entre transmisiones."
+      },
+      "dutycycle": {
+        "label": "Ciclo de trabajo"
+      },
+      "int_thresh": {
+        "label": "Umbral de interferencia",
+        "hint": "0 a 255. 0 desactiva la detección de interferencias."
+      },
+      "cad": {
+        "label": "Detección de actividad del canal",
+        "hint": "Escuche antes de transmitir."
+      },
+      "radio_rxgain": {
+        "label": "Ganancia de recepción aumentada",
+        "hint": "No todos los chips de radio admiten esto."
+      },
+      "rxdelay": {
+        "label": "recibir demora",
+        "hint": "0 % a – 20 %"
+      },
+      "agc_reset_interval": {
+        "label": "Intervalo de restablecimiento de AGC (segundos)",
+        "hint": "0 a 1020, redondeado a múltiplos de 4. 0 lo apaga."
+      },
+      "txdelay": {
+        "label": "Factor de retardo de transmisión Flood",
+        "hint": "0 a 2"
+      },
+      "direct_txdelay": {
+        "label": "Factor de retardo de transmisión directa",
+        "hint": "0 a 2"
+      },
+      "wifi_enabled": {
+        "label": "WIFI",
+        "hint": "Tiene efecto después de un reinicio."
+      },
+      "wifi_ssid": {
+        "label": "Nombre de red (SSID)",
+        "hint": "Hasta 32 caracteres. Tiene efecto después de un reinicio."
+      },
+      "wifi_pwd": {
+        "label": "Contraseña",
+        "hint": "Hasta 63 caracteres. Dejar vacío para una red abierta. Tiene efecto después de un reinicio."
+      },
+      "wifi_status": {
+        "label": "Sincronizar el estado de confirmación de la reserva con el pedido Woo correspondiente"
+      },
+      "wifi_ip": {
+        "label": "Dirección IP"
+      }
+    },
+    "confirm": {
+      "reboot": {
+        "title": "¿Reiniciar la radio?",
+        "message": "La radio se reinicia y mesh-client se vuelve a conectar automáticamente. Los mensajes enviados durante el reinicio están en cola.",
+        "confirm": "Reiniciar"
+      },
+      "poweroff": {
+        "title": "¿Apagar la radio?",
+        "message": "La radio se apaga y mesh-client se desconecta. Necesitará acceso físico para volver a encenderlo.",
+        "confirm": "Apagar"
+      },
+      "clearWifi": {
+        "title": "¿Borrar configuración de WiFi?",
+        "message": "El nombre de red y la contraseña guardados se borran. El wifi se detiene después del próximo reinicio.",
+        "confirm": "Borrar"
+      }
+    }
+  },
+  "meshcoreRemoteCli": {
+    "summary": "Línea de comandos remota",
+    "allowLabel": "Permitir que este contacto ejecute comandos en mi radio",
+    "allowDescription": "Desactivado de forma predeterminada. Cuando está activado, este contacto puede cambiar cualquier configuración de tu radio complementaria, incluido el wifi y el PIN BLE.",
+    "notOnRadio": "Este contacto no está en su radio, por lo que no se puede configurar su permiso de línea de comandos remota.",
+    "flagReadFailed": "No se ha podido leer el permiso de este contacto en tu radio.",
+    "flagWriteFailed": "No se ha podido actualizar el permiso de este contacto en tu radio.",
+    "consoleHint": "Ejecuta comandos en la radio complementaria de este contacto. Necesita MeshCore firmware v1.18 o posterior y debe permitir que su radio ejecute comandos. Sin eso, los comandos no obtienen respuesta.",
+    "consoleLog": "Salida de línea de comandos remota",
+    "consoleInput": "Comando remoto",
+    "consolePlaceholder": "por ejemplo, ver",
+    "send": "Enviar",
+    "sending": "Enviando",
+    "confirmAllow": {
+      "title": "¿Permitir comandos remotos?",
+      "message": "Este contacto podrá cambiar cualquier configuración de su radio, reiniciarla o apagarla. Permite solo contactos en los que confíes plenamente.",
+      "confirm": "Permitir"
+    }
+  },
+  "meshcoreTelemetryPush": {
+    "summary": "Telemetría en vivo",
+    "enableLabel": "Actualizaciones push desde este sensor",
+    "enableDescription": "El sensor envía una lectura cuando un valor cambia más que las cantidades siguientes. Necesita firmware del sensor v1.18 o más reciente. La aplicación renueva la suscripción mientras está conectada.",
+    "thresholdsLegend": "Enviar cuando el cambio sea al menos",
+    "thresholdsHint": "Deje un campo vacío para ignorar ese valor. Sólo se observan los valores que informa el sensor.",
+    "metric": {
+      "temperature": "Temperatura (°C)",
+      "humidity": "Humedad (%)",
+      "voltage": "Voltaje (V)",
+      "pressure": "Presión (hPa)"
+    },
+    "leaseLabel": "Duración de la suscripción (minutos)",
+    "leaseHint": "Si la aplicación se desconecta, el sensor deja de enviar después de este tiempo.",
+    "waitingForPush": "Suscrito. Esperando el primer cambio.",
+    "lastPush": "Última actualización en {{time}}",
+    "errorNoMetrics": "Este sensor no informa ninguno de los valores seleccionados. Solicite telemetría primero o establezca un umbral.",
+    "errorRejected": "El sensor rechazó la suscripción. Verifique su versión de firmware y su inicio de sesión.",
+    "errorFailed": "No se pudo alcanzar el sensor. Intentar otra vez."
+  },
+  "meshtasticExtraConfig": {
+    "advancedHardware": "Hardware avanzado",
+    "invalidValue": "{{field}} tiene un valor no válido.",
+    "applyInvalid": "Corrija los campos resaltados en {{section}} antes de presentar la solicitud.",
+    "buzzerMode": "Modo zumbador",
+    "buzzerModeDesc": "Qué eventos hacen que suene el timbre.",
+    "buzzerModes": {
+      "allEnabled": "todos los sonidos",
+      "disabled": "Silencioso",
+      "notificationsOnly": "Sólo notificaciones",
+      "systemOnly": "El sistema solo suena",
+      "directMsgOnly": "Solo mensajes directos"
+    },
+    "compassNorthTop": "Brújula norte en la parte superior",
+    "compassNorthTopDesc": "Manténgase hacia el norte en la parte superior de la pantalla de la brújula en lugar de girar con el rumbo.",
+    "compassOrientation": "Orientación de la brújula",
+    "positionFlags": "Campos de posición a incluir",
+    "positionFlagsDesc": "Datos adicionales que la radio agrega a cada paquete de posición. Más campos hacen que los paquetes sean más grandes.",
+    "gpsRxGpio": "Pin de recepción del GPS",
+    "gpsTxGpio": "Pin de transmisión GPS",
+    "gpsEnGpio": "PIN de habilitación de GPS",
+    "adcMultiplierOverride": "Multiplicador ADC de batería",
+    "adcMultiplierOverrideDesc": "Calibra la lectura del voltaje de la batería. 0 usa el tablero predeterminado.",
+    "deviceBatteryInaAddress": "Dirección I2C del sensor INA de la batería",
+    "deviceBatteryInaAddressDesc": "Dirección I2C de un monitor de energía INA utilizado para lecturas de batería. 0 desactiva.",
+    "powermonEnables": "Canales de monitorización de energía",
+    "powermonEnablesDesc": "Máscara de bits de los canales de registro de monitoreo de energía (configuración del desarrollador). Dejar vacío para ninguno.",
+    "addressMode": "modo de dirección IP",
+    "addressModes": {
+      "dhcp": "DHCP",
+      "static": "Estático"
+    },
+    "ipv4Address": "dirección IP",
+    "ipv4Gateway": "Puerta",
+    "ipv4Subnet": "Máscara de subred",
+    "ipv4Dns": "servidor DNS",
+    "rsyslogServer": "servidor syslog",
+    "rsyslogServerDesc": "Envíe registros de dispositivos a un servidor syslog remoto (host:puerto).",
+    "enabledProtocols": "Protocolos de red",
+    "udpBroadcast": "Malla sobre transmisión UDP",
+    "ipv6Enabled": "Habilitar IPv6",
+    "ignoreIncoming": "Nodos ignorados",
+    "ignoreIncomingDesc": "ID de nodo cuyos paquetes descarta la radio, separados por comas (por ejemplo, !a1b2c3d4).",
+    "femLnaMode": "LNA frontal",
+    "femLnaModeDesc": "Amplificador de bajo ruido en placas con módulo frontal.",
+    "femLnaModes": {
+      "disabled": "Desactivado",
+      "enabled": "Activado",
+      "notPresent": "No presente"
+    },
+    "serialHalOnly": "Solo HAL de serie",
+    "serialHalOnlyDesc": "Utilice la radio LoRa únicamente a través de la capa de hardware serial (placas especiales).",
+    "packetSignaturePolicy": "Política de firma de paquetes",
+    "packetSignaturePolicyDesc": "Cuán estrictamente la radio requiere paquetes firmados de otros nodos.",
+    "packetSignaturePolicies": {
+      "compatible": "Compatible",
+      "balanced": "Equilibrado",
+      "strict": "Estricto"
+    },
+    "codec2Enabled": "Voz Codec2 habilitada",
+    "audioBitrate": "tasa de bits del códec 2",
+    "pttPin": "Pin de pulsar para hablar",
+    "i2sWs": "Pin de selección de palabra I2S",
+    "i2sSd": "pin de salida de datos I2S",
+    "i2sDin": "Datos I2S en pin",
+    "i2sSck": "Pin de reloj I2S",
+    "detectionTriggerType": "Tipo de disparador",
+    "usePullup": "Utilice dominadas internas",
+    "monitorPin": "clavija del monitor",
+    "wifiThreshold": "Wi-Fi Umbral RSSI",
+    "bleThreshold": "Umbral RSSI de Bluetooth",
+    "rssiThresholdDesc": "Ignore los dispositivos más débiles que este nivel de señal (dBm).",
+    "healthMeasurementEnabled": "Telemetría sanitaria",
+    "healthMeasurementEnabledDesc": "Informe la frecuencia cardíaca, SpO2 y la temperatura desde los sensores de salud adjuntos.",
+    "healthUpdateInterval": "Intervalo de actualización de salud",
+    "healthScreenEnabled": "Mostrar salud en pantalla",
+    "airQualityScreenEnabled": "Mostrar la calidad del aire en la pantalla.",
+    "clearOnReboot": "Borrar resultados guardados al reiniciar",
+    "shouldReportLocation": "Incluir ubicación",
+    "shouldReportLocationDesc": "Incluya la posición de este nodo en los informes de mapas.",
+    "availablePins": "Pines disponibles",
+    "availablePinsNone": "No hay pines definidos en la radio.",
+    "availablePinRow": "GPIO {{pin}}: {{name}} ({{type}})"
+  },
+  "aiSummary": {
+    "catchUp": "Póngase al día",
+    "scope": "Rango de Resumen",
+    "unread": "Todo sin leer",
+    "hours_one": "Última {{count}} hora",
+    "hours_other": "Últimas {{count}} horas",
+    "customHours": "Horas personalizadas",
+    "loaded": "todo cargado",
+    "copy": "Copy",
+    "copyFailed": "No se ha podido copiar. Seleccione el texto de resumen y cópielo manualmente.",
+    "regenerate": "Regenerar",
+    "cancel": "Cancelar",
+    "dismiss": "Descartar",
+    "settings": "Preferencias de IA",
+    "working": "Preparando resumen...",
+    "sentTo": "Enviado a {{host}}",
+    "onDevice": "Procesado en este dispositivo",
+    "truncated": "Solo se incluyeron los mensajes más recientes que encajaban. El historial anterior también puede haber sido eliminado por la retención.",
+    "verify": "Los resúmenes de IA pueden pasar por alto o leer mal los detalles. Comprueba los mensajes originales.",
+    "settingsTitle": "Resúmenes de conversaciones de IA",
+    "enabled": "Habilitar resúmenes de IA",
+    "optIn": "La IA está desactivada de forma predeterminada. No se ejecuta nada hasta que la actives y elijas un motor. Los resúmenes nunca se publican automáticamente.",
+    "engine": "Motor",
+    "chooseEngine": "Elige un motor",
+    "osEngine": "Sistema operativo integrado AI (recomendado en este dispositivo)",
+    "bundledEngine": "Modelo descargado (sin conexión)",
+    "localEngine": "Servidor local",
+    "remoteEngine": "Proveedor remoto",
+    "osAvailability": "OS AI: {{model}}",
+    "osUnavailable": "No disponible en este dispositivo o instalación",
+    "catalog": "Modelos disponibles :",
+    "download": "Descargar",
+    "downloadModel": "Descargar {{model}}",
+    "remove": "Eliminar",
+    "removeModel": "Eliminar {{model}}",
+    "useModel": "Usar {{model}}",
+    "select": "Modelo utilizado",
+    "selected": "Seleccionado",
+    "format": "Formato IPA",
+    "baseUrl": "URL base del servidor",
+    "model": "Modelo",
+    "apiKey": "Clave API (almacenada cifrada)",
+    "keySaved": "Clave guardada; dejar en blanco para mantenerla",
+    "clearKey": "Borrar clave guardada",
+    "allowRemote": "Entiendo que el texto de la conversación saldrá de este dispositivo y se enviará a este proveedor HTTPS.",
+    "urlHint": "Los servidores LAN reciben texto de conversación. OpenAI-compatible bare hosts use /v1; incluye una ruta para pasarelas personalizadas. Guardar antes de la prueba.",
+    "save": "Guardar la configuración",
+    "saved": "Configuración guardada.",
+    "test": "Probar conexión",
+    "testOk": "El motor está listo.",
+    "refreshModels": "Actualizar modelos",
+    "settingsError": "No se ha podido completar esta acción. Compruebe el motor, la URL, el modelo, el almacenamiento seguro de claves y el acceso del proveedor y, a continuación, vuelva a intentarlo.",
+    "error": {
+      "disabled": "Activar en los ajustes",
+      "noMessages": "No hay mensajes en este rango. Elige una gama más amplia.",
+      "notConfigured": "Elige y guarda un motor en la configuración de IA.",
+      "engineNotReady": "El motor no está disponible. Compruebe la disponibilidad de la IA del sistema operativo o descárguela y seleccione un modelo.",
+      "remoteNotAcknowledged": "Utilice HTTPS y confirme el envío de texto de conversación en la configuración de IA.",
+      "rateLimited": "Demasiadas solicitudes. Espera un minuto y vuelve a intentarlo.",
+      "busy": "Se está ejecutando otro resumen. Cancele o espere.",
+      "timeout": "El motor tardó demasiado. Prueba con una gama más pequeña o un modelo más rápido.",
+      "tooLarge": "La conversación o respuesta es demasiado grande. Prueba con un rango más pequeño.",
+      "httpError": "La solicitud del proveedor ha fallado. Compruebe la conexión y las credenciales.",
+      "invalidResponse": "El motor devolvió una respuesta incompleta o no admitida.",
+      "cancelled": "Resumen cancelado.",
+      "error": "No se ha podido resumir. Compruebe la configuración de IA y vuelva a intentarlo.",
+      "repetitiveOutput": "El modelo comenzó a repetirse. Prueba con un modelo más grande o de menor alcance."
+    },
+    "loadingModel": "Cargando modelo en este dispositivo...",
+    "readingMessages": "Leyendo mensajes en este dispositivo. El procesamiento de la CPU puede tardar unos minutos...",
+    "providerIncluded_one": "{{provider}} · {{model}} · {{included}} de {{count}} mensaje recopilado incluido",
+    "providerIncluded_other": "{{provider}} · {{model}} · {{included}} de {{count}} mensajes recopilados incluidos",
+    "providerCollected_one": "{{provider}} · {{model}} · {{count}} mensaje recopilado",
+    "providerCollected_other": "{{provider}} · {{model}} · {{count}} mensajes recopilados",
+    "offlineSummaryHint": "Las descargas usan Internet una vez. Los resúmenes se ejecutan sin conexión en este dispositivo. Las conversaciones grandes pueden tardar unos minutos con los modelos descargados. Los modelos más grandes necesitan más memoria.",
+    "countSnapshot": "Los recuentos describen esta instantánea de resumen; las insignias en vivo no leídas pueden diferir.",
+    "timeoutSeconds": "Tiempo de espera de resumen (segundos)",
+    "timeoutHint": "Tiempo máximo para un resumen, incluida la carga del modelo. Elige 30–1800 segundos. Puedes cancelar en cualquier momento.",
+    "insecureKeyWarning": "Este endpoint HTTP envía tu clave API y mensajes sin cifrado de transporte. Utilice HTTPS para un servidor de su red.",
+    "setupCatchUp": "Configurar resúmenes",
+    "queued": "Por favor, espere — se está generando otro resumen...",
+    "chunkProgress": "Resumiendo la parte {{current}} de {{total}}…",
+    "mergeProgress": "Combinando resúmenes {{current}} de {{total}}...",
+    "ceilingTruncated": "Se detuvo después de {{count}} mensajes: aumenta el límite de mensajes de recuperación en la configuración de IA para incluir más.",
+    "maxCollectedMessages": "Límite de mensajes para ponerse al día",
+    "maxCollectedMessagesHint": "Mensajes máximos que un Catch up puede recopilar (100–5000). Predeterminado 2000. Los valores más altos tardan más y pueden necesitar un tiempo de espera mayor.",
+    "capacityHint": "Aproximadamente {{count}} los mensajes de malla típicos se ajustan a un paso de inferencia con este motor (primero los más nuevos). Póngase al día puede procesar hasta {{ceiling}} mensajes a través de varios pases. Los mensajes más largos usan más de cada pase. Los rangos grandes necesitan un tiempo de espera más largo.",
+    "capacityHintChooseEngine": "La IA del sistema operativo incorporado y los modelos descargados caben alrededor de {{onDevice}} mensajes típicos por pase; un servidor local o remoto alrededor de {{endpoint}}. Ponerse al día puede cubrir hasta {{ceiling}} mensajes con varias pasadas. Aumente el límite de mensajes y el tiempo de espera para las mallas ocupadas."
   }
 }

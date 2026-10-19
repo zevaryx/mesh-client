@@ -440,6 +440,11 @@ export interface ChatMessage {
   replyPreviewSender?: string;
   /** RF-derived hops away for this receive when known (Meshtastic hopStart−hopLimit; MeshCore path hops). */
   rxHops?: number;
+  /** Signal measurements recorded for this message's RF reception, not current node telemetry. */
+  rxSnr?: number;
+  rxRssi?: number;
+  /** Verified per-message radio ingress; Reticulum route labels alone are insufficient. */
+  rxRadioTransport?: 'rf' | 'ble';
   /** Message was replayed from a Store & Forward server (Meshtastic only). */
   viaStoreForward?: boolean;
   /** MeshCore room server BBS post (not a DM). */
@@ -513,6 +518,10 @@ export interface DeviceState {
   manufacturerModel?: string;
   /** MeshCore: companion path hash mode from deviceQuery or last apply (0/1/2). */
   pathHashMode?: 0 | 1 | 2 | null;
+  /** MeshCore: companion protocol version (`deviceQuery().firmwareVer`); gates companion CLI (v14+). */
+  companionProtocolVersion?: number | null;
+  /** MeshCore: a planned reboot is in progress; the link drop reconnects instead of erroring. */
+  plannedReboot?: boolean;
   /** 0–100 from device metrics; omit until first reading */
   batteryPercent?: number;
   batteryCharging?: boolean;

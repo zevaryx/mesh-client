@@ -45,6 +45,7 @@ const RENDERER_LOGIC_INCLUDE = [
 
 /** Borderline: needs localStorage / electronAPI / renderHook / navigator */
 const RENDERER_LOGIC_EXCLUDE = [
+  'src/renderer/lib/aiSummaryScope.test.ts',
   'src/renderer/hooks/useActiveMeshIdentity.test.ts',
   'src/renderer/hooks/useChatOutbox.test.ts',
   'src/renderer/hooks/useConnectionStatus.test.ts',
@@ -97,6 +98,10 @@ const RENDERER_LOGIC_EXCLUDE = [
   'src/renderer/lib/ingest/meshtasticIngest.test.ts',
   'src/renderer/lib/ingest/meshcoreIngest.test.ts',
   'src/renderer/lib/tak/takChannelRelay.test.ts',
+  'src/renderer/lib/tak/takServedChannels.test.ts',
+  'src/renderer/lib/tak/takMeshSend.test.ts',
+  'src/renderer/lib/tak/takDirectMessages.test.ts',
+  'src/renderer/lib/tak/takDmStatus.test.ts',
   'src/renderer/lib/letsMeshJwt.test.ts',
   'src/renderer/lib/messageRetention.test.ts',
   'src/renderer/lib/rrcMessagePersist.test.ts',

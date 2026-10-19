@@ -132,6 +132,7 @@ import { shouldPlayRrcNotification } from '@/renderer/lib/rrcNotificationGate';
 import { rrcRoomsMatch } from '@/renderer/lib/rrcRoomName';
 import { runUpdateAction } from '@/renderer/lib/runUpdateAction';
 import { createUpdateMenuNotifyController } from '@/renderer/lib/updateMenuNotifyController';
+import { disposeAiSummaries, initializeAi } from '@/renderer/stores/aiSummaryStore';
 import {
   type EmergencyIncident,
   incidentTabBadgeCount,
@@ -284,6 +285,7 @@ import {
 } from './lib/appTabMappings';
 import { SHELL_COMPACT_QUERY } from './lib/bottomNav';
 import { playMessageNotification } from './lib/chatNotifications';
+import { meshcoreMessageReceptionStats } from './lib/chatSignalReport';
 import {
   deviceHeaderVariant,
   headerDotClass,
@@ -293,7 +295,7 @@ import {
   reconnectBannerMaxAttempts,
   takHeaderVariant,
 } from './lib/connectionHeaderStatus';
-import { takStatusBarLabels } from './lib/connectionPanelLabels';
+import { statusBarTransportLabel, takStatusBarLabels } from './lib/connectionPanelLabels';
 import { DEFAULT_APP_SETTINGS_SHARED } from './lib/defaultAppSettings';
 import { connectionDriver } from './lib/drivers/ConnectionDriver';
 import {
@@ -567,6 +569,10 @@ export default function App() {
 }
 
 function AppContent() {
+  useEffect(() => {
+    initializeAi();
+    return disposeAiSummaries;
+  }, []);
   const { t } = useTranslation();
   const { addToast } = useToast();
   useEffect(() => {
@@ -1271,7 +1277,14 @@ function AppContent() {
         : null,
     [reticulumStackUp, reticulumSelfNodeId, reticulumSelfName],
   );
-  useTakInboundChat();
+  useTakInboundChat({
+    meshcore: { identityId: meshcoreIdentityId ?? null, channels: meshcoreRuntime.channels },
+    meshtastic: {
+      identityId: meshtasticIdentityId ?? null,
+      channelConfigs: meshtasticRuntime.channelConfigs,
+    },
+    reticulum: { identityId: reticulumIdentityId ?? null },
+  });
   useTakNodeReplicator({
     active: takStatus.running || takRemoteStatus.state !== 'disconnected',
     nodesByProtocol: uiNodesByProtocol,
@@ -2603,6 +2616,10 @@ function AppContent() {
   const effectiveModuleConfigs = isRemoteConfigureTarget
     ? (meshtasticRuntime.remoteConfigSnapshot?.moduleConfigs ?? {})
     : meshtasticRuntime.moduleConfigs;
+  /** Live slices only (no display/last-known fallback) for Apply readiness and RadioPanel. */
+  const effectiveLiveModuleConfigs = isRemoteConfigureTarget
+    ? effectiveModuleConfigs
+    : (meshtasticRuntime.liveModuleConfigs ?? {});
   const effectiveMeshtasticConfigSlices = isRemoteConfigureTarget
     ? (meshtasticRuntime.remoteConfigSnapshot?.configSlices ?? {})
     : meshtasticRuntime.meshtasticConfigSlices;
@@ -3921,7 +3938,12 @@ function AppContent() {
           ? t('app.mqttError')
           : t('app.mqttDisconnected');
   const deviceStatusLabel = deviceConnectionStatusLabel(t, activeConnectionView.state.status);
-  const deviceStatusText = `${deviceStatusLabel}${activeConnectionView.state.connectionType ? ` (${activeConnectionView.state.connectionType.toUpperCase()})` : ''}`;
+  const radioTransport = statusBarTransportLabel(
+    t,
+    activeConnectionView.state.connectionType,
+    protocol,
+  );
+  const deviceStatusText = `${deviceStatusLabel}${radioTransport ? ` (${radioTransport})` : ''}`;
   const showStatusBarNode =
     headerMyNodeNum > 0 &&
     Boolean(headerSelfNodeLabel) &&
@@ -3929,7 +3951,6 @@ function AppContent() {
       ? isConnectedOrOperational
       : !capabilities.prefersDeviceOwnerLongNameInHeader ||
         activeConnectionView.state.status === 'configured');
-  const radioTransport = activeConnectionView.state.connectionType?.toUpperCase() ?? '';
   const radioStatusText = showStatusBarNode
     ? t('shell.status.radioNode', {
         node: headerSelfNodeLabel,
@@ -4170,6 +4191,9 @@ function AppContent() {
         paxCounterData={
           detailModalCapabilities.hasPaxCounter ? meshtasticRuntime.paxCounterData : undefined
         }
+        nodeStatuses={
+          detailModalCapabilities.hasNodeStatusMessage ? meshtasticRuntime.nodeStatuses : undefined
+        }
         detectionSensorEvents={
           detailModalCapabilities.hasDetectionSensor
             ? meshtasticRuntime.detectionSensorEvents
@@ -4196,6 +4220,22 @@ function AppContent() {
         }
         positionHistory={selectedNodeHistory}
         onShowOnMap={handleShowOnMap}
+        meshcoreRemoteCli={
+          detailModalCapabilities.hasCompanionCli &&
+          meshcorePanelActions.companionCli.available &&
+          selectedNode
+            ? {
+                remote: meshcorePanelActions.companionRemote,
+                history: meshcoreRuntime.meshcoreCliHistories.get(selectedNode.node_id) ?? [],
+                onClearHistory: meshcorePanelActions.clearCliHistory,
+              }
+            : undefined
+        }
+        meshcoreTelemetryPush={
+          detailModalCapabilities.hasCompanionCli && meshcorePanelActions.companionCli.available
+            ? meshcorePanelActions.telemetryPush
+            : undefined
+        }
       />
     </Suspense>
   );
@@ -4400,6 +4440,7 @@ function AppContent() {
                 serialNeedsReselect={activeConnectionView.state.serialNeedsReselect}
                 connectionType={activeConnectionView.state.connectionType}
                 reconnectAttempt={activeConnectionView.state.reconnectAttempt}
+                plannedReboot={activeConnectionView.state.plannedReboot}
                 onReconnect={handleReconnect}
               />
               {operationalAlertSettings.mecpStandingAlertEnabled ? (
@@ -4566,6 +4607,16 @@ function AppContent() {
                             <ChatPanel
                               key={protocol}
                               messages={chatMessagesForPanel}
+                              getReceptionStats={
+                                capabilities.hasCompanionContactManagementConfig
+                                  ? (message) =>
+                                      meshcoreMessageReceptionStats(
+                                        message,
+                                        meshcoreRuntime.rawPackets,
+                                        meshcoreRuntime.channels,
+                                      )
+                                  : undefined
+                              }
                               messagesForUnread={activeUiMessages}
                               channels={chatChannelsForPanel}
                               meshcoreChannelSources={
@@ -5222,7 +5273,7 @@ function AppContent() {
                                     }
                                     moduleConfigs={
                                       capabilities.hasChannelConfig
-                                        ? effectiveModuleConfigs
+                                        ? effectiveLiveModuleConfigs
                                         : undefined
                                     }
                                     onSetModuleConfig={
@@ -5293,6 +5344,11 @@ function AppContent() {
                                     onApplyMeshcoreTelemetryPrivacy={
                                       capabilities.hasCompanionTelemetryPrivacyConfig
                                         ? meshcorePanelActions.applyMeshcoreTelemetryPrivacy
+                                        : undefined
+                                    }
+                                    meshcoreCompanionCli={
+                                      capabilities.hasCompanionCli
+                                        ? meshcorePanelActions.companionCli
                                         : undefined
                                     }
                                     meshcoreAutoadd={
@@ -5480,6 +5536,17 @@ function AppContent() {
                               <ModulePanel
                                 configTarget={configTarget}
                                 moduleConfigs={effectiveModuleConfigs}
+                                liveModuleConfigs={effectiveLiveModuleConfigs}
+                                channelConfigs={effectiveChannelConfigs}
+                                meshBeacons={
+                                  isRemoteConfigureTarget
+                                    ? undefined
+                                    : meshtasticRuntime.meshBeacons
+                                }
+                                getNodeName={meshtasticPanelActions.getNodeName}
+                                loraConfig={effectiveLoraConfig}
+                                onSetChannel={meshtasticPanelActions.setDeviceChannel}
+                                onSetConfig={meshtasticPanelActions.setConfig}
                                 onSetModuleConfig={meshtasticPanelActions.setModuleConfig}
                                 onSetCannedMessages={meshtasticPanelActions.setCannedMessages}
                                 onSetRingtone={meshtasticPanelActions.setRingtone}
@@ -5736,8 +5803,8 @@ function AppContent() {
                                 }
                                 capabilities={capabilities}
                                 meshtasticIdentityId={meshtasticIdentityId}
-                                meshtasticRuntimeChannels={meshtasticRuntime.channels}
                                 meshcoreIdentityId={meshcoreIdentityId}
+                                reticulumIdentityId={reticulumIdentityId}
                               />
                             </Suspense>
                           </ErrorBoundary>
@@ -6225,6 +6292,7 @@ function ConnectionBanner({
   serialNeedsReselect,
   connectionType,
   reconnectAttempt,
+  plannedReboot,
   onReconnect,
 }: {
   status: string;
@@ -6232,6 +6300,7 @@ function ConnectionBanner({
   serialNeedsReselect?: boolean;
   connectionType?: string | null;
   reconnectAttempt?: number;
+  plannedReboot?: boolean;
   onReconnect: () => void;
 }) {
   const { t } = useTranslation();
@@ -6321,10 +6390,15 @@ function ConnectionBanner({
           ⟳
         </span>
         <span className="text-sm text-orange-200">
-          {t('connectionBanner.reconnectingAttempt', {
-            attempt: reconnectAttempt ?? 1,
-            max: reconnectBannerMaxAttempts(connectionType),
-          })}
+          {t(
+            plannedReboot
+              ? 'connectionBanner.rebootingReconnectAttempt'
+              : 'connectionBanner.reconnectingAttempt',
+            {
+              attempt: reconnectAttempt ?? 1,
+              max: reconnectBannerMaxAttempts(connectionType),
+            },
+          )}
         </span>
       </div>
     );

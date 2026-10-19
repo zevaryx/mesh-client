@@ -9,6 +9,7 @@ Developer reference for the Chat panel, composer, link previews, notifications, 
 - **Payload / links:** `ChatPayloadText.tsx` — mention highlighting, search marks, URL linkification; structured cards in `chat/ChatStructuredPayloads.tsx` (signal report, RNCP control, drone report); link previews via `chat:fetchLinkPreview` (`src/main/fetchLinkPreview.ts`): Open Graph for HTML pages; **YouTube** watch/shorts/youtu.be via oEmbed + thumbnail; **direct image URLs** (path extension via `chatDirectImageUrl.ts` or raster `Content-Type`) return `kind: 'image'` and render as inline embeds (`ChatInlineImage` / `DirectImageEmbed`); OG/YouTube use card layout. Security: message-selected network content (HTTPS URL previews, Giphy, shared-location tiles, and drone-report tiles) loads automatically. Link-preview IPC accepts HTTPS only, uses a DNS-pinned undici `Agent`, blocks private/loopback targets, magic-byte sniffs raster MIME (`safeRasterImageMime.ts`), and enforces 10s fetch / 3s DNS, 64 KiB HTML, **2 MiB** image fetch, 256 KiB cache-payload, LRU, and single-flight limits. LXMF attachment rasters: `chat:readReticulumAttachmentAsDataUrl` (`reticulum-attachment-image.ts`; path jail, magic-byte MIME, SVG rejected, 2 MiB, IPC rate limit) → `ReticulumAttachmentLine`. LXMF voice memos (`hasReticulumVoiceMemo`): Chat DM mic → sidecar `/api/v1/voice/memo/*` via `electronAPI.reticulum.voiceMemo.*`; playback via `chat:readReticulumAttachmentBytes` (`reticulum-attachment-audio.ts`; OggS sniff, 256 KiB) → `ReticulumVoiceMemoLine`. Reply quotes: `replyPreview.ts`.
 - **Bot replies:** [Colorado-Mesh meshcore-bot-firmware](https://github.com/Colorado-Mesh/meshcore-bot-firmware) replies (`status`, `air`, `neighbors`, `trace`, `lora`, `version`, `channels`, `help` / `cmd diag`) parse in `lib/firmwareBotReplyParse.ts` and render as `FirmwareBotReplyCard`; `test` / `path` / `sig` stay in `signalReportParse.ts` (`SignalReportChip`). The bot's leading `[1a2b]` request token (inter-bot duplicate suppression) is hidden when the body is a recognized reply or the sender is a known bot. `isMeshcoreTransportStatusChatLine` lets firmware-bot replies through (with or without the `Name:` channel prefix), so they reach chat instead of the device log; agessaman `ack @` / `nack @` lines are still filtered. `useBotSenderDetection` (mounted once in `App.tsx`) scans new messages newest-first and marks senders whose text matches any known bot template in `stores/botSendersStore.ts` (`mesh-client:botSenders`, per protocol, cap 500, oldest evicted). `BotBadge` shows next to chat sender names, DM pills, Nodes list names, and the node detail header. MeshCore channel senders are name-hash stub ids, so the badge follows the display name.
 - **Person-sent hop / ack lines and Health Check codes:** `lib/hopReportParse.ts` recognizes client ack lines (`, ack: SNR 12.2 dB, RSSI -41 dBm, 9 hops via F8F9, D4D4, …`, source `clientAck`) and typed hop reports (`6 hops to Parker`, `eight hops to SW Denver`, `copy, 3 hops`, source `hopReport`, place shown in the chip tooltip). `ChatPayloadText` falls back to it after `parseSignalReport` and renders the same `SignalReportChip`. People send these lines, so `isHumanSignalSource` keeps them out of `isBotReplyText` / `useBotSenderDetection` and they never strip a `[1a2b]` token. `lib/healthCheckCode.ts` recognizes whole-message MeshCore Health Check codes (`MHC-AB12CD`, [meshcore-health-check](https://github.com/yellowcooln/meshcore-health-check)) and renders `HealthCheckCodeChip`, a label and tooltip with no link, because each community runs its own instance and results are keyed by server session, not by code.
+- **Unread badges:** channel pills, DM pills and conversation-picker rows show saved unread counts even for the selected conversation. Counts clear when its read watermark advances; selection must not hide unread or its MECP severity while the window is unfocused or the reader is above the bottom. The picker trigger continues to summarize other conversations.
 - **Storage helpers:** `src/renderer/lib/chatPanelProtocolStorage.ts` — drafts (`mesh-client:drafts:<protocol>`), open DM tabs, last-read, per-view mute (`mesh-client:mutedViews:<protocol>`), starred (`mesh-client:starred:<protocol>`, cap 200), MeshCore flood-scope overrides per chat view (`mesh-client:floodScopeOverrides:<protocol>`, channel keys bound to the radio public key and channel name/PSK fingerprint; DMs use `viewKey`), weather-marked senders (`mesh-client:weatherMarkedSenders:<protocol>`, cap 500).
 - **Weather view (#1112):** `src/renderer/lib/weatherPosts.ts` (`isWeatherPost`: built-in patterns for °F/°C, `60F now`, `forecast`, `Hi N/Lo N`, JSON with `"temp"`/`"hum"`; user-marked senders; optional user regex capped at 200 chars, invalid → ignored with inline error; `WeakMap` cache keyed by message + config) and `src/renderer/stores/weatherFilterStore.ts` (`weatherFilterHideInChannels` / `weatherFilterPattern` in app settings, marked senders per protocol). ChatPanel `viewMode === 'weather'` shows weather posts of the **selected channel** (channel tabs stay active; composer still targets that channel), with a toolbar count and inline settings (`chat/WeatherFilterSettings.tsx`); the sender header has a **Mark as weather sender** toggle. When hide-in-channels is on, `isHiddenWeatherPost` keeps those posts out of the channel view, `computeChannelUnreadCounts`, and `resolveChatNotificationType` (returns `null`), so badges and tones match what Chat shows. DMs are never filtered. Not shown for DM-only chat (Reticulum).
 - **Starred view (#1134):** has its own read key, never advances a channel/DM watermark, and hides the composer and MECP siren, so opening Starred cannot mark the previous channel (or its MECP shield) read or aim a send at it.
@@ -66,3 +67,43 @@ When refreshing translation upstreams, review the pinned Firefox loader sources 
 only after verifying checksums, model quality/version, native constructor compatibility and
 licenses, then rerun the real-model smoke. Do not automatically adopt a new CDN record or
 fetch a loader at runtime. Credits and license notices are in `docs/credits.md`.
+
+## Signal report quick replies
+
+Incoming messages with RF or BLE reception provenance expose **Send signal report** beside
+Reply across all chat protocols while connected. TCP/network-only, MQTT-only, paper and
+unknown-provenance messages do not expose the action.
+The action sends one reply to the same DM peer as the conversation (`resolveChatDmPeer`),
+or to the message channel when it is not a DM, and restores the saved flood-scope path.
+A direct message whose peer cannot be resolved is not sent, so a MeshCore DM stored with
+`channel: -1` and no `to` cannot fall through to public channel 0. Reticulum uses the
+normalized LXMF peer. The action preserves the composer draft and selected reply, and
+blocks duplicate clicks during a send.
+Reports use message-level SNR/RSSI/hops, including legitimate zero values. MeshCore channel
+routes and signal measurements are recovered on demand from local RF captures only after
+matching the channel key, sender, text and sender timestamp. Missing captures fall back to
+known message measurements; node telemetry and MQTT captures are never substituted. Route
+hashes are omitted as a whole when they exceed the UTF-8 budget including reply overhead.
+Measurements are receiver-local and can describe the final repeater hop. Raw captures are
+session-only; older history can therefore offer fewer stats. Wire copy uses the interoperable
+`ack:` format; UI labels remain localized. `chatSignalReport.ts` owns matching/formatting,
+with partial reports and 1/2/3-byte hashes rendered by `hopReportParse.ts` as human reports.
+
+Meshtastic reports use local packet measurements and RF reply IDs. Hybrid RF/MQTT merges
+retain the local RF measurements in either arrival order and never substitute a gateway's
+signal or hop count. Reticulum replies use LXMF message hashes. The sidecar binds
+opportunistic LXMF messages to an exact locally captured, destination-encrypted RX frame on
+a configured RF/BLE interface, carrying `rx_radio_transport` and available SNR/RSSI/hops
+through live and catch-up ingest. A bounded frame index preserves the first observed radio
+measurements. Missing/lagged captures leave the action unavailable. Cached peer-route labels
+are display hints and never qualify a Reticulum message for this action. Direct link,
+resource and propagated delivery remain unavailable until those delivery paths expose
+per-message ingress evidence. These measurements are session-only and are not inferred for
+restored database history.
+Runtime BLE Peer enable/disable changes refresh the shared reception allowlist before
+activation. Other live RNS interface classifications retain their startup configuration
+until the stack restarts.
+
+When a verified reception has no numeric measurements, the action sends only a receipt such
+as `ack: received via RF` or `ack: received via BLE`. A BLE label is reported as BLE and does
+not assert a LoRa path.

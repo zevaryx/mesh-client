@@ -64,6 +64,11 @@ export interface ProtocolCapabilities {
   hasCompanionContactManagementConfig: boolean;
   /** MeshCore companion: telemetry request / location / environment privacy (NodePrefs telemetry modes) */
   hasCompanionTelemetryPrivacyConfig: boolean;
+  /**
+   * MeshCore companion: local CLI (CMD_RUN_CLI_COMMAND) settings, remote companion CLI and
+   * sensor telemetry push. Also requires companion protocol v14+ at runtime.
+   */
+  hasCompanionCli: boolean;
   /** Whether shutdown button is available */
   hasShutdown: boolean;
   /** Whether Reset NodeDB button is available */
@@ -86,6 +91,8 @@ export interface ProtocolCapabilities {
   hasRangeTest: boolean;
   /** Whether Pax Counter (people counter) is available */
   hasPaxCounter: boolean;
+  /** Whether nodes broadcast a free-text status (Meshtastic NODE_STATUS_APP) */
+  hasNodeStatusMessage: boolean;
   /** Whether Audio packets are available */
   hasAudio: boolean;
   /** Whether Detection Sensor packets are available */
@@ -210,6 +217,7 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasUserManagedContactGroups: true,
   hasCompanionContactManagementConfig: false,
   hasCompanionTelemetryPrivacyConfig: false,
+  hasCompanionCli: false,
   hasShutdown: true,
   hasNodeDbReset: true,
   hasFactoryReset: true,
@@ -221,6 +229,7 @@ export const MESHTASTIC_CAPABILITIES: ProtocolCapabilities = {
   hasSerial: true,
   hasRangeTest: true,
   hasPaxCounter: true,
+  hasNodeStatusMessage: true,
   hasAudio: true,
   hasDetectionSensor: true,
   hasStoreForward: true,
@@ -293,6 +302,7 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasUserManagedContactGroups: true,
   hasCompanionContactManagementConfig: true,
   hasCompanionTelemetryPrivacyConfig: true,
+  hasCompanionCli: true,
   hasShutdown: false,
   hasNodeDbReset: false,
   hasFactoryReset: false,
@@ -304,6 +314,7 @@ export const MESHCORE_CAPABILITIES: ProtocolCapabilities = {
   hasSerial: false,
   hasRangeTest: false,
   hasPaxCounter: false,
+  hasNodeStatusMessage: false,
   hasAudio: false,
   hasDetectionSensor: false,
   hasStoreForward: false,
@@ -375,6 +386,7 @@ export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   hasUserManagedContactGroups: true,
   hasCompanionContactManagementConfig: false,
   hasCompanionTelemetryPrivacyConfig: false,
+  hasCompanionCli: false,
   hasShutdown: false,
   hasNodeDbReset: false,
   hasFactoryReset: false,
@@ -386,6 +398,7 @@ export const RETICULUM_CAPABILITIES: ProtocolCapabilities = {
   hasSerial: false,
   hasRangeTest: false,
   hasPaxCounter: false,
+  hasNodeStatusMessage: false,
   hasAudio: false,
   hasDetectionSensor: false,
   hasStoreForward: false,

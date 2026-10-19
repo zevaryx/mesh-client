@@ -871,7 +871,9 @@
     "cancelAutoResend": "取消重试",
     "cancelAutoResendAria": "取消此消息的自动重试",
     "outboxEmergencyWillSend": "将继续重试，直到网络确认",
-    "outboxEmergencyCancelConfirm": "停止重试此紧急消息？它将不再被重新发送，即使网络从未确认过。"
+    "outboxEmergencyCancelConfirm": "停止重试此紧急消息？它将不再被重新发送，即使网络从未确认过。",
+    "sendSignalReport": "发送信号报告",
+    "signalReportUnavailable": "接收统计数据不可用或无法放入一条回复。"
   },
   "chatPayload": {
     "mention": "提及{{label}}",
@@ -1043,7 +1045,8 @@
     "reconnectingAttempt": "正在重新连接… 尝试 {{attempt}}/{{max}}",
     "serialReselect": "USB串行连接丢失—请重新选择您的设备",
     "serialReselectAction": "选择串行端口",
-    "statusRegion": "连接状态"
+    "statusRegion": "连接状态",
+    "rebootingReconnectAttempt": "无线电重启。正在重新连接…尝试{{attempt}}/{{max}}"
   },
   "connectionPanel": {
     "maxReconnectAttempts": "最大MQTT重新连接尝试次数",
@@ -2946,7 +2949,53 @@
       "mapReportPublishInterval": "映射报告间隔（秒）",
       "mapReportPublishIntervalDesc": "0使用固件默认值。启用地图报告后，设备发布地图报告的频率。",
       "mapReportPositionPrecision": "地图报告位置精度",
-      "mapReportPositionPrecisionDesc": "地图报告坐标的精度位（固件ModuleConfig.mqtt.map_report_settings ）。"
+      "mapReportPositionPrecisionDesc": "地图报告坐标的精度位（固件ModuleConfig.mqtt.map_report_settings ）。",
+      "nodeStatus": "节点状态",
+      "nodeStatusDesc": "该节点向网格广播简短的自由文本状态（例如“巡逻”）。留空以清除它。",
+      "mbListenEnabled": "监听信标",
+      "mbListenEnabledDesc": "接收来自其他节点的信标。信标文本进入收件箱；此处显示任何提供的频道或预设供您加入。没有什么是自动应用的。",
+      "mbBroadcastEnabled": "广播信标",
+      "mbBroadcastEnabledDesc": "定期从此节点发送信标，以便附近的节点可以发现该网格。",
+      "mbLegacySplit": "旧版文本分割",
+      "mbLegacySplitDesc": "将文本作为单独的文本消息发送，以便无法解码信标的旧固件仍会显示它。使用更多通话时间。",
+      "mbMessage": "信标消息",
+      "mbMessageDesc": "与每个信标副本一起发送，因此请保持简短。",
+      "mbMessageBytes": "{{used}}/{{max}} 字节",
+      "mbInterval": "广播间隔",
+      "mbIntervalDesc": "发送信标的频率。最少 3600 秒（1 小时）。",
+      "mbOfferHeading": "网状报价",
+      "mbOfferHint": "（可选）公布听众可以选择加入的频道和广播设置。",
+      "mbOfferChannel": "提供渠道",
+      "mbOfferChannelDesc": "将通道名称和密钥复制到信标中。任何听到它的人都可以加入该频道。",
+      "mbOfferChannelNone": "没有任何",
+      "mbOfferChannelKeep": "保持最新 ({{name}})",
+      "mbChannelOption": "{{index}}：{{name}}",
+      "mbPrimaryChannel": "基本的",
+      "mbOfferRegion": "提供地区",
+      "mbOfferRegionNone": "未做广告",
+      "mbOfferPreset": "提供调制解调器预设",
+      "mbOfferPresetNone": "未做广告",
+      "mbOfferSlot": "提供的频率槽",
+      "mbOfferSlotDesc": "仅当网格使用非默认槽时才设置此项。 0 让听众得出它。",
+      "mbTargetsHeading": "广播目标",
+      "mbTargetsHint": "每个目标发送一份信标副本，依次将无线电切换到每个目标的设置。如果没有目标，则通过主通道根据当前设置发送一个信标。",
+      "mbTargetLabel": "目标 {{n}}",
+      "mbTargetRemove": "删除目标 {{n}}",
+      "mbTargetAdd": "添加目标",
+      "mbTargetPreset": "调制解调器预设",
+      "mbTargetPresetRunning": "当前预设",
+      "mbTargetRegion": "地区",
+      "mbTargetRegionRunning": "当前区域",
+      "mbTargetChannel": "渠道",
+      "mbTargetChannelDefault": "预设默认频道",
+      "mbTargetSlot": "频率槽",
+      "mbTargetSlotDesc": "0 从区域和频道名称中派生槽位。",
+      "mbTargetsInvalid": "在应用之前修复突出显示的广播目标。",
+      "mbTargetErrors": {
+        "channelIndexRange": "通道索引必须介于 0 和 7 之间。",
+        "channelNotConfigured": "此无线电上未配置该频道。",
+        "frequencySlot": "频率槽必须为 1 或更高，或者为 0 才能导出它。"
+      }
     },
     "applySection": "申请 {{section}}",
     "applyingButton": "正在申请...",
@@ -3118,6 +3167,40 @@
       "8": {
         "label": "K9"
       }
+    },
+    "sectionMeshBeacon": "网状信标模块",
+    "sectionStatusMessage": "状态消息模块",
+    "beacon": {
+      "heardTitle": "听到信标",
+      "none": "还没有听到信标。打开“监听信标”以接收它们。",
+      "remoteHint": "加入优惠仅适用于连接的收音机。",
+      "itemAria": "来自 {{name}} 的信标",
+      "offerChannel": "频道：{{name}}",
+      "offerRegion": "地区：{{region}}",
+      "offerPreset": "调制解调器预设：{{preset}}",
+      "offerSlot": "频率槽：{{slot}}",
+      "unnamedChannel": "（未命名）",
+      "joinChannel": "加入频道",
+      "joinChannelAria": "加入 {{node}} 提供的频道 {{name}}",
+      "alreadyJoined": "该电台已存在频道（插槽 {{index}}）",
+      "noFreeSlot": "没有空闲频道槽位可加入该频道。",
+      "applyRadio": "使用无线电设置",
+      "applyRadioAria": "使用 {{node}} 提供的无线电设置",
+      "regionMismatch": "刊登广告为 {{offer}}；该收音机设置为 {{local}}。",
+      "alreadyMatching": "无线电设置已匹配。",
+      "changeRegion": "区域 {{value}}",
+      "changePreset": "调制解调器预设 {{value}}",
+      "changeSlot": "频率槽 {{value}}",
+      "changeSlotDerived": "派生频率间隙",
+      "confirmChannelTitle": "加入频道？",
+      "confirmChannelMessage": "将“{{name}}”从 {{node}} 添加到通道槽 {{slot}}。任何拥有该频道密钥的人都可以阅读其消息。",
+      "confirmChannelLabel": "加入",
+      "confirmRadioTitle": "更改收音机设置？",
+      "confirmRadioMessage": "应用 {{changes}}。无线电将重新启动，并可能与您当前的网格失去联系。",
+      "confirmRadioLabel": "应用并重启",
+      "joined": "已加入频道 {{name}}。",
+      "radioApplied": "已发送无线电设置。",
+      "joinFailed": "加入失败：{{message}}"
     }
   },
   "networkPanel": {
@@ -3430,7 +3513,11 @@
     "savedPathHeading": "已保存的路径",
     "savedPathHint": "保存历史记录中评分最高的路径。它可能与无线电的当前发送路径或收到的通告路径不同。",
     "bearingRange": "{{bearing}} · {{distance}}",
-    "bearingRangeTitle": "距您信任位置的方位和距离"
+    "bearingRangeTitle": "距您信任位置的方位和距离",
+    "nodeStatus": {
+      "heading": "地位",
+      "updated": "已更新 {{ago}}"
+    }
   },
   "nodeInfoBody": {
     "longName": "长名称",
@@ -5678,13 +5765,9 @@
     "unitTypeInstallation": "安装",
     "unitTypeSensor": "测传",
     "unitTypeAir": "战机",
-    "channelRelayTitle": "MeshCore频道至TAK",
     "channelRelayTrackers": "跟踪器修复",
-    "channelRelayRoom": "{{channel}}的GeoChat聊天室",
-    "channelRelayRoomPlaceholder": "GeoChat聊天室（关闭）",
     "channelRelayNoChannels": "连接MeshCore收音机以列出其频道。",
     "channelRelayUnnamed": "通道{{n}}",
-    "channelRelayTitleMeshtastic": "Meshtastic频道至TAK",
     "channelRelayNoChannelsMeshtastic": "连接Meshtastic收音机以列出其频道。",
     "unitStylesPreviewKind": "要测试的节点类型",
     "unitStylesPreviewProtocol": "测试方案",
@@ -5696,7 +5779,35 @@
     "unitKindRepeater": "中继器和路由器",
     "unitKindRoom": "房间服务器",
     "unitKindSensor": "传感器",
-    "unitKindTracker": "跟踪器"
+    "unitKindTracker": "跟踪器",
+    "unitStylesRepeaterIcon": "中继器和路由器的图标",
+    "unitStylesRepeaterIconPreset": "中继器和路由器的GeoOps图标",
+    "unitStylesRelayIconHint": "两者都是可选的。每个都是ATAK图标集中的路径，如set UID/group/file name ，或从列表中选择的GeoOps图标。无论筛选器是否重新设置节点的样式，它都适用。没有该图标集的设备显示单元类型的符号。",
+    "unitStylesRoomIcon": "聊天室服务器的图标",
+    "unitStylesRoomIconPreset": "会议室服务器的GeoOps图标",
+    "unitIconPresetPrompt": "GeoOps图标…",
+    "unitIconInvalid": "使用set UID/group/file name。",
+    "messagingTitleMeshcore": "ATAK中的MeshCore消息",
+    "messagingIntroMeshcore": "选择ATAK中显示的MeshCore频道。每个都成为每个连接的ATAK设备上的联系人，以及通道从该联系人听到的内容。使用ATAK可以发送，从此无线电频道向联系人发出消息，前缀为发送方的呼号；关闭后，仅接收频道。远程服务器还将通道（只读）流式传输到远程TAK服务器。跟踪器修复了转向MeshCore跟踪器位置消息(! MT1 ）转换为地图标记。未连接ATAK设备时听到的消息（最多50条，一天）会保留给第一个连接的设备，而且只有那个设备。",
+    "messagingTitleMeshtastic": "ATAK中的Meshtastic消息",
+    "messagingIntroMeshtastic": "选择ATAK中显示的Meshtastic频道。每个人都会成为每个连接的ATAK设备上的联系人，并且频道听到的内容（包括超过MQTT ）来自该联系人。使用ATAK可以发送，从此无线电频道向联系人发出消息，前缀为发送方的呼号；关闭后，仅接收频道。远程服务器还将通道（只读）流式传输到远程TAK服务器。未连接ATAK设备时听到的消息（最多50条，一天）会保留给第一个连接的设备，而且只有那个设备。",
+    "channelModeLabel": "ATAK中的频道",
+    "channelModeOff": "关闭",
+    "channelModeAll": "所有频道",
+    "channelModeSelected": "所选频道",
+    "channelServe": "在ATAK中",
+    "channelAtakNameLabel": "ATAK名称",
+    "channelAtakNameFor": "{{channel}}的ATAK名称",
+    "channelServeFor": "在ATAK中显示{{channel}}",
+    "channelSend": "ATAK可以发送",
+    "channelSendFor": "让ATAK设备发送到{{channel}}",
+    "channelRemote": "远程服务器",
+    "channelRemoteFor": "将{{channel}}流式传输到远程TAK服务器",
+    "channelTrackersFor": "来自{{channel}}的跟踪器修复",
+    "directMessages": "实时消息",
+    "directMessagesHint": "让ATAK设备向此收音机的同伴发送消息。此收音机CAN消息的每个伴侣都会在ATAK中获得聊天选项，并从此收音机发出消息，前缀为发件人的呼号。它的回复会发送到上次写入它的ATAK设备，或者在没有设备时发送到每个设备。没有位置的伴侣在消息后一天出现在0 ， 0。",
+    "messagingTitleReticulum": "ATAK中的Reticulum消息",
+    "messagingIntroReticulum": "让ATAK设备向LXMF个同行发送消息。可以从其标记向具有位置的同行发送消息；一旦mesh-client与之进行对话，没有位置的同行将显示为0、0 ，因此联系人列表中不会填写每个听到的同行。"
   },
   "telemetryPanel": {
     "title": "遥测",
@@ -7343,5 +7454,354 @@
     "notConnected": "未连接",
     "statusBar": "连接状态",
     "unread": "{{count}} 条未读"
+  },
+  "meshcoreCompanionCli": {
+    "summary": "配套设备设置",
+    "description": "存储在连接的配套收音机上的设置，使用其命令行进行读写（ MeshCore固件v 1.18或更高版本）。",
+    "requiresFirmware": "将伴侣更新到MeshCore固件v 1.18或更高版本以使用这些设置。",
+    "loading": "正在从收音机读取设置…",
+    "loadFailed": "无法从收音机读取设置。请检查连接，然后重试。",
+    "refresh": "从收音机刷新",
+    "apply": "确认",
+    "applying": "正在应用……",
+    "applied": "伴侣设置已保存。",
+    "appliedWithErrors": "部分设置未保存（ {{count}} ）。查看突出显示的字段。",
+    "applyFailed": "收音机不接受此值。",
+    "unsupported": "此收音机不支持",
+    "secretPlaceholder": "不变",
+    "showSecret": "顯示",
+    "hideSecret": "隱藏",
+    "revealFailed": "无法从收音机中读取保存的密码。",
+    "rebootPending": "某些更改在无线电重新启动后生效。",
+    "rebootNow": "现在重新启动？",
+    "rebooting": "正在重新启动收音机。mesh-client将自动重新连接。",
+    "actionFailed": "收音机没有完成该操作。",
+    "reboot": "重新启动并重新连接",
+    "powerOff": "断（电源）",
+    "powerHint": "重新启动会在同一连接上自动重新连接。断开电源断开连接；重新打开收音机以重新连接。",
+    "clearWifi": "清除WiFi配置",
+    "copyIp": "复制 IP 地址@ action: inmenu interface connection properties",
+    "ipCopied": "IP地址已复制。",
+    "wifiTcpHint": "要通过无线网络连接，请在连接中选择TCP/IP ，然后输入{{ip}}。",
+    "wifiUnsupported": "这款收音机的固件是在没有无线网络的情况下构建的。",
+    "consoleHint": "运行任何配套命令，包括特定于主板的命令。回复将显示在下方。",
+    "consoleLog": "精灵命令历史记录",
+    "consoleInput": "精灵命令",
+    "consolePlaceholder": "例如：获取无线电",
+    "consoleSend": "傳送",
+    "groups": {
+      "device": "设备",
+      "radio": "无线电调谐",
+      "wifi": "WiFi",
+      "power": "兵力",
+      "console": "命令控制台"
+    },
+    "validation": {
+      "required": "请输入值。",
+      "notNumber": "请输入数字",
+      "notInteger": "输入一个整数。",
+      "outOfRange": "行动成本值超出范围",
+      "tooLong": "此值太长。",
+      "invalidChars": "不允许换行。",
+      "pinFormat": "请输入6位数字，随机PIN码请输入0。"
+    },
+    "settings": {
+      "ver": {
+        "label": "固件版本"
+      },
+      "board": {
+        "label": "端   板"
+      },
+      "tz_offset": {
+        "label": "时区偏移量（小时）",
+        "hint": "由收音机自己的显示器使用。从-12到+14。"
+      },
+      "pin": {
+        "label": "蓝牙PIN",
+        "hint": "6位数字，或随机PIN为0。重新启动后生效；您需要再次配对。"
+      },
+      "af": {
+        "label": "通话时间系数",
+        "hint": "0至9。较高的值在传输之间等待更长时间。"
+      },
+      "dutycycle": {
+        "label": "工作周期"
+      },
+      "int_thresh": {
+        "label": "干扰阈值",
+        "hint": "0至255. 0关闭干扰检测。"
+      },
+      "cad": {
+        "label": "通道活动检测",
+        "hint": "传输前先聆听。"
+      },
+      "radio_rxgain": {
+        "label": "提升的接收增益",
+        "hint": "并非每个无线电芯片都支持这一点。"
+      },
+      "rxdelay": {
+        "label": "接收延迟基数",
+        "hint": "0 至 20"
+      },
+      "agc_reset_interval": {
+        "label": "AGC复位间隔（秒）",
+        "hint": "0到1020 ，四舍五入到4的倍数。0将其关闭。"
+      },
+      "txdelay": {
+        "label": "泛洪传输延迟系数",
+        "hint": "至2 .："
+      },
+      "direct_txdelay": {
+        "label": "直接传输延迟因子",
+        "hint": "至2 .："
+      },
+      "wifi_enabled": {
+        "label": "WiFi",
+        "hint": "在重新启动后生效。"
+      },
+      "wifi_ssid": {
+        "label": "网络名称(SSID)",
+        "hint": "最多32个字符。在重新启动后生效。"
+      },
+      "wifi_pwd": {
+        "label": "密码",
+        "hint": "最多63个字符。对于开放网络，请留空。在重新启动后生效。"
+      },
+      "wifi_status": {
+        "label": "状态"
+      },
+      "wifi_ip": {
+        "label": "IP 地址"
+      }
+    },
+    "confirm": {
+      "reboot": {
+        "title": "重启收音机？",
+        "message": "收音机重新启动， mesh-client自动重新连接。在重新启动期间发送的消息将被排队。",
+        "confirm": "重启"
+      },
+      "poweroff": {
+        "title": "关掉收音机？",
+        "message": "收音机关闭， mesh-client断开。您将需要物理访问权限才能重新打开。",
+        "confirm": "断（电源）"
+      },
+      "clearWifi": {
+        "title": "清除WiFi配置？",
+        "message": "已保存的网络名称和密码将被清除。下次重新启动后，无线网络将停止。",
+        "confirm": "清空"
+      }
+    }
+  },
+  "meshcoreRemoteCli": {
+    "summary": "远程命令行",
+    "allowLabel": "允许此联系人在我的收音机上运行命令",
+    "allowDescription": "默认情况下关闭。开启后，此联系人可以更改随行收音机上的任何设置，包括WiFi和BLE PIN。",
+    "notOnRadio": "此联系人不在您的收音机上，因此无法设置其远程命令行权限。",
+    "flagReadFailed": "无法从您的收音机中读取此联系人的权限。",
+    "flagWriteFailed": "无法在您的收音机上更新此联系人的权限。",
+    "consoleHint": "在此联系人的伴随收音机上运行命令。它需要MeshCore固件v 1.18或更高版本，并且必须允许您的收音机运行命令。否则，命令得不到回复。",
+    "consoleLog": "远程命令行输出",
+    "consoleInput": "远程命令",
+    "consolePlaceholder": "例如： ver",
+    "send": "傳送",
+    "sending": "发送中…",
+    "confirmAllow": {
+      "title": "是否允许远程命令？",
+      "message": "此联系人将能够更改收音机上的任何设置，重新启动或关闭收音机。仅允许您完全信任的联系人。",
+      "confirm": "允许"
+    }
+  },
+  "meshcoreTelemetryPush": {
+    "summary": "实时遥测",
+    "enableLabel": "从此传感器推送更新",
+    "enableDescription": "当值的变化超过以下量时，传感器会发送读数。需要传感器固件 v1.18 或更高版本。该应用程序会在连接时续订订阅。",
+    "thresholdsLegend": "更改至少时发送",
+    "thresholdsHint": "将字段留空以忽略该值。仅观察传感器报告的值。",
+    "metric": {
+      "temperature": "温度（°C）",
+      "humidity": "湿度 （％）",
+      "voltage": "电压（伏）",
+      "pressure": "压力（百帕）"
+    },
+    "leaseLabel": "订阅时长（分钟）",
+    "leaseHint": "如果应用程序离线，传感器会在这么长时间后停止发送。",
+    "waitingForPush": "已订阅。等待第一个改变。",
+    "lastPush": "最后更新于 {{time}}",
+    "errorNoMetrics": "该传感器不报告任何选定的值。首先请求遥测或设置阈值。",
+    "errorRejected": "传感器拒绝订阅。检查其固件版本和您的登录信息。",
+    "errorFailed": "无法到达传感器。再试一次。"
+  },
+  "meshtasticExtraConfig": {
+    "advancedHardware": "硬件先进",
+    "invalidValue": "{{field}} 的值无效。",
+    "applyInvalid": "在应用之前修复 {{section}} 中突出显示的字段。",
+    "buzzerMode": "蜂鸣器模式",
+    "buzzerModeDesc": "哪些事件使蜂鸣器响起。",
+    "buzzerModes": {
+      "allEnabled": "所有声音",
+      "disabled": "沉默的",
+      "notificationsOnly": "仅通知",
+      "systemOnly": "仅系统声音",
+      "directMsgOnly": "仅直接消息"
+    },
+    "compassNorthTop": "指南针在顶部",
+    "compassNorthTopDesc": "在指南针屏幕顶部保持向北，而不是随航向旋转。",
+    "compassOrientation": "指南针方向",
+    "positionFlags": "要包含的位置字段",
+    "positionFlagsDesc": "无线电添加到每个位置数据包的额外数据。更多字段使数据包更大。",
+    "gpsRxGpio": "GPS 接收引脚",
+    "gpsTxGpio": "GPS 发射引脚",
+    "gpsEnGpio": "GPS 使能引脚",
+    "adcMultiplierOverride": "电池 ADC 乘法器",
+    "adcMultiplierOverrideDesc": "校准电池电压读数。 0 使用板默认值。",
+    "deviceBatteryInaAddress": "电池 INA 传感器 I2C 地址",
+    "deviceBatteryInaAddressDesc": "用于电池读数的 INA 电源监视器的 I2C 地址。 0 禁用。",
+    "powermonEnables": "功率监控通道",
+    "powermonEnablesDesc": "电源监控日志通道的位掩码（开发人员设置）。不留空。",
+    "addressMode": "IP地址模式",
+    "addressModes": {
+      "dhcp": "动态主机配置协议",
+      "static": "静止的"
+    },
+    "ipv4Address": "IP地址",
+    "ipv4Gateway": "网关",
+    "ipv4Subnet": "子网掩码",
+    "ipv4Dns": "DNS服务器",
+    "rsyslogServer": "系统日志服务器",
+    "rsyslogServerDesc": "将设备日志发送到远程系统日志服务器（主机：端口）。",
+    "enabledProtocols": "网络协议",
+    "udpBroadcast": "通过 UDP 广播进行网格化",
+    "ipv6Enabled": "启用 IPv6",
+    "ignoreIncoming": "被忽略的节点",
+    "ignoreIncomingDesc": "无线电丢弃其数据包的节点 ID，以逗号分隔（例如 !a1b2c3d4）。",
+    "femLnaMode": "前端低噪声放大器",
+    "femLnaModeDesc": "带有前端模块的板上的低噪声放大器。",
+    "femLnaModes": {
+      "disabled": "残疾人",
+      "enabled": "启用",
+      "notPresent": "不存在"
+    },
+    "serialHalOnly": "仅串行 HAL",
+    "serialHalOnlyDesc": "仅通过串行硬件层（特殊板）使用 LoRa 无线电。",
+    "packetSignaturePolicy": "数据包签名策略",
+    "packetSignaturePolicyDesc": "无线电对来自其他节点的签名数据包的严格要求。",
+    "packetSignaturePolicies": {
+      "compatible": "兼容的",
+      "balanced": "均衡",
+      "strict": "严格的"
+    },
+    "codec2Enabled": "Codec2 语音启用",
+    "audioBitrate": "编解码器2比特率",
+    "pttPin": "一键通引脚",
+    "i2sWs": "I2S字选择引脚",
+    "i2sSd": "I2S数据输出引脚",
+    "i2sDin": "引脚中的 I2S 数据",
+    "i2sSck": "I2S时钟引脚",
+    "detectionTriggerType": "触发类型",
+    "usePullup": "使用内部上拉",
+    "monitorPin": "监视器引脚",
+    "wifiThreshold": "Wi-Fi RSSI 阈值",
+    "bleThreshold": "蓝牙RSSI阈值",
+    "rssiThresholdDesc": "忽略比该信号电平 (dBm) 弱的设备。",
+    "healthMeasurementEnabled": "健康遥测",
+    "healthMeasurementEnabledDesc": "通过连接的健康传感器报告心率、SpO2 和温度。",
+    "healthUpdateInterval": "健康更新间隔",
+    "healthScreenEnabled": "在屏幕上显示健康状况",
+    "airQualityScreenEnabled": "在屏幕上显示空气质量",
+    "clearOnReboot": "重新启动时清除保存的结果",
+    "shouldReportLocation": "包括位置",
+    "shouldReportLocationDesc": "在地图报告中包含该节点的位置。",
+    "availablePins": "可用引脚",
+    "availablePinsNone": "无线电上没有定义引脚。",
+    "availablePinRow": "GPIO {{pin}}: {{name}} ({{type}})"
+  },
+  "aiSummary": {
+    "catchUp": "赶上",
+    "scope": "汇总范围",
+    "unread": "全部未读",
+    "hours_one": "最近{{count}}小时",
+    "hours_other": "最近{{count}}小时",
+    "customHours": "自定义营业时间",
+    "loaded": "已加载所有。",
+    "copy": "复制",
+    "copyFailed": "无法复制。选择摘要文本并手动复制。",
+    "regenerate": "重新生成",
+    "cancel": "取消",
+    "dismiss": "解散",
+    "settings": "AI 设置",
+    "working": "正在准备摘要…",
+    "sentTo": "已发送至{{host}}",
+    "onDevice": "已在此设备上处理",
+    "truncated": "仅包括适合的最新消息。较早的历史也可能因保留而被删除。",
+    "verify": "人工智能摘要可能会遗漏或误读详细信息。请查看原始消息。",
+    "settingsTitle": "AI对话摘要",
+    "enabled": "启用AI摘要",
+    "optIn": "AI默认关闭。启用并选择引擎后才会运行。摘要绝不会自动发布。",
+    "engine": "部位机动",
+    "chooseEngine": "选择引擎",
+    "osEngine": "内置操作系统AI （建议在此设备上使用）",
+    "bundledEngine": "下载的模型（离线）",
+    "localEngine": "本地服务器",
+    "remoteEngine": "远程办公提供商",
+    "osAvailability": "OS AI ： {{model}}",
+    "osUnavailable": "在此设备或安装上不可用",
+    "catalog": "离线模特",
+    "download": "下载",
+    "downloadModel": "下载{{model}}",
+    "remove": "移除",
+    "removeModel": "移除{{model}}",
+    "useModel": "使用{{model}}",
+    "select": "使用模型",
+    "selected": "已选择",
+    "format": "API 日期格式",
+    "baseUrl": "服务器基本URL",
+    "model": "型号",
+    "apiKey": "API密钥（加密存储）",
+    "keySaved": "密钥已保存；留空则保留",
+    "clearKey": "清除已保存的密钥",
+    "allowRemote": "我了解对话文本将离开此设备并发送到此HTTPS提供商。",
+    "urlHint": "局域网服务器接收对话文本。OpenAI兼容的裸主机使用/v1 ；包括自定义网关的路径。在测试前保存。",
+    "save": "儲存配置",
+    "saved": "配置保存.",
+    "test": "测试连接",
+    "testOk": "发动机已准备就绪。",
+    "refreshModels": "刷新模型",
+    "settingsError": "无法完成此操作。检查引擎、URL、型号、安全密钥存储和提供商访问权限，然后重试。",
+    "error": {
+      "disabled": "添加按钮以启用组别设置",
+      "noMessages": "此范围内没有消息。选择更宽的范围。",
+      "notConfigured": "在人工智能设置中选择并保存引擎。",
+      "engineNotReady": "引擎不可用。检查操作系统AI可用性或下载并选择型号。",
+      "remoteNotAcknowledged": "使用HTTPS并在AI设置中确认发送对话文本。",
+      "rateLimited": "请求太多。请稍等片刻，然后重试。",
+      "busy": "另一个摘要正在运行。取消或等待。",
+      "timeout": "发动机耗时过长。尝试更小的范围或更快的模型。",
+      "tooLarge": "对话或回复太大。请尝试较小的范围。",
+      "httpError": "提供程序请求失败。检查连接和凭据。",
+      "invalidResponse": "引擎返回了不完整或不受支持的响应。",
+      "cancelled": "摘要已取消。",
+      "error": "无法汇总。请检查AI设置并重试。",
+      "repetitiveOutput": "模型开始自我重复。尝试更大的型号或更短的范围。"
+    },
+    "loadingModel": "正在此设备上加载模型...",
+    "readingMessages": "正在读取此设备上的消息。CPU处理可能需要几分钟时间...",
+    "providerIncluded_one": "{{provider}} · {{model}} · {{included}}/{{count}}包含已收集的消息",
+    "providerIncluded_other": "{{provider}} · {{model}} · {{included}}/{{count}}包含已收集的消息",
+    "providerCollected_one": "{{provider}} · {{model}} · {{count}}已收集消息",
+    "providerCollected_other": "{{provider}} · {{model}} · {{count}}已收集消息",
+    "offlineSummaryHint": "下载使用互联网一次。摘要在此设备上离线运行。使用下载的模型进行大型对话可能需要几分钟时间。较大的型号需要更多内存。",
+    "countSnapshot": "计数描述此摘要快照；实时未读徽章可能有所不同。",
+    "timeoutSeconds": "摘要超时（秒）",
+    "timeoutHint": "摘要的最长时间，包括模型加载。选择30-1800秒，可随时取消。",
+    "insecureKeyWarning": "此HTTP端点在没有传输加密的情况下发送您的API密钥和消息。对网络上的服务器使用HTTPS。",
+    "setupCatchUp": "设置摘要",
+    "queued": "请稍候—正在生成另一个摘要…",
+    "chunkProgress": "总结{{total}}的{{current}}部分……",
+    "mergeProgress": "正在合并摘要{{current}} ，共{{total}} …",
+    "ceilingTruncated": "在{{count}}消息后停止—提高AI设置中的追赶消息限制以包括更多信息。",
+    "maxCollectedMessages": "追赶消息限制",
+    "maxCollectedMessagesHint": "一个Catch up可以收集的最大消息数（ 100–5000 ）。默认值2000。更高的值需要更长的时间，可能需要更大的超时时间。",
+    "capacityHint": "关于{{count}}的典型网格消息适合此引擎的一个推理通道（首先是较新的）。Catch up可以通过多次通行证处理最多{{ceiling}}条消息。较长的消息每次使用通行证的使用次数较多。较大的范围需要较长的超时时间。",
+    "capacityHintChooseEngine": "内置操作系统的人工智能和下载的模型每通约适合{{onDevice}}条典型消息；本地或远程服务器约适合{{endpoint}}条。使用多重通行证，最多可以覆盖{{ceiling}}条消息。提高繁忙网格的消息限制和超时。"
   }
 }

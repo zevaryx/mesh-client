@@ -31,10 +31,12 @@ import {
 } from '@/renderer/lib/meshtastic/meshtasticLockdown';
 import {
   buildStoreForwardHistoryToRadioBytes,
+  clearSfHistoryFetch,
   getLastSfHistoryFetchMs,
   MQTT_RECONNECT_BACKLOG_MS,
   mqttMessageTreatAsHistory,
   recordSfHistoryFetch,
+  registerSfHistoryWirePacket,
   releaseStoreForwardHistoryRequest,
   reserveStoreForwardHistoryRequest,
   resolveAutoStoreForwardHistoryWindowMinutes,
@@ -60,6 +62,10 @@ import {
   type ResolveMeshtasticMqttPublishOptions,
 } from '@/renderer/lib/meshtasticMqttPublish';
 import { readMeshtasticMqttSettingsFromStorage } from '@/renderer/lib/meshtasticMqttSettingsStorage';
+import {
+  buildLocalAddContactToRadioBytes,
+  canBuildMeshtasticSharedContact,
+} from '@/renderer/lib/meshtasticSharedContact';
 import { BLE_ADAPTER_LEASE_RELEASED_EVENT } from '@/renderer/lib/reticulum/reticulumBleAdapterLease';
 import { getReticulumBleBondDesyncActive } from '@/renderer/lib/reticulum/reticulumBleBondDesync';
 import {
@@ -151,6 +157,7 @@ import {
   MESHTASTIC_PRIMARY_CHANNEL,
   toMeshtasticChannelNumber,
 } from '../lib/meshtastic/meshtasticChannelNumber';
+import { resolveMeshtasticModuleConfigs } from '../lib/meshtastic/meshtasticConfigApply';
 import { setMeshtasticRemoteConfigTarget } from '../lib/meshtastic/meshtasticConfigIngressGuard';
 import { setMeshtasticConfigurePhase } from '../lib/meshtastic/meshtasticConfigurePhase';
 import { configureMeshtasticDeviceWithRetry } from '../lib/meshtastic/meshtasticConfigureRetry';
@@ -161,7 +168,12 @@ import {
 } from '../lib/meshtastic/meshtasticHeardRepeat';
 import { formatMeshtasticLinkStats } from '../lib/meshtastic/meshtasticLinkStats';
 import { meshtasticLoraConfigToProtobuf } from '../lib/meshtastic/meshtasticLocalLoraConfig';
-import type { ModulePortEvent, PaxCounterPoint } from '../lib/meshtastic/meshtasticModuleEvents';
+import type {
+  HeardMeshBeacon,
+  ModulePortEvent,
+  NodeStatusEntry,
+  PaxCounterPoint,
+} from '../lib/meshtastic/meshtasticModuleEvents';
 import { createDebouncedMqttChannelKeysPush } from '../lib/meshtastic/meshtasticMqttChannelKeysDebounce';
 import { normalizeMeshtasticMqttChatMessage } from '../lib/meshtastic/meshtasticMqttChatNormalize';
 import { MeshtasticMqttClientProxyBridge } from '../lib/meshtastic/meshtasticMqttClientProxy';
@@ -604,6 +616,9 @@ export function useMeshtasticRuntime() {
   const [waypoints, setWaypoints] = useState<Map<number, MeshWaypoint>>(new Map());
   const [moduleConfigs, setModuleConfigs] = useState<Record<string, unknown>>({});
   const moduleConfigsRef = useRef(moduleConfigs);
+  /** Survives transient deviceStore clears / partial configure so Modules UI keeps hydrated keys. */
+  const lastKnownModuleConfigsRef = useRef<Record<string, unknown>>({});
+  const lastKnownModuleConfigsIdentityRef = useRef<string | null>(null);
   const mqttClientProxyBridgeRef = useRef<MeshtasticMqttClientProxyBridge | null>(null);
   const sfHistoryRequestedServersRef = useRef<Set<number>>(new Set());
   const lastRfDisconnectAtRef = useRef<number | null>(null);
@@ -661,6 +676,8 @@ export function useMeshtasticRuntime() {
     Map<number, { from: number; data: Uint8Array; timestamp: number }[]>
   >(new Map());
   const [paxCounterData, setPaxCounterData] = useState<Map<number, PaxCounterPoint[]>>(new Map());
+  const [meshBeacons, setMeshBeacons] = useState<Map<number, HeardMeshBeacon>>(new Map());
+  const [nodeStatuses, setNodeStatuses] = useState<Map<number, NodeStatusEntry>>(new Map());
   const [serialMessages, setSerialMessages] = useState<
     Map<number, { from: number; data: Uint8Array; timestamp: number }[]>
   >(new Map());
@@ -1192,6 +1209,13 @@ export function useMeshtasticRuntime() {
     setMeshtasticRemoteConfigTarget(meshtasticIdentityId, configureTargetNodeNum);
     return () => setMeshtasticRemoteConfigTarget(meshtasticIdentityId, null);
   }, [configureTargetNodeNum, meshtasticIdentityId]);
+
+  // Heard Mesh Beacons / node status are keyed by node number only; clear on identity change so a
+  // prior radio's entries cannot surface for reused node numbers on the next session.
+  useEffect(() => {
+    setMeshBeacons(new Map());
+    setNodeStatuses(new Map());
+  }, [meshtasticIdentityId]);
 
   useEffect(() => {
     remoteAdminStatusRef.current = remoteAdminStatus;
@@ -1934,6 +1958,85 @@ export function useMeshtasticRuntime() {
         }
       }
 
+      const serverNode = getIdentityNode(meshtasticIdentityIdRef.current, serverNodeId);
+      const destPublicKey = resolveMeshtasticDestPublicKeyBytes({
+        publicKeyHex: serverNode?.public_key_hex,
+      });
+      const canJitContact =
+        destPublicKey != null &&
+        canBuildMeshtasticSharedContact({
+          publicKeyHex: serverNode?.public_key_hex,
+          longName: serverNode?.long_name,
+          shortName: serverNode?.short_name,
+        });
+
+      // Only attach publicKey on CLIENT_HISTORY when the radio NodeDB is known to hold a
+      // matching key (successful SharedContact push). If push is skipped/failed, omit the
+      // wire key so firmware can still auto-PKI from a preexisting NodeDB entry.
+      let radioHasMatchingDestKey = false;
+      if (canJitContact && serverNode && destPublicKey) {
+        const contactPacketId = (Math.floor(Math.random() * 0xfffffffe) + 1) >>> 0; // NOSONAR non-crypto Meshtastic packet id
+        registerMeshtasticNonChatWirePacketId(contactPacketId);
+        try {
+          const contactBytes = buildLocalAddContactToRadioBytes({
+            myNodeNum: myNode,
+            packetId: contactPacketId,
+            nodeNum: serverNodeId,
+            longName: serverNode.long_name,
+            shortName: serverNode.short_name,
+            publicKey: destPublicKey,
+          });
+          await writeToRadioWithoutQueue(activeDevice, contactBytes);
+          radioHasMatchingDestKey = true;
+          console.debug(
+            `[useMeshtasticRuntime] Store & Forward SharedContact pushed for 0x${serverNodeId.toString(16)}`,
+          );
+        } catch (e: unknown) {
+          // catch-no-log-ok continue with history; radio may already hold the key
+          console.debug(
+            '[useMeshtasticRuntime] Store & Forward SharedContact push failed ' +
+              errLikeToLogString(e),
+          );
+        }
+      } else if (!destPublicKey) {
+        // App NodeDB lacks the router key — ask for NODEINFO so a later heartbeat can JIT.
+        // Send our User (not empty bytes): firmware applies the request payload to the
+        // sender's NodeDB entry before replying.
+        const selfNode = getIdentityNode(meshtasticIdentityIdRef.current, myNode);
+        const selfLong = selfNode?.long_name?.trim() ?? '';
+        const selfShort = selfNode?.short_name?.trim() ?? '';
+        const lastNi = lastNodeInfoRequestAtRef.current.get(serverNodeId) ?? 0;
+        if (selfLong && selfShort && now - lastNi >= 120_000) {
+          lastNodeInfoRequestAtRef.current.set(serverNodeId, now);
+          const selfPublicKey = resolveMeshtasticDestPublicKeyBytes({
+            publicKeyHex: selfNode?.public_key_hex,
+          });
+          const ownerUser = createMeshtasticMessage(meshtasticMeshProtobuf.UserSchema, {
+            id: formatMeshtasticNodeId(myNode),
+            longName: selfLong,
+            shortName: selfShort,
+            ...(selfPublicKey ? { publicKey: selfPublicKey } : {}),
+          });
+          const ownerUserBytes = toBinary(
+            meshtasticMeshProtobuf.UserSchema,
+            ownerUser as Parameters<typeof toBinary>[1],
+          );
+          void activeDevice
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- External SDK value is validated by surrounding boundary logic.
+            .sendPacket(ownerUserBytes, Portnums.PortNum.NODEINFO_APP, serverNodeId)
+            .then(() => {
+              console.debug(
+                `[useMeshtasticRuntime] NODEINFO request sent for S&F router 0x${serverNodeId.toString(16)}`,
+              );
+            })
+            .catch((e: unknown) => {
+              console.debug(
+                '[useMeshtasticRuntime] NODEINFO request failed ' + errLikeToLogString(e),
+              );
+            });
+        }
+      }
+
       const packetId = (Math.floor(Math.random() * 0xfffffffe) + 1) >>> 0; // NOSONAR non-crypto Meshtastic packet id
       const toRadioBytes = buildStoreForwardHistoryToRadioBytes({
         from: myNode,
@@ -1942,18 +2045,27 @@ export function useMeshtasticRuntime() {
         packetId,
         windowMinutes: resolveAutoStoreForwardHistoryWindowMinutes(heartbeatPeriod),
         messageCap: manual ? SF_MANUAL_HISTORY_MESSAGE_CAP : historyTuning.messageCap,
+        ...(radioHasMatchingDestKey && destPublicKey ? { publicKey: destPublicKey } : {}),
       });
       // Routing NAKs for this id (e.g. PKI_SEND_FAIL_PUBLIC_KEY) must not fail a pending chat row.
       registerMeshtasticNonChatWirePacketId(packetId);
+      registerSfHistoryWirePacket(
+        packetId,
+        serverNodeId,
+        manual ? null : sfHistoryRequestedServersRef.current,
+      );
+      // Record before write: a local PKI NAK can arrive before the write promise resolves;
+      // clearSfHistoryFetchForWirePacket must see an existing cooldown entry to clear.
+      recordSfHistoryFetch(serverNodeId, now);
 
       try {
         await writeToRadioWithoutQueue(activeDevice, toRadioBytes);
-        recordSfHistoryFetch(serverNodeId, now);
         console.debug(
           `[useMeshtasticRuntime] Store & Forward CLIENT_HISTORY sent to 0x${serverNodeId.toString(16)} ch=${channel} manual=${manual}`,
         );
         return { ok: true };
       } catch (e: unknown) {
+        clearSfHistoryFetch(serverNodeId);
         if (!manual) {
           releaseStoreForwardHistoryRequest(sfHistoryRequestedServersRef.current, serverNodeId);
         }
@@ -2097,6 +2209,8 @@ export function useMeshtasticRuntime() {
       setPingResponses,
       setIpTunnelMessages,
       setPaxCounterData,
+      setMeshBeacons,
+      setNodeStatuses,
       setSerialMessages,
       setStoreForwardMessages,
       setRangeTestPackets,
@@ -4686,13 +4800,44 @@ export function useMeshtasticRuntime() {
     schedulePushMqttChannelKeys();
   }, [resolvedChannelConfigs, schedulePushMqttChannelKeys]);
 
-  const resolvedModuleConfigs = useMemo(() => {
-    if (!meshtasticIdentityId) return moduleConfigs;
-    if (meshtasticDeviceRecord && Object.keys(meshtasticDeviceRecord.moduleConfigs).length > 0) {
-      return meshtasticDeviceRecord.moduleConfigs;
+  const resolvedModuleConfigMaps = useMemo(() => {
+    const fromStore = meshtasticDeviceRecord?.moduleConfigs ?? {};
+    const fromLocal = moduleConfigs;
+    const cacheMatchesIdentity =
+      meshtasticIdentityId != null &&
+      lastKnownModuleConfigsIdentityRef.current === meshtasticIdentityId;
+    const lastKnown = cacheMatchesIdentity ? lastKnownModuleConfigsRef.current : {};
+    if (!meshtasticIdentityId) {
+      return resolveMeshtasticModuleConfigs({
+        fromStore: {},
+        fromLocal,
+        lastKnown: {},
+      });
     }
-    return moduleConfigs;
+    return resolveMeshtasticModuleConfigs({
+      fromStore,
+      fromLocal,
+      lastKnown,
+    });
   }, [meshtasticIdentityId, moduleConfigs, meshtasticDeviceRecord]);
+
+  // Cache display map post-commit — never mutate the refs inside the useMemo above.
+  useEffect(() => {
+    if (!meshtasticIdentityId) return;
+    if (
+      lastKnownModuleConfigsIdentityRef.current != null &&
+      lastKnownModuleConfigsIdentityRef.current !== meshtasticIdentityId
+    ) {
+      lastKnownModuleConfigsRef.current = {};
+    }
+    lastKnownModuleConfigsIdentityRef.current = meshtasticIdentityId;
+    if (Object.keys(resolvedModuleConfigMaps.display).length > 0) {
+      lastKnownModuleConfigsRef.current = resolvedModuleConfigMaps.display;
+    }
+  }, [meshtasticIdentityId, resolvedModuleConfigMaps]);
+
+  const resolvedModuleConfigs = resolvedModuleConfigMaps.display;
+  const resolvedLiveModuleConfigs = resolvedModuleConfigMaps.live;
 
   const resolvedMeshtasticConfigSlices = useMemo(() => {
     if (!meshtasticIdentityId) return {};
@@ -4843,6 +4988,7 @@ export function useMeshtasticRuntime() {
       sendWaypoint,
       deleteWaypoint,
       moduleConfigs: resolvedModuleConfigs,
+      liveModuleConfigs: resolvedLiveModuleConfigs,
       meshtasticConfigSlices: resolvedMeshtasticConfigSlices,
       setModuleConfig,
       setCannedMessages,
@@ -4868,6 +5014,8 @@ export function useMeshtasticRuntime() {
       pingResponses,
       ipTunnelMessages,
       paxCounterData,
+      meshBeacons,
+      nodeStatuses,
       serialMessages,
       storeForwardMessages,
       requestStoreForwardHistory,
@@ -4951,6 +5099,7 @@ export function useMeshtasticRuntime() {
       sendWaypoint,
       deleteWaypoint,
       resolvedModuleConfigs,
+      resolvedLiveModuleConfigs,
       resolvedMeshtasticConfigSlices,
       setModuleConfig,
       setCannedMessages,
@@ -4975,6 +5124,8 @@ export function useMeshtasticRuntime() {
       pingResponses,
       ipTunnelMessages,
       paxCounterData,
+      meshBeacons,
+      nodeStatuses,
       serialMessages,
       storeForwardMessages,
       requestStoreForwardHistory,

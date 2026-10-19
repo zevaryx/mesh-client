@@ -63,3 +63,8 @@ __pycache__/
 
 # compose.yaml settings (web token, secret key)
 .env
+# Generated native AI helpers
+resources/ai-helper/*
+!resources/ai-helper/README.md
+native/ai/windows/bin/
+native/ai/windows/obj/

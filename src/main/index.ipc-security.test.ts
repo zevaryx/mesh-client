@@ -87,6 +87,7 @@ function ipcHandlerBody(channel: string, span = 400): string {
     CHAT_CONTENT_IPC_SOURCE,
     GATT_IPC_SOURCE,
     BLUETOOTHCTL_IPC_SOURCE,
+    readFileSync(join(__dirname, 'ipc/ai-handlers.ts'), 'utf8'),
   ]) {
     const markers = [
       `ipcMain.handle('${channel}'`,
@@ -526,7 +527,12 @@ describe('GPS/TAK IPC sender validation (source contract)', () => {
     'tak:getStyleSettings',
     'tak:setStyleSettings',
     'tak:pushChatMessage',
-    'tak:setChatSendRooms',
+    'tak:setChatChannels',
+    'tak:retireChatRooms',
+    'tak:pushDirectMessage',
+    'tak:setDirectMessaging',
+    'tak:dmStatus',
+    'tak:setDirectPeers',
   ] as const;
 
   it.each(takChannels)('tak handler %s calls assertIpcSender', (channel) => {
@@ -604,6 +610,21 @@ describe('MeshCore clear-by-channel validation (source contract)', () => {
 
 describe('privileged IPC sender validation (source contract)', () => {
   const privilegedChannels = [
+    'ai:getStatus',
+    'ai:getHistory',
+    'ai:setEnabled',
+    'ai:probeOsAi',
+    'ai:setConfig',
+    'ai:testConfig',
+    'ai:listEndpointModels',
+    'ai:listLocalModels',
+    'ai:installLocalModel',
+    'ai:cancelLocalModel',
+    'ai:removeLocalModel',
+    'ai:selectLocalModel',
+    'ai:summarize',
+    'ai:cancel',
+
     'mqtt:connect',
     'mqtt:disconnect',
     'mqtt:publish',
@@ -676,7 +697,8 @@ describe('privileged IPC sender validation (source contract)', () => {
     expect(handlerBody.length).toBeGreaterThan(0);
     expect(
       handlerBody.includes('assertIpcSender(event') ||
-        handlerBody.includes('validateIpcSender(event)'),
+        handlerBody.includes('validateIpcSender(event)') ||
+        handlerBody.includes('guard(event,'),
     ).toBe(true);
   });
 
@@ -1195,5 +1217,17 @@ describe('translation IPC security contract', () => {
     for (const channel of channels) expect(source).toContain(`guard(event, '${channel}'`);
     expect(source).toContain('assertIpcSender(event, channel)');
     expect(source).toContain('(write ? writes : reads).checkOrThrow()');
+  });
+});
+
+describe('AI IPC security contract', () => {
+  it('guards every handler and keeps configuration exclusively in the validated AI namespace', () => {
+    const source = readFileSync(join(__dirname, 'ipc/ai-handlers.ts'), 'utf8');
+    const channels = [...source.matchAll(/ipcMain.handle\(\s*'([^']+)'/g)].map((m) => m[1]);
+    expect(channels).toHaveLength(14);
+    for (const channel of channels) expect(source).toContain(`guard(event, '${channel}'`);
+    expect(source).toContain('assertIpcSender(event, channel)');
+    expect(source).toContain('(write ? writes : reads).checkOrThrow()');
+    expect(APP_SETTINGS_IPC_SOURCE).toContain("row.key !== 'aiProviderConfig'");
   });
 });

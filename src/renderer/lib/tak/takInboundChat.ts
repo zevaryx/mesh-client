@@ -1,14 +1,14 @@
-import type { TAKInboundChat } from '@/shared/tak-types';
+import type { TakChatTarget, TAKInboundChat } from '@/shared/tak-types';
 
-import { type IdentityRecord, useIdentityStore } from '../../stores/identityStore';
-import {
-  getTakRelayPrefs,
-  type TakRelayIdentityPrefs,
-  useTakRelayPrefsStore,
-} from '../../stores/takRelayPrefsStore';
+import { getTakRadio } from '../../stores/takChannelStore';
+import { getTakRelayPrefs } from '../../stores/takRelayPrefsStore';
 import { errLikeToLogString } from '../errLikeToLogString';
+import { getIdentityIdForProtocol } from '../identityByProtocol';
 import type { IdentityId } from '../types';
+import { hasOwnLxmfDestination } from './takDirectMessages';
+import { reportTakDmOutcome } from './takDmStatus';
 import { consumeTakEcho, rememberTakSend } from './takEchoGuard';
+import { listTakServedChannels } from './takServedChannels';
 
 /**
  * UTF-8 budget for one mesh message sent on behalf of a TAK client, callsign prefix included.
@@ -55,47 +55,35 @@ export function formatTakMeshText(
 
 export interface TakSendTarget {
   identityId: IdentityId;
-  protocol: 'meshtastic' | 'meshcore';
+  protocol: 'meshtastic' | 'meshcore' | 'reticulum';
   channelIndex: number;
-}
-
-/** Channels bridged to `room` whose identity opted in to sending. Room names match exactly. */
-export function findTakSendTargets(room: string): TakSendTarget[] {
-  const targets: TakSendTarget[] = [];
-  for (const identity of Object.values(useIdentityStore.getState().identities)) {
-    const protocol = identity.protocol.type;
-    if (protocol !== 'meshtastic' && protocol !== 'meshcore') continue;
-    const prefs = getTakRelayPrefs(identity.id);
-    for (const channelIndex of prefs.chatSendChannels) {
-      if (prefs.chatBridges[channelIndex] === room) {
-        targets.push({ identityId: identity.id, protocol, channelIndex });
-      }
-    }
-  }
-  return targets;
+  /** The companion a direct message goes to; unset for a channel message. */
+  destination?: number;
+  /** Main's id for a direct message, under which its outcome is reported. */
+  dmRef?: string;
 }
 
 /**
- * Every room at least one loaded identity lets TAK clients send to, sorted, without repeats.
- * Reads the stores unless given their state.
+ * Where a TAK client's message goes out: for a channel, every radio serving it with sending
+ * allowed; for a companion, the radio TAK uses for its protocol, if that radio has direct
+ * messages on.
  */
-export function listTakSendRooms(
-  identities: Record<IdentityId, IdentityRecord> = useIdentityStore.getState().identities,
-  prefsByIdentity: Record<IdentityId, TakRelayIdentityPrefs> = useTakRelayPrefsStore.getState()
-    .byIdentity,
-): string[] {
-  const rooms = new Set<string>();
-  for (const identity of Object.values(identities)) {
-    const protocol = identity.protocol.type;
-    if (protocol !== 'meshtastic' && protocol !== 'meshcore') continue;
-    const prefs = prefsByIdentity[identity.id] as TakRelayIdentityPrefs | undefined;
-    if (!prefs) continue;
-    for (const channelIndex of prefs.chatSendChannels) {
-      const room = prefs.chatBridges[channelIndex];
-      if (room) rooms.add(room);
-    }
+export function findTakSendTargets(target: TakChatTarget): TakSendTarget[] {
+  if (target.kind === 'direct') {
+    const identityId = getTakRadio(target.protocol);
+    if (!identityId || !getTakRelayPrefs(identityId).directMessages) return [];
+    // The radio is recorded after a render, so for a moment after a switch to another radio of
+    // the same protocol it can still name the old one; never send from that.
+    if (identityId !== getIdentityIdForProtocol(target.protocol)) return [];
+    // A peer ATAK may still message (from an earlier DM, or a conversation) can have its LXMF
+    // address remap to another destination since; the message would go there, and the reply
+    // come back under a different contact.
+    if (target.protocol === 'reticulum' && !hasOwnLxmfDestination(target.nodeId)) return [];
+    return [{ identityId, protocol: target.protocol, channelIndex: 0, destination: target.nodeId }];
   }
-  return [...rooms].sort();
+  return listTakServedChannels()
+    .filter((c) => c.key === target.channelKey && c.send)
+    .map((c) => ({ identityId: c.identityId, protocol: c.protocol, channelIndex: c.index }));
 }
 
 export type TakMeshSendFn = (target: TakSendTarget, text: string) => Promise<void>;
@@ -120,26 +108,36 @@ function withSendTimeout(send: Promise<void>): Promise<void> {
 }
 
 /**
- * Transmit one TAK client's GeoChat message on every mesh channel bridged to its room that
- * allows sending. Does nothing for a room no channel opted in for. Returns how many channels it
- * was sent on; a failed send is logged and does not stop the others.
+ * Transmit one TAK client's message: on the served channel it was sent to, on every radio
+ * serving that channel with sending allowed, or as a direct message to the companion it was
+ * sent to. Does nothing when nothing allows it. Returns how many radios it was sent on; a
+ * failed send is logged and does not stop the others.
  */
 export async function relayTakChatToMesh(
   message: TAKInboundChat,
   sendFn: TakMeshSendFn,
   nowMs: number = Date.now(),
 ): Promise<number> {
-  const targets = findTakSendTargets(message.room);
-  if (targets.length === 0) return 0;
+  const targets = findTakSendTargets(message.target).map((t) =>
+    t.destination !== undefined && message.dmRef ? { ...t, dmRef: message.dmRef } : t,
+  );
+  if (targets.length === 0) {
+    // Main let it through, so the device is waiting to hear how it went.
+    if (message.dmRef) reportTakDmOutcome(message.dmRef, 'not-sent');
+    return 0;
+  }
   const text = formatTakMeshText(message.senderCallsign, message.text);
   let sent = 0;
   for (const target of targets) {
-    rememberTakSend(target.identityId, target.channelIndex, text, nowMs);
+    // Only a channel message is heard back off the mesh; a direct message has no echo.
+    const onChannel = target.destination === undefined;
+    if (onChannel) rememberTakSend(target.identityId, target.channelIndex, text, nowMs);
     try {
       await withSendTimeout(sendFn(target, text));
       sent++;
     } catch (e) {
-      consumeTakEcho(target.identityId, target.channelIndex, text, nowMs);
+      if (onChannel) consumeTakEcho(target.identityId, target.channelIndex, text, nowMs);
+      if (target.dmRef) reportTakDmOutcome(target.dmRef, 'not-sent');
       console.warn('[TakInboundChat] mesh send failed ' + errLikeToLogString(e));
     }
   }
