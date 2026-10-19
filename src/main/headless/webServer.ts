@@ -15,6 +15,8 @@ import fs from 'node:fs';
 import http from 'node:http';
 import { type AddressInfo, isIP } from 'node:net';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 import WebSocket, { WebSocketServer } from 'ws';
 
@@ -27,6 +29,7 @@ import {
   normalizeHeadlessHostPlatform,
   parseWebBridgeClientFrame,
   serializeWebBridgeFrame,
+  WEB_BRIDGE_AI_MODELS_PATH,
   WEB_BRIDGE_FILES_PATH,
   WEB_BRIDGE_MAX_FRAME_BYTES,
   WEB_BRIDGE_PLATFORM_META,
@@ -36,6 +39,7 @@ import {
   WEB_BRIDGE_TILES_SESSION_PATH,
   WEB_BRIDGE_TOKEN_PARAM,
   WEB_BRIDGE_WS_PATH,
+  webAiModelsPathToMeshAiUrl,
   type WebBridgeServerFrame,
   webTilesPathToMeshTilesUrl,
 } from '../../shared/webBridgeProtocol';
@@ -81,6 +85,11 @@ export interface HeadlessWebServerOptions {
    * served at `/tiles/…` to holders of the tile cookie; unset, `/tiles/…` is 404.
    */
   tileHandler?: (request: Request) => Promise<Response>;
+  /**
+   * The desktop `mesh-ai:` protocol handler (offline AI model files). When set, models are served
+   * at `/ai-models/…` to token holders; unset, `/ai-models/…` is 404.
+   */
+  aiModelHandler?: (request: Request) => Promise<Response>;
 }
 
 export const HEADLESS_DEFAULT_MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
@@ -370,6 +379,56 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     );
   };
 
+  /** One offline AI model file, streamed (model files are hundreds of MB). */
+  const serveAiModel = (req: http.IncomingMessage, res: http.ServerResponse, url: URL): void => {
+    const access = checkToken(req, bearerToken(req));
+    if (access !== 200) {
+      sendAuthFailure(res, access);
+      return;
+    }
+    const meshAiUrl = webAiModelsPathToMeshAiUrl(url.pathname);
+    const handler = options.aiModelHandler;
+    if (!handler || meshAiUrl === null) {
+      sendPlain(res, 404, 'Not Found');
+      return;
+    }
+    handler(new Request(meshAiUrl)).then(
+      (model) => {
+        const headers: Record<string, string> = {
+          ...SECURITY_HEADERS,
+          'Cache-Control': 'no-store',
+        };
+        for (const name of ['content-type', 'content-length']) {
+          const value = model.headers.get(name);
+          if (value) headers[name] = value;
+        }
+        res.writeHead(model.status, headers);
+        if (req.method === 'HEAD' || !model.body) {
+          void model.body?.cancel();
+          res.end();
+          return;
+        }
+        const body = Readable.fromWeb(model.body as unknown as NodeReadableStream<Uint8Array>);
+        body.on('error', (err) => {
+          console.warn('[headless] AI model stream failed:', sanitizeLogMessage(String(err)));
+          res.destroy();
+        });
+        res.on('close', () => {
+          body.destroy();
+        });
+        body.pipe(res);
+      },
+      (err: unknown) => {
+        console.warn(
+          '[headless] AI model request failed:',
+          sanitizeLogMessage(err instanceof Error ? err.message : String(err)),
+        );
+        if (!res.headersSent) sendPlain(res, 500, 'Internal Server Error');
+        else res.destroy();
+      },
+    );
+  };
+
   const allowedHosts = (options.allowedHosts ?? []).map((h) => h.toLowerCase());
   const hostRefused = (req: http.IncomingMessage): boolean =>
     token === null && !headlessHostAllowed(req.headers.host, allowedHosts);
@@ -410,6 +469,10 @@ export function createHeadlessWebServer(options: HeadlessWebServerOptions): Head
     }
     if (url.pathname.startsWith(`${WEB_BRIDGE_TILES_PATH}/`)) {
       serveTile(req, res, url);
+      return;
+    }
+    if (url.pathname.startsWith(`${WEB_BRIDGE_AI_MODELS_PATH}/`)) {
+      serveAiModel(req, res, url);
       return;
     }
     if (url.pathname === '/healthz') {

@@ -230,6 +230,32 @@ export const net = {
     globalThis.fetch(input, init),
 };
 
+type ProtocolHandler = (request: Request) => Response | Promise<Response>;
+const protocolHandlers = new Map<string, ProtocolHandler>();
+
+/**
+ * Electron's custom schemes (`protocol.handle('mesh-ai', …)`): a browser cannot load them, so the
+ * handler is kept for the web server, which serves the scheme on an HTTP route of its own (see
+ * {@link headlessProtocolHandler}).
+ */
+export const protocol = {
+  handle: (scheme: string, handler: ProtocolHandler): void => {
+    protocolHandlers.set(scheme, handler);
+  },
+  unhandle: (scheme: string): void => {
+    protocolHandlers.delete(scheme);
+  },
+  isProtocolHandled: (scheme: string): boolean => protocolHandlers.has(scheme),
+};
+
+/** The handler a module registered for `scheme`, or `null` (none yet, or the feature is off). */
+export function headlessProtocolHandler(
+  scheme: string,
+): ((request: Request) => Promise<Response>) | null {
+  const handler = protocolHandlers.get(scheme);
+  return handler ? async (request) => handler(request) : null;
+}
+
 /** The server cannot open a browser for the viewer; callers surface this as an error. */
 export const shell = {
   openExternal: (): Promise<never> =>

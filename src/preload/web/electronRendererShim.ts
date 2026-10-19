@@ -29,6 +29,7 @@ import {
   WEB_BRIDGE_WS_PATH,
   type WebBridgeClientFrame,
 } from '../../shared/webBridgeProtocol';
+import { installHeadlessAiModelFetch } from './aiModelFetch';
 import { type BrowserLocalInvoke, createBrowserLocalInvokes } from './browserLocalInvokes';
 import { installHeadlessFileTransfer } from './headlessFileTransfer';
 import { installInsecureContextFallbacks } from './insecureContextFallbacks';
@@ -357,6 +358,8 @@ function getSharedRenderer(): WebIpcRenderer {
     },
   });
   void requestHeadlessTilesCookie(window.fetch.bind(window), token);
+  // Offline AI models: `mesh-ai://…` is served by the server's `/ai-models/…` route.
+  installHeadlessAiModelFetch(window, token);
   sharedRenderer = renderer;
   return renderer;
 }

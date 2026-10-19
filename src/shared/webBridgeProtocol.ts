@@ -68,6 +68,28 @@ export function webTilesPathToMeshTilesUrl(pathname: string, search: string): st
   return `${MESH_TILES_SCHEME_PREFIX}${pathname.slice(prefix.length)}${search}`;
 }
 
+/**
+ * Offline AI models (`mesh-ai://<model>/<file>` on the desktop app, a custom protocol) are served
+ * at `GET /ai-models/<model>/<file>`. The renderer loads them with `fetch`, which can send the
+ * token, so the bridge maps the scheme and adds `Authorization: Bearer <token>` (no cookie).
+ */
+export const WEB_BRIDGE_AI_MODELS_PATH = '/ai-models';
+const MESH_AI_SCHEME_PREFIX = 'mesh-ai://';
+
+/** `mesh-ai://model/file.gguf` → `/ai-models/model/file.gguf`; `null` for other URLs. */
+export function meshAiUrlToWebPath(url: string): string | null {
+  return url.startsWith(MESH_AI_SCHEME_PREFIX)
+    ? `${WEB_BRIDGE_AI_MODELS_PATH}/${url.slice(MESH_AI_SCHEME_PREFIX.length)}`
+    : null;
+}
+
+/** `/ai-models/model/file.gguf` → `mesh-ai://model/file.gguf`; `null` outside the model path. */
+export function webAiModelsPathToMeshAiUrl(pathname: string): string | null {
+  const prefix = `${WEB_BRIDGE_AI_MODELS_PATH}/`;
+  if (!pathname.startsWith(prefix) || pathname.length === prefix.length) return null;
+  return `${MESH_AI_SCHEME_PREFIX}${pathname.slice(prefix.length)}`;
+}
+
 export interface WebBridgePickFilesRequest {
   requestId: string;
   title?: string;

@@ -7,7 +7,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // Resolves to the headless shim at bundle time (scripts/build-headless.mjs aliases `electron`).
-import { app, type BrowserWindow as ElectronBrowserWindow, ipcMain } from 'electron';
+import {
+  app,
+  type BrowserWindow as ElectronBrowserWindow,
+  ipcMain,
+  type WebContents as ElectronWebContents,
+} from 'electron';
 
 import {
   WEB_BRIDGE_DATA_CHANGED_EVENT,
@@ -26,6 +31,7 @@ import {
 import { MESH_CLIENT_ACCEPT_SCHEMA_UPGRADE_ENV } from '../fatal-startup-dialog';
 import { gattSidecarProxy } from '../gatt-sidecar-proxy';
 import { validateHttpHost } from '../httpHostValidation';
+import { registerAiHandlers } from '../ipc/ai-handlers';
 import { registerAppSettingsIpcHandlers } from '../ipc/app-settings-handlers';
 import { registerBeaconIpcHandlers } from '../ipc/beacon-handlers';
 import { registerBluetoothctlIpcHandlers } from '../ipc/bluetoothctl-handlers';
@@ -78,7 +84,12 @@ import { createTakServerHost, IDLE_TAK_STATUS, validateTakSettings } from '../ta
 import { initUpdater } from '../updater';
 import { assertIpcSender } from '../validate-ipc-sender';
 import { formatHeadlessAccessUrl, HeadlessConfigError, resolveHeadlessConfig } from './config';
-import { BrowserWindow, configureHeadlessApp, configureHeadlessSafeStorage } from './electronShim';
+import {
+  BrowserWindow,
+  configureHeadlessApp,
+  configureHeadlessSafeStorage,
+  headlessProtocolHandler,
+} from './electronShim';
 import { registerHeadlessAppHandlers } from './headlessAppHandlers';
 import { headlessIpcRegistry } from './ipcRegistry';
 import { type MeshcoreBackgroundHost, startMeshcoreBackground } from './meshcoreBackgroundHost';
@@ -135,6 +146,8 @@ let attachedTabs = 0;
 let tileCache: TileCache | null = null;
 /** Stops the translation worker on shutdown (set when handlers register). */
 let disposeTranslation: (() => void) | null = null;
+/** Cancels AI summaries and model downloads on shutdown (set when handlers register). */
+let disposeAi: (() => void) | null = null;
 
 function startMeshtasticBackend(): MeshtasticBackendHandle {
   const ingest = startInProcessMeshtasticBackend({
@@ -265,6 +278,22 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
     () => pushTarget() as unknown as ElectronBrowserWindow | null,
     () => tileCache,
   );
+  // AI conversation summaries: endpoints and model downloads run on the server, offline models in
+  // the browser (served at /ai-models/…). Status and summary events go to every tab; each tab
+  // only follows the request ids it sent.
+  disposeAi = registerAiHandlers({
+    getSetting: (key) =>
+      (
+        getDatabase().prepareOnce('SELECT value FROM app_settings WHERE key = ?').get(key) as
+          { value: string } | undefined
+      )?.value,
+    setSetting: (key, value) => {
+      getDatabase()
+        .prepareOnce('INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)')
+        .run(key, value);
+    },
+    getWebContents: () => pushTarget()?.webContents as unknown as ElectronWebContents | undefined,
+  });
   disposeTranslation = registerTranslationHandlers({
     getSetting: (key) =>
       (
@@ -406,6 +435,10 @@ async function main(): Promise<void> {
     trustProxy: config.trustProxy,
     allowedHosts: config.allowedHosts,
     // The desktop `mesh-tiles:` handler: cached tile, else fetched from the basemap and cached.
+    // Offline AI model files: the `mesh-ai:` handler `registerAiHandlers` registers.
+    aiModelHandler: (request) =>
+      headlessProtocolHandler('mesh-ai')?.(request) ??
+      Promise.resolve(new Response(null, { status: 404 })),
     tileHandler: createMeshTilesProtocolHandler({
       cache: tileCache,
       getAppVersion: () => app.getVersion(),
@@ -444,6 +477,7 @@ async function main(): Promise<void> {
     meshtasticBackend?.dispose();
     meshcoreBackground?.dispose();
     disposeTranslation?.();
+    disposeAi?.();
     stopHttpBridgePolling();
     serialBridge?.closeAll();
     mqttManager.disconnect();
