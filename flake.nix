@@ -216,8 +216,8 @@
 
     mkMeshClient = pkgs: reticulumSidecar: let
       lib = pkgs.lib;
-      electron = pkgs.electron_44;
-      # package.json devDependencies.electron, e.g. "^44.1.1"
+      electron = pkgs.electron_45;
+      # package.json devDependencies.electron, e.g. "^44.9.3"
       electronPin = lib.removePrefix "^" packageJson.devDependencies.electron;
       electronPinMajor = lib.head (lib.splitString "." electronPin);
       mkPnpmPackage = (pkgs.callPackage "${pnpm2nix}/derivation.nix" {}).mkPnpmPackage;

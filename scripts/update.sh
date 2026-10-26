@@ -129,6 +129,14 @@ rebuild_reticulum_sidecar() {
   local nomad_core='../.rsstack/rsNomad/crates/nomad-core/Cargo.toml'
   local lxst_telephony='../.rsstack/rsLXST/crates/lxst-telephony/Cargo.toml'
   local lrgp_crate='../.rsstack/lrgp-rs/Cargo.toml'
+  # Float stack SHAs + vendored vault to the latest published releases (no hand pins).
+  if [ -f 'scripts/sync-ratspeak-releases.mjs' ] \
+    && command -v gh > /dev/null 2>&1 \
+    && command -v node > /dev/null 2>&1; then
+    node scripts/sync-ratspeak-releases.mjs
+  else
+    echo 'Ratspeak release sync skipped (missing sync script, gh, or node) — using existing ratspeak-stack-pins.env.'
+  fi
   bash scripts/clone-ratspeak-stack.sh
   local missing_manifest=''
   local manifest
@@ -292,6 +300,7 @@ check_ratspeak_patches() {
     'rsReticulum-discovery-announce-egress.patch|ratspeak/rsReticulum|19|rsReticulum discovery announce egress|https://github.com/ratspeak/rsReticulum/pull/19'
     'rsReticulum-inbound-raw-saturation-log.patch|ratspeak/rsReticulum||rsReticulum inbound-raw saturation log|'
     'rsReticulum-interface-tx-queue-stats.patch|ratspeak/rsReticulum||rsReticulum interface TX queue stats|'
+    'rsReticulum-slow-rf-announce-filter.patch|ratspeak/rsReticulum||rsReticulum slow-RF announce filter (local + RF-learned + on-demand only)|'
     'rsReticulum-ble-rnode-flow-control-ready-timeout.patch|ratspeak/rsReticulum||rsReticulum BLE RNode flow-control READY timeout|'
     'rsReticulum-ble-rnode-host-rssi-cache.patch|ratspeak/rsReticulum||rsReticulum BLE RNode host-RSSI cache for Interface Signal meters|'
     'rsReticulum-response-resource-window-fast.patch|ratspeak/rsReticulum||rsReticulum response Resource WINDOW_MAX_FAST on sub-second RTT|'
@@ -305,6 +314,7 @@ check_ratspeak_patches() {
     'rsLXMF-link-delivery-has-pending-to.patch|ratspeak/rsLXMF||rsLXMF LinkDeliveryManager has_pending_to|'
     'rsLXMF-propagation-client-abort-transfer.patch|ratspeak/rsLXMF||rsLXMF PropagationClient abort_transfer for cancelled Sync|'
     'rsLXMF-propagation-client-lrproof-diagnostics.patch|ratspeak/rsLXMF||rsLXMF PropagationClient LRPROOF establish diagnostics|'
+    'rsLXMF-propagation-client-link-hops.patch|ratspeak/rsLXMF||rsLXMF PropagationClient path-scaled link hops + LinkEstablishTimeout|'
   )
   local patches_dir='reticulum-sidecar/patches'
   local has_ratspeak_warning=0
@@ -602,9 +612,10 @@ process.exit(a === b || a.startsWith(b) || b.startsWith(a) ? 0 : 1);
 RATSPEAK_RELEASE_WATCH_ENTRIES=(
   'ratspeak/rsLXST||rsLXST voice (lxst-telephony)|v0.3.0'
   'ratspeak/lrgp-rs||lrgp-rs games (LRGP)|v0.4.1'
-  'ratspeak/Ratspeak|games-parity|Ratspeak client (review Games tab parity)|v1.0.33'
+  'ratspeak/Ratspeak|games-parity|Ratspeak client (review Games tab parity)|v1.0.34'
   'ratspeak/LXMFace||LXMFace identicons (vendored in renderer)|file:js/lxmface.js@308a729d5bf951880633e5e174b3b7628203106b'
-  'ratspeak/Ratspeak||Ratspeak identity vault (vendored in sidecar)|file:crates/ratspeak-runtime/src/vault.rs@19e2a0d19202d4c7562adba79ac706ec352fdb86'
+  # Identity vault is refreshed from the latest ratspeak/Ratspeak release by
+  # scripts/sync-ratspeak-releases.mjs during `pnpm run update` — no file: watch.
 )
 
 # Non-Ratspeak vendored upstreams (same file:<path>@<sha> reviewed-ref format).
@@ -777,7 +788,7 @@ check_ratspeak_upstream() {
 
   echo ''
   echo 'Checking Ratspeak upstream published releases and new org repos...'
-  echo '  (tags/main/RCs without a GitHub Release are ignored; update reviewed pins through a dependency PR)'
+  echo '  (tags/main/RCs without a GitHub Release are ignored; stack SHAs refresh via sync-ratspeak-releases.mjs)'
 
   for entry in "${RATSPEAK_RELEASE_WATCH_ENTRIES[@]}"; do
     IFS='|' read -r repo stub label reviewed <<< "${entry}"
@@ -923,7 +934,6 @@ WATCH_ENTRIES=(
   '@jsr/meshtastic__transport-http|@meshtastic/transport-http|https://www.npmjs.com/package/@jsr/meshtastic__transport-http|HTTP transport for Meshtastic; upstream may introduce breaking changes'
   '@liamcottle/meshcore.js|@liamcottle/meshcore.js|https://www.npmjs.com/package/@liamcottle/meshcore.js|Custom patch (protocol fixes) + upstream may introduce breaking changes'
   '@michaelhart/meshcore-decoder|@michaelhart/meshcore-decoder|https://www.npmjs.com/package/@michaelhart/meshcore-decoder|MeshCore packet decoding; wire-format changes affect Sniffer/diagnostics'
-  'app-builder-lib|app-builder-lib|https://www.npmjs.com/package/app-builder-lib|Custom patch (macOS CSC_LINK set-key-partition-list keychain password; electron-builder#10101)'
   'usb|usb|https://www.npmjs.com/package/usb|Custom patch (macOS C++17 std compat)'
   'readable-stream|readable-stream|https://www.npmjs.com/package/readable-stream|Custom patch (bundler process/ path compat)'
   'debug|debug|https://www.npmjs.com/package/debug|Custom patch (inlined ms/humanize for bundler compat)'
@@ -958,9 +968,6 @@ fi
 # --- Run updates ---
 echo ''
 echo 'Running pnpm update...'
-echo 'Note: with minimumReleaseAge (pnpm-workspace.yaml), pnpm may WARN that a newer'
-echo 'version was not selected. That is usually the age gate (not a broken override).'
-echo 'Packages published within that window stay held until they mature; re-run later.'
 pnpm update
 
 echo ''

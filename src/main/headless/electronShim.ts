@@ -153,12 +153,32 @@ export function configureHeadlessSafeStorage(keyMaterial: string | null): void {
   safeStorageImpl = createHeadlessSafeStorage(keyMaterial);
 }
 
+/**
+ * Electron's async API (`encryptStringAsync`, …) over the same implementation: headless
+ * encryption is synchronous AES-GCM with the server's key, so these resolve at once. A key never
+ * changes while the server runs, so nothing needs re-encrypting.
+ */
+interface HeadlessAsyncSafeStorage extends HeadlessSafeStorage {
+  isAsyncEncryptionAvailable: () => Promise<boolean>;
+  encryptStringAsync: (plainText: string) => Promise<Buffer>;
+  decryptStringAsync: (encrypted: Buffer) => Promise<{ result: string; shouldReEncrypt: boolean }>;
+}
+
 /** Stable object (modules hold the import) delegating to the configured implementation. */
-export const safeStorage: HeadlessSafeStorage = {
+export const safeStorage: HeadlessAsyncSafeStorage = {
   isEncryptionAvailable: () => safeStorageImpl.isEncryptionAvailable(),
   getSelectedStorageBackend: () => safeStorageImpl.getSelectedStorageBackend(),
   encryptString: (plainText) => safeStorageImpl.encryptString(plainText),
   decryptString: (encrypted) => safeStorageImpl.decryptString(encrypted),
+  isAsyncEncryptionAvailable: () => Promise.resolve(safeStorageImpl.isEncryptionAvailable()),
+  encryptStringAsync: (plainText) =>
+    new Promise((resolve) => {
+      resolve(safeStorageImpl.encryptString(plainText));
+    }),
+  decryptStringAsync: (encrypted) =>
+    new Promise((resolve) => {
+      resolve({ result: safeStorageImpl.decryptString(encrypted), shouldReEncrypt: false });
+    }),
 };
 
 interface HeadlessDialogOptions {

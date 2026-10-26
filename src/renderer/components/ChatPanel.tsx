@@ -158,7 +158,6 @@ import { playMessageNotification } from '../lib/chatNotifications';
 import {
   dismissedDmTabsStorageKey,
   draftsStorageKey,
-  lastReadStorageKey,
   loadActiveChannelInitial,
   loadActiveDmInitial,
   loadDraftsInitial,
@@ -171,6 +170,7 @@ import {
   saveActiveChannel,
   saveActiveDm,
   saveMutedViews,
+  savePersistedLastRead,
   saveStarred,
   type StarredMessage,
 } from '../lib/chatPanelProtocolStorage';
@@ -1514,10 +1514,10 @@ function ChatPanel({
     unreadDividerRef.current = node;
   }, []);
 
-  // Persist lastRead timestamps to localStorage
+  // SQLite-backed watermarks keep an origin-local recovery copy.
   useEffect(() => {
     try {
-      localStorage.setItem(lastReadStorageKey(protocol), JSON.stringify(persistedLastRead));
+      savePersistedLastRead(protocol, persistedLastRead);
       notifyPersistedLastReadChanged(protocol);
     } catch (e) {
       console.warn('[ChatPanel] persist lastRead failed ' + errLikeToLogString(e));

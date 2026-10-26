@@ -28,6 +28,8 @@ export default tseslint.config(
       '*.config.{ts,js,mjs,cjs}',
       'dist-electron/**',
       'dist-headless/**',
+      'release/**',
+      'site/**',
       'coverage/**',
       'playwright-report/**',
       'test-results/**',
@@ -145,7 +147,7 @@ export default tseslint.config(
   },
   // Node scripts: no TS program — disable type-checked rules; keep security + Node globals
   {
-    files: ['scripts/**/*.{js,cjs}'],
+    files: ['scripts/**/*.{js,cjs}', 'e2e/fixtures/**/*.cjs'],
     languageOptions: {
       ...tseslint.configs.disableTypeChecked.languageOptions,
       ecmaVersion: 'latest',

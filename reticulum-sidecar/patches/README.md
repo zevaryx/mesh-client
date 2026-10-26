@@ -548,6 +548,29 @@ Listed in `scripts/lib/ratspeak-overlay-apply-list.sh` and `RATSPEAK_PATCH_ENTRI
 
 After ratspeak/rsReticulum exposes equivalent live TX queue depth on interface stats, advance `RS_RETICULUM_PIN` through review to a full SHA containing it and pass the full-feature checks before removing this patch or its apply step.
 
+## rsReticulum-slow-rf-announce-filter.patch
+
+Non-standard mesh-client announce policy (default **on**; stack setting `slow_rf_announce_filter`, toggled live via `TransportQuery::SetSlowRfAnnounceFilter`). Unsolicited announces learned on fast interfaces are not queued for rebroadcast onto slow RF interfaces (bitrate ≤ 10 kbps, e.g. LoRa RNode), whose `ANNOUNCE_CAP` spacing can never drain an internet-scale backlog. Local destinations and destinations learned over RF/internal edges are still queued; internet destinations remain reachable from RF peers on demand via attached cached path responses (`admit_cached_response`), which bypass the announce queue. Enabling the filter also prunes already-queued inadmissible entries.
+
+| Field | Value |
+| ----- | ----- |
+| **Base commit** | reviewed `RS_RETICULUM_PIN` at regeneration time |
+| **Upstream PR** | none yet (mesh-client-local) |
+
+**Touches:** `crates/rns-transport/src/messages.rs`, `crates/rns-transport/src/actor/mod.rs`, `crates/rns-transport/src/actor/rpc.rs`
+
+### Apply locally
+
+```bash
+./scripts/apply-rsReticulum-slow-rf-announce-filter.sh
+```
+
+Listed in `scripts/lib/ratspeak-overlay-apply-list.sh` and `RATSPEAK_PATCH_ENTRIES` in `scripts/update.sh`.
+
+### Sunset
+
+After ratspeak/rsReticulum adopts an equivalent slow-interface announce admission policy upstream, advance `RS_RETICULUM_PIN` through review to a full SHA containing it and pass the full-feature checks before removing this patch or its apply step.
+
 ## Removed: rsReticulum-pathless-link-exclude-rf.patch
 
 Sunset when [ratspeak/rsReticulum#22](https://github.com/ratspeak/rsReticulum/issues/22) landed `921eac4` (*transport: bind established Links to exact interfaces*). Established Link TX uses `SendLinkEndpoint` on the establishment interface; generic unattached Link packets are dropped (`dropping unattached locally-originated Link packet`) instead of broadcasting onto every OUT iface. Tracked entry removed from `RATSPEAK_PATCH_ENTRIES` in `scripts/update.sh` after sunset confirmation.
@@ -601,6 +624,29 @@ Listed in `scripts/lib/ratspeak-overlay-apply-list.sh` and `RATSPEAK_PATCH_ENTRI
 ### Sunset
 
 After upstream rsLXMF exposes equivalent PropagationClient LRPROOF diagnostics, advance `RS_LXMF_PIN` through review to a full SHA containing it and pass the full-feature checks before removing this patch or its apply step.
+
+## rsLXMF-propagation-client-link-hops.patch
+
+Path-scales `Link::new_initiator` hops on `PropagationClient::start_download_with_limit` (was hard-coded `hops=1` → 6s establish) and stamps `LinkEstablishTimeout` when the Link closes with `CloseReason::Timeout` during `LinkEstablishing` without a prior LRPROOF sticky error. Sidecar passes Nomad-style TCP hop floors (`propagation_link_initiator_hops`) so multi-hop TCP/RMAP Sync is not false-`NoLinkProof`.
+
+| Field | Value |
+| ----- | ----- |
+| **Base commit** | reviewed `RS_LXMF_PIN` @ `74dc13f` (v1.3.0) after `rsLXMF-propagation-client-lrproof-diagnostics` |
+| **Upstream PR** | none yet (mesh-client-local; watch ratspeak/rsLXMF) |
+
+**Touches:** rsLXMF `PropagationClient` (`start_download_with_limit` hops arg; `tick` Closed(Timeout) → `LinkEstablishTimeout`)
+
+### Apply locally
+
+```bash
+./scripts/apply-rsLXMF-propagation-client-link-hops.sh
+```
+
+Must run after `apply-rsLXMF-propagation-client-lrproof-diagnostics.sh`. Listed in `scripts/lib/ratspeak-overlay-apply-list.sh` and `RATSPEAK_PATCH_ENTRIES` in `scripts/update.sh`.
+
+### Sunset
+
+After upstream rsLXMF accepts path-scaled initiator hops and a distinct establish-timeout sticky error, advance `RS_LXMF_PIN` through review to a full SHA containing it and pass the full-feature checks before removing this patch or its apply step.
 
 ## Removed: rsLXMF-propagation-client-request-resource.patch
 

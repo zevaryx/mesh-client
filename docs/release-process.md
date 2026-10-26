@@ -118,7 +118,7 @@ Configure secrets under the named **Settings → Environments** boundary, not at
 | ------------------------ | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
 | **`release`**            | `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | Protected `v*` tag; no reviewer (the approved cut is the gate)       |
 | **`release-cut`**        | `RELEASE_CUT_TOKEN`                                                                        | `main`; required maintainer approval for release cuts                |
-| **`license-automation`** | Optional `LICENSE_PR_TOKEN`                                                                | `main`; license-document maintenance only, with no release authority |
+| **`license-automation`** | Required `LICENSE_PR_TOKEN` (repo-admin PAT; Contents + PRs write; unattended admin-merge) | `main`; license-document maintenance only, with no release authority |
 | **`release-repair`**     | No custom secret; the workflow uses its job-scoped `GITHUB_TOKEN`                          | `main`; required maintainer approval                                 |
 
 `release.yaml` alone receives the Apple/CSC credentials, and only its **`macos-latest`** matrix leg uses them. `build.yaml` never receives signing secrets and explicitly disables certificate discovery, so arbitrary-ref manual packages remain unsigned. A one-time migration moved these credentials into the protected environments and deleted the legacy repository-wide secrets. No release credential should remain repository-scoped.
@@ -128,6 +128,45 @@ Configure secrets under the named **Settings → Environments** boundary, not at
 Before every official Electron macOS release build, [`release.yaml`](../.github/workflows/release.yaml) runs **Validate macOS signing secrets**. If any of `CSC_LINK`, `CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, or `APPLE_TEAM_ID` is missing, the job **fails early** with a clear list.
 
 Fork workflows and local `pnpm run dist:mac` without these env vars produce **unsigned** `.dmg` / `.zip` bundles (still validated by `verify-mac-packaging.mjs`). See [CI/CD — macOS packaging verify](ci-cd.md#macos-packaging-verify-verify-mac-packagingmjs).
+
+---
+
+## Windows signing readiness
+
+Windows NSIS installers are currently **unsigned**. The Windows release job does not pass
+signing credentials, and `electron-builder.yml` has no Windows signing provider configured.
+Microsoft account approval is a prerequisite for the intended signing service; it does not
+configure this repository or prove an installer is signed.
+
+Windows signing is an owner-managed follow-up and **does not block the next release**, per the
+maintainer's release decision. Existing unsigned Windows packaging and installation checks remain
+the release behavior while Microsoft/provider setup is pending.
+
+When the owner enables Windows signing, use this checklist to verify that work:
+
+- [ ] Confirm the approved Microsoft signing service, account, certificate/profile, and expected
+      publisher identity. Record its required configuration without guessing service-specific values.
+- [ ] Configure that provider in the protected **`release`** environment and the Windows-only
+      official release job. Keep arbitrary-ref `build.yaml`, pull requests, and local unsigned
+      builds free of release credentials.
+- [ ] Once signing is enabled for official Windows releases, fail that job early when its required
+      signing configuration is missing so a provider failure cannot silently ship unsigned files.
+- [ ] Sign the application, bundled executable components (including the Reticulum sidecar), and
+      both x64 and arm64 NSIS installers. Check the final packaged payload, not just an intermediate
+      build directory.
+- [ ] Before upload, verify Authenticode signatures, expected publisher, and timestamp on both
+      installers and their installed executable payloads. Run the existing x64 and arm64 NSIS
+      installation smoke tests against those same artifacts.
+- [ ] Validate an update from the currently published unsigned release to the signed build, then
+      an update between signed builds. Preserve the exact installer names and `latest.yml` hashes;
+      do not sign or otherwise modify an installer after updater metadata is generated.
+
+The current `verify-win-packaging.mjs` checks executable presence/size, bundled sidecar presence,
+per-architecture installers, and updater metadata. `test-win-nsis-install.mjs` checks installed
+payloads on x64 and arm64. Neither currently verifies Authenticode signatures, publisher identity,
+or trusted timestamps. A green packaging job therefore proves packaging readiness only; it does
+not establish that Windows artifacts are signed. The signing follow-up remains separate from
+approval of the next unsigned Windows release.
 
 ---
 

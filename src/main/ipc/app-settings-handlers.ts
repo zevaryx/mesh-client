@@ -13,12 +13,20 @@ import {
   MESHCORE_ROOM_SYNC_SETTING_PREFIX,
   MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX,
 } from '../../shared/appSettingsKeyPrefixes';
+import {
+  DURABLE_RENDERER_SETTING_MAX_LENGTH,
+  DURABLE_RENDERER_STORAGE_MIGRATIONS,
+  isRendererStorageDeletionSetting,
+} from '../../shared/rendererOrigin';
+import { RENDERER_STORAGE_DELETION_STATE_MAX_LENGTH } from '../../shared/rendererStorageIntent';
 import type { NodeSqliteDB } from '../db-compat';
+import { writeRendererStorageDeletionState } from '../rendererStorageIntentMigration';
 import { errorMessageText, sanitizeLogMessage } from '../sanitize-log-message';
 import { validateIpcSender } from '../validate-ipc-sender';
 
 // Allow-list keys to prevent arbitrary writes from a compromised renderer.
 const APP_SETTINGS_ALLOWED_KEYS: ReadonlySet<string> = new Set([
+  ...DURABLE_RENDERER_STORAGE_MIGRATIONS.map(([, databaseKey]) => databaseKey),
   'meshtasticMessageRetentionEnabled',
   'meshtasticMessageRetentionCount',
   'meshcoreMessageRetentionEnabled',
@@ -44,6 +52,7 @@ const APP_SETTINGS_ALLOWED_KEYS: ReadonlySet<string> = new Set([
   'reticulumAutostart',
   'reticulumAutoResendOnAnnounce',
   'autoUpdateDownloadEnabled',
+  'closeToTray',
   'reticulumLastSelfLxmfHash',
   'reticulumRmapAnnounceIntervalMin',
   'reticulumRmapReachableOn',
@@ -60,6 +69,7 @@ const APP_SETTINGS_MAX_VALUE_LENGTH = 256;
 export function isAppSettingsKeyAllowed(key: string): boolean {
   return (
     APP_SETTINGS_ALLOWED_KEYS.has(key) ||
+    isRendererStorageDeletionSetting(key) ||
     key.startsWith(MESHTASTIC_REMOTE_ADMIN_KEY_SETTING_PREFIX) ||
     key.startsWith(MESHCORE_ROOM_SYNC_SETTING_PREFIX) ||
     key.startsWith(MESHCORE_ROOM_LAST_POST_SETTING_PREFIX) ||
@@ -76,6 +86,10 @@ export function isLegacyPlaintextCredentialKey(key: string): boolean {
 }
 
 export function appSettingsMaxValueLengthForKey(key: string): number {
+  if (isRendererStorageDeletionSetting(key)) return RENDERER_STORAGE_DELETION_STATE_MAX_LENGTH;
+  if (DURABLE_RENDERER_STORAGE_MIGRATIONS.some(([, databaseKey]) => databaseKey === key)) {
+    return DURABLE_RENDERER_SETTING_MAX_LENGTH;
+  }
   if (key === 'notificationSounds') return 4096;
   if (key === 'meshtasticOwnNodeNumsByPublicKey') return 4096;
   if (
@@ -135,10 +149,12 @@ export function registerAppSettingsIpcHandlers(deps: AppSettingsIpcDeps): void {
       throw new Error(`appSettings:set: value must be a string under ${maxValueLength} chars`);
     }
     try {
-      const result = deps
-        .getDatabase()
-        .prepareOnce('INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)')
-        .run(key, value);
+      const db = deps.getDatabase();
+      const result = isRendererStorageDeletionSetting(key)
+        ? writeRendererStorageDeletionState(db, key, value)
+        : db
+            .prepareOnce('INSERT OR REPLACE INTO app_settings(key, value) VALUES (?, ?)')
+            .run(key, value);
       console.debug(`[IPC] appSettings:set: ${sanitizeLogMessage(key)} (${result.changes} rows)`);
       return { changes: Number(result.changes) };
     } catch (err) {
@@ -151,7 +167,11 @@ export function registerAppSettingsIpcHandlers(deps: AppSettingsIpcDeps): void {
     if (!validateIpcSender(event)) {
       throw new Error('IPC sender validation failed');
     }
-    if (typeof key !== 'string' || !isAppSettingsKeyAllowed(key)) {
+    if (
+      typeof key !== 'string' ||
+      !isAppSettingsKeyAllowed(key) ||
+      isRendererStorageDeletionSetting(key)
+    ) {
       throw new Error('appSettings:remove: key not allowed');
     }
     const result = deps

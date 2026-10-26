@@ -5,6 +5,8 @@
  * server bundle those land here, and `webServer.ts` dispatches bridge frames into them.
  */
 
+import { RENDERER_INDEX_URL } from '../../shared/rendererOrigin';
+
 /** Minimal stand-in for Electron's `IpcMainInvokeEvent` / `IpcMainEvent`. */
 export interface HeadlessIpcEvent {
   /** Read by `validateIpcSender`; only authenticated bridge sessions get an event. */
@@ -18,10 +20,11 @@ export type HeadlessInvokeHandler = (event: HeadlessIpcEvent, ...args: unknown[]
 export type HeadlessSendListener = (event: HeadlessIpcEvent, ...args: unknown[]) => void;
 
 /**
- * Origin the headless server reports for authenticated bridge sessions. `validateIpcSender`
- * trusts `mesh-client:` in packaged builds, and the shim reports `app.isPackaged === true`.
+ * Origin the headless server reports for authenticated bridge sessions: the app's renderer origin
+ * (`mesh-client://renderer`), the only one `validateIpcSender` trusts in packaged builds (the shim
+ * reports `app.isPackaged === true`). Only sessions that passed the token check get an event.
  */
-export const HEADLESS_SENDER_URL = 'mesh-client://headless-web/';
+export const HEADLESS_SENDER_URL = RENDERER_INDEX_URL;
 
 export class HeadlessIpcRegistry {
   private readonly handlers = new Map<string, HeadlessInvokeHandler>();

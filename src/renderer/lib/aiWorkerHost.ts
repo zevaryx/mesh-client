@@ -4,6 +4,7 @@ import type { AiLocalJob } from '@/shared/ai-types';
 import { AI_MAX_OUTPUT_TOKENS } from '@/shared/ai-types';
 
 import { hasRepetitiveAiOutput, RepetitiveAiOutputError } from './aiSummaryOutput';
+import { getCoiMemorySnapshot } from './coiMemorySampler';
 
 export type AiWorkerPhase = 'loadingModel' | 'readingMessages';
 
@@ -84,6 +85,7 @@ export class AiWorkerHost {
     try {
       if (!this.runtime || this.loadedModelUrl !== job.modelUrl) {
         await this.dispose();
+        const loadStartedAt = performance.now();
         const [{ Wllama }, { default: wasmUrl }] = await raced(
           Promise.all([
             import('@wllama/wllama/esm/index'),
@@ -123,11 +125,21 @@ export class AiWorkerHost {
             n_ubatch: 128,
           }),
         );
+        console.debug(
+          '[Catch up] model loaded',
+          JSON.stringify({
+            elapsedMs: performance.now() - loadStartedAt,
+            threads: bundledWllamaThreadCount(),
+          }),
+        );
         this.loadedModelUrl = job.modelUrl;
         signal.throwIfAborted();
       }
       onPhase?.('readingMessages');
       let text = '';
+      const inferenceStartedAt = performance.now();
+      const memoryBeforeSample = getCoiMemorySnapshot().samples.at(-1);
+      const threads = bundledWllamaThreadCount();
       await raced(
         this.runtime.createChatCompletion({
           ...sampling,
@@ -152,6 +164,23 @@ export class AiWorkerHost {
       );
       signal.throwIfAborted();
       if (hasRepetitiveAiOutput(text)) throw new RepetitiveAiOutputError();
+      const memoryAfterSample = getCoiMemorySnapshot().samples.at(-1);
+      const distinctSamples =
+        memoryBeforeSample != null &&
+        memoryAfterSample != null &&
+        memoryBeforeSample.at !== memoryAfterSample.at;
+      console.debug(
+        '[Catch up] inference completed',
+        JSON.stringify({
+          elapsedMs: performance.now() - inferenceStartedAt,
+          threads,
+          memoryBeforeBytes: memoryBeforeSample?.bytes ?? null,
+          memoryAfterBytes: memoryAfterSample?.bytes ?? null,
+          memoryDeltaBytes: distinctSamples
+            ? memoryAfterSample.bytes - memoryBeforeSample.bytes
+            : null,
+        }),
+      );
       completed = true;
     } finally {
       signal.removeEventListener('abort', abort);

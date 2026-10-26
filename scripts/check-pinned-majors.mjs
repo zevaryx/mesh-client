@@ -22,19 +22,20 @@ const FETCH_TIMEOUT_MS = 10_000;
 export const DRIFT_EXIT_CODE = 10;
 
 /**
- * Caps that are correct as-is: the consuming package's own range forbids the newer
- * major, or the pin is a deliberate platform target. Keep one entry per package with
- * the blocking consumer named, so a reviewer can re-check it against `pnpm why`.
+ * Caps that are correct as-is only when a consuming package's own range forbids the
+ * newer major (hard peer/resolve conflict). Do not list Electron or other packages
+ * we intentionally track at latest. Keep one entry per package with the blocking
+ * consumer named, so a reviewer can re-check it against `pnpm why`.
  */
 export const PINNED_MAJOR_EXCEPTIONS = {
   '@babel/core': 'eslint-plugin-react-hooks requires ^7',
   'cacheable-request': 'got@11 (via @electron/get) requires ^10',
-  electron: 'app platform target — major upgrades are a deliberate, separate change',
+  // electron: track latest stable major in overrides + package.json (no hold).
   'fast-uri': 'ajv@8 (via app-builder-lib) requires ^3',
   'js-yaml':
     'app-builder-lib / electron-updater / builder-util require ^4 (markdownlint-cli2@0.23.2 can use 5; override keeps the tree on 4)',
   'markdown-it':
-    'scoped security floor for markdownlint-cli2 (still on markdown-it@14.x); 15.x is a separate upgrade',
+    'scoped security floors for markdownlint-cli2 (14.x line held <15; its pinned 15.0.1 lifted to patched 15.0.3)',
   undici: 'scoped floor lifting transitive 6.x/7.x consumers; the app depends on ^8 directly',
   'undici-types': '@types/node pins the 7.x line',
 };

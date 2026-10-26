@@ -10,6 +10,7 @@ import {
 import {
   type BridgeSocket,
   buildBridgeSocketUrl,
+  type HeadlessMetaSource,
   readHeadlessHostPlatform,
   requestHeadlessTilesCookie,
   takeHeadlessToken,
@@ -292,7 +293,7 @@ describe('token + URL helpers', () => {
 });
 
 describe('readHeadlessHostPlatform', () => {
-  function docWith(content: string | null): Pick<Document, 'querySelector'> {
+  function docWith(content: string | null): HeadlessMetaSource {
     return {
       querySelector: (selector: string) =>
         content !== null && selector === 'meta[name="mesh-client-host-platform"]'

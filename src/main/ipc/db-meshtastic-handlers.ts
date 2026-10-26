@@ -4,7 +4,7 @@
  * Moved verbatim from `src/main/index.ts`; registered by the Electron main process and the
  * headless server. Writes go through `getDbForIpc` / `finishDbIpcHandler` (db-ipc-lifecycle).
  */
-import { ipcMain } from 'electron';
+import { app, ipcMain } from 'electron';
 
 import { isChannelIdentityKey } from '../../shared/channelIdentityKey';
 import { clampQueryLimit } from '../../shared/clampQueryLimit';
@@ -34,6 +34,10 @@ import {
   meshtasticNodePublicKeyHexOrNull,
   migrateMeshtasticNodeNumInDb,
 } from '../meshtasticNodeRenumber';
+import {
+  insertRendererMemorySample,
+  summarizeRendererMemorySamples,
+} from '../renderer-memory-samples';
 import { errorMessageText } from '../sanitize-log-message';
 import { assertIpcSender, validateIpcSender } from '../validate-ipc-sender';
 import {
@@ -41,6 +45,7 @@ import {
   DB_SAVE_NODE_PATH_MAX_BYTES,
   safeMeshcoreRadioNodeId,
   safeNonNegativeInt,
+  safeNonNegativeSafeInteger,
   type SaveMessageInput,
   validateSaveMessage,
   validateSaveNode,
@@ -344,6 +349,68 @@ export function registerMeshtasticDbIpcHandlers(): void {
       ).run(id, note, Date.now());
     } catch (err) {
       finishDbIpcHandler('db:setNodeNote', err);
+    }
+  });
+
+  ipcMain.handle(
+    'db:recordRendererMemorySample',
+    (
+      event,
+      sample: {
+        capturedAt?: unknown;
+        bytes?: unknown;
+        source?: unknown;
+        sessionId?: unknown;
+      },
+    ) => {
+      if (!validateIpcSender(event)) {
+        throw new Error('db:recordRendererMemorySample: unauthorized sender');
+      }
+      try {
+        const capturedAt = safeNonNegativeSafeInteger(sample?.capturedAt);
+        const bytes = safeNonNegativeSafeInteger(sample?.bytes);
+        const source = sample?.source;
+        if (source !== 'user-agent' && source !== 'renderer-process') {
+          throw new Error('db:recordRendererMemorySample: invalid source');
+        }
+        const sessionId =
+          typeof sample?.sessionId === 'string' && sample.sessionId.length <= 64
+            ? sample.sessionId
+            : null;
+        const db = getDbForIpc('db:recordRendererMemorySample');
+        if (!db) return;
+        insertRendererMemorySample(db, {
+          captured_at: capturedAt,
+          bytes,
+          source,
+          app_version: app.getVersion(),
+          session_id: sessionId,
+        });
+      } catch (err) {
+        finishDbIpcHandler('db:recordRendererMemorySample', err);
+      }
+    },
+  );
+
+  ipcMain.handle('db:getRendererMemorySampleSummary', (event) => {
+    if (!validateIpcSender(event)) {
+      throw new Error('db:getRendererMemorySampleSummary: unauthorized sender');
+    }
+    try {
+      const db = getDbForIpc('db:getRendererMemorySampleSummary');
+      if (!db) {
+        return {
+          count: 0,
+          firstAt: null,
+          lastAt: null,
+          minBytes: null,
+          maxBytes: null,
+          spanMs: null,
+        };
+      }
+      return summarizeRendererMemorySamples(db);
+    } catch (err) {
+      finishDbIpcHandler('db:getRendererMemorySampleSummary', err);
     }
   });
 

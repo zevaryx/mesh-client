@@ -46,6 +46,7 @@ import { registerGattIpcHandlers } from '../ipc/gatt-handlers';
 import { registerGeoIpcHandlers } from '../ipc/geo-handlers';
 import { registerGpsIpcHandlers } from '../ipc/gps-handlers';
 import { registerHttpBridgeIpcHandlers, stopHttpBridgePolling } from '../ipc/http-bridge';
+import { registerIncidentIpcHandlers } from '../ipc/incident-handlers';
 import { combineTaps, createSharedLinkTap, type SharedLinkTap } from '../ipc/linkSharing';
 import { registerLogIpcHandlers } from '../ipc/log-handlers';
 import { sendMeshtasticBackendCaughtUp } from '../ipc/meshtastic-backend-push';
@@ -222,6 +223,7 @@ function registerHeadlessHandlers(window: BrowserWindow): void {
   registerAppSettingsIpcHandlers({ getDatabase });
   registerMeshtasticDbIpcHandlers();
   registerMeshcoreDbIpcHandlers();
+  registerIncidentIpcHandlers();
   registerChatOutboxIpcHandlers();
   registerReticulumDbIpcHandlers({ ipcMain });
   registerRrcDbIpcHandlers({ ipcMain });

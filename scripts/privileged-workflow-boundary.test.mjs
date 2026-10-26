@@ -80,6 +80,17 @@ describe('privileged workflow boundaries', () => {
     }
   });
 
+  it('pins docs Python to a version with wheels for the hash-locked requirements', () => {
+    // pyyaml==6.0.3 (docs/requirements.txt, --only-binary=:all:) has no cp315
+    // wheel; unpinned 3.x intermittently resolves to 3.15 and the pip install
+    // fails with "No matching distribution found for pyyaml==6.0.3".
+    const workflow = yaml.load(read('.github/workflows/docs.yml'));
+    for (const job of [workflow.jobs.build, workflow.jobs.deploy]) {
+      const setupPython = job.steps.find((step) => step.uses?.startsWith('actions/setup-python@'));
+      expect(setupPython.with['python-version']).toBe('3.14');
+    }
+  });
+
   it('keeps license maintenance separate from release authority', () => {
     const licenses = loadWorkflow('third-party-licenses');
     const source = read('.github/workflows/third-party-licenses.yaml');
@@ -91,12 +102,25 @@ describe('privileged workflow boundaries', () => {
       contents: 'write',
       'pull-requests': 'write',
     });
+    const stepNames = licenses.jobs.update.steps.map((step) => step.name);
+    expect(stepNames).toContain(
+      'Clone Ratspeak stack (rsReticulum, rsLXMF, rsNomad, rsLXST, lrgp-rs)',
+    );
+    expect(stepNames).toContain('Refuse Rust-section stub');
+    expect(source).toContain('dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8');
     const createPr = licenses.jobs.update.steps.find((step) => step.name === 'Create pull request');
-    expect(createPr.with.token).toBe('${{ secrets.LICENSE_PR_TOKEN || github.token }}');
+    expect(createPr.with.token).toBe('${{ secrets.LICENSE_PR_TOKEN }}');
     expect(createPr.with['add-paths'].trim()).toBe('docs/third-party-licenses.md');
+    expect(stepNames).toContain('Require LICENSE_PR_TOKEN for unattended merge');
+    expect(stepNames).toContain('Admin-merge license documentation PR');
+    expect(source).toContain('gh pr merge');
+    expect(source).toContain('--admin');
+    expect(source).toContain('--match-head-commit');
+    expect(source).toContain('steps.cpr.outputs.pull-request-head-sha');
     expect(source).not.toMatch(
       /RELEASE_(?:PUSH|CUT)_TOKEN|environment: release|refs\/tags|pnpm run release|gh release/,
     );
+    expect(source).not.toContain('github.token');
   });
 
   it('makes release repair explicit, main-only, and protected', () => {

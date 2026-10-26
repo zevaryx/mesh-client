@@ -1,10 +1,21 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
+import { createDurableRendererSetting } from '@/renderer/lib/durableRendererSetting';
 import { isChannelIdentityKey } from '@/shared/channelIdentityKey';
+import { DURABLE_RENDERER_STORAGE_KEYS } from '@/shared/rendererOrigin';
 import { TAK_GEOCHAT_ROOM_MAX_LEN } from '@/shared/tak-types';
 
 import type { IdentityId } from '../lib/types';
+
+const takRelayPersistence = createDurableRendererSetting(
+  'mesh-client:takRelayPrefs',
+  DURABLE_RENDERER_STORAGE_KEYS.takRelayPrefs,
+  JSON.stringify({ state: { byIdentity: {}, retiredRooms: null }, version: 3 }),
+  // A first edit creates a full default row; replay only the fields the user changed.
+  (path) =>
+    path.length === 3 && path[0] === 'state' && path[1] === 'byIdentity' ? EMPTY_PREFS : undefined,
+);
 
 /** Which of a radio's channels become ATAK contacts. */
 export type TakChannelMode = 'off' | 'all' | 'selected';
@@ -38,6 +49,12 @@ export interface TakRelayIdentityPrefs {
   /** Served channels also streamed, read only, to the remote TAK server, by channel key. */
   remoteChannels: string[];
   /**
+   * Sending channels whose messages from TAK go out exactly as typed, by channel key; the rest
+   * put the sender's callsign in front. A bot channel needs this, since a bot looks for its
+   * command at the start of the message.
+   */
+  noCallsignChannels: string[];
+  /**
    * Names the user chose for channels' ATAK contacts, by channel key. A channel without one
    * gets its automatic name.
    */
@@ -68,6 +85,7 @@ const EMPTY_PREFS: TakRelayIdentityPrefs = {
   chatChannels: [],
   sendChannels: [],
   remoteChannels: [],
+  noCallsignChannels: [],
   atakNames: {},
   directMessages: false,
 };
@@ -184,6 +202,7 @@ function channelPrefs(
     chatChannels: keyList(v.chatChannels),
     sendChannels: keyList(v.sendChannels),
     remoteChannels: keyList(v.remoteChannels),
+    noCallsignChannels: keyList(v.noCallsignChannels),
     atakNames: nameMap(v.atakNames, parseChannelKey),
     ...(hasPending(pendingSlots) ? { pendingSlots } : {}),
   };
@@ -237,7 +256,7 @@ function sanitizeRetired(raw: unknown, nowMs: number): TakRetiredRooms | null {
   return rooms.length > 0 ? { rooms, untilMs: r.untilMs } : null;
 }
 
-type ChannelKeyList = 'chatChannels' | 'sendChannels' | 'remoteChannels';
+type ChannelKeyList = 'chatChannels' | 'sendChannels' | 'remoteChannels' | 'noCallsignChannels';
 
 interface TakRelayPrefsState {
   byIdentity: Record<IdentityId, TakRelayIdentityPrefs>;
@@ -251,6 +270,8 @@ interface TakRelayPrefsState {
   setChatSend: (identityId: IdentityId, key: string, enabled: boolean) => void;
   /** Stream a served channel to the remote TAK server. */
   setChatRemote: (identityId: IdentityId, key: string, enabled: boolean) => void;
+  /** Put the sender's callsign in front of what TAK clients send to a channel; on by default. */
+  setChatCallsign: (identityId: IdentityId, key: string, enabled: boolean) => void;
   /**
    * Name a channel's ATAK contact. A blank name goes back to the automatic one; one main would
    * refuse (too long, or with a line break) is ignored.
@@ -313,6 +334,9 @@ export const useTakRelayPrefsStore = create<TakRelayPrefsState>()(
         setChatRemote: (identityId, key, enabled) => {
           toggle('remoteChannels', identityId, key, enabled);
         },
+        setChatCallsign: (identityId, key, enabled) => {
+          toggle('noCallsignChannels', identityId, key, !enabled);
+        },
         setAtakName: (identityId, key, name) => {
           if (!isChannelIdentityKey(key)) return;
           const clean = cleanAtakName(name);
@@ -335,6 +359,8 @@ export const useTakRelayPrefsStore = create<TakRelayPrefsState>()(
     },
     {
       name: 'mesh-client:takRelayPrefs',
+      storage: createJSONStorage(() => takRelayPersistence.storage),
+      skipHydration: true,
       version: 3,
       partialize: (s) => ({ byIdentity: s.byIdentity, retiredRooms: s.retiredRooms }),
       // sanitizeStore reads every earlier shape, so the stored state passes through to merge.
@@ -354,6 +380,18 @@ export const useTakRelayPrefsStore = create<TakRelayPrefsState>()(
     },
   ),
 );
+
+takRelayPersistence.hydrateLocal(() => {
+  void useTakRelayPrefsStore.persist.rehydrate();
+});
+
+export async function hydrateTakRelayPrefs(settings: Record<string, string>): Promise<void> {
+  await takRelayPersistence.hydrate(settings, () => {
+    void useTakRelayPrefsStore.persist.rehydrate();
+    const { byIdentity, retiredRooms } = useTakRelayPrefsStore.getState();
+    takRelayPersistence.write(JSON.stringify({ state: { byIdentity, retiredRooms }, version: 3 }));
+  });
+}
 
 export function getTakRelayPrefs(identityId: IdentityId): TakRelayIdentityPrefs {
   return useTakRelayPrefsStore.getState().byIdentity[identityId] ?? EMPTY_PREFS;

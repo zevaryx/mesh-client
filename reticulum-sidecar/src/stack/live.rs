@@ -96,8 +96,8 @@ use super::rrc_session::RrcSessionManager;
 use super::types::NomadServingStatus;
 use super::types::{ContactRow, InterfaceRow, LxmfReactionRequest, LxmfSendRequest, PeerRow};
 use super::via::{
-    classify_path_interface_name, merge_live_interfaces_with_config, merge_observed_egress_vias,
-    resolve_lxmf_sent_via,
+    classify_interface, classify_path_interface_name, merge_live_interfaces_with_config,
+    merge_observed_egress_vias, resolve_lxmf_sent_via,
 };
 use super::voice_session::VoiceSessionManager;
 use crate::api::path_capability::ConsumedPathCapability;
@@ -131,6 +131,31 @@ pub(crate) fn live_interface_tx_queue_fields(
         (None, None)
     } else {
         (Some(tx_queue_used), Some(tx_queue_max))
+    }
+}
+
+/// Announce-rebroadcast backlog at which a slow RF interface's queued
+/// announces are considered stale. At ANNOUNCE_CAP spacing (2%), an SF8
+/// RNode drains ~3 announces/min, so 1,000 queued entries already represent
+/// hours of airtime while new destinations keep arriving far faster.
+pub(crate) const ANNOUNCE_QUEUE_WATCHDOG_MAX: u64 = 1_000;
+/// Bitrate ceiling (bps) for "slow RF" interfaces covered by the watchdog.
+pub(crate) const ANNOUNCE_QUEUE_WATCHDOG_MAX_BITRATE_BPS: u64 = 10_000;
+/// Minimum spacing between watchdog drops so a refilling queue is not churned.
+pub(crate) const ANNOUNCE_QUEUE_WATCHDOG_COOLDOWN: Duration = Duration::from_secs(600);
+
+pub(crate) fn announce_queue_watchdog_needed(announce_queue: u64, bitrate_bps: u64) -> bool {
+    announce_queue >= ANNOUNCE_QUEUE_WATCHDOG_MAX
+        && bitrate_bps <= ANNOUNCE_QUEUE_WATCHDOG_MAX_BITRATE_BPS
+}
+
+/// Per-interface watchdog cooldown: an interface is due when it has never
+/// been pruned or its own last prune was at least the cooldown ago. Keying
+/// this by interface lets each qualifying queue be pruned independently.
+pub(crate) fn announce_queue_watchdog_due(last_pruned_at: Option<Instant>, now: Instant) -> bool {
+    match last_pruned_at {
+        None => true,
+        Some(t) => now.duration_since(t) >= ANNOUNCE_QUEUE_WATCHDOG_COOLDOWN,
     }
 }
 
@@ -3112,8 +3137,40 @@ impl LiveBridge {
             let mut prev_peer_by_hash: HashMap<String, PeerRow> = HashMap::new();
             let mut last_host_periodic_get_at: Option<Instant> = None;
             let mut host_periodic_get_rr: usize = 0;
+            let mut last_announce_queue_watchdog_by_interface: HashMap<u64, Instant> =
+                HashMap::new();
+            let mut slow_rf_filter_applied: Option<bool> = None;
             loop {
                 interval.tick().await;
+                // Apply the slow-RF announce filter stack setting (default on)
+                // to the transport actor whenever it changes; no restart needed.
+                {
+                    let want = config::get_stack_settings(&config_dir)
+                        .map(|s| s.slow_rf_announce_filter)
+                        .unwrap_or(true);
+                    if slow_rf_filter_applied != Some(want) {
+                        match handle
+                            .query_control(TransportQuery::SetSlowRfAnnounceFilter {
+                                enabled: want,
+                            })
+                            .await
+                        {
+                            Some(TransportQueryResponse::Ok) => {
+                                slow_rf_filter_applied = Some(want);
+                                tracing::info!(
+                                    enabled = want,
+                                    "slow-RF announce filter applied (unsolicited internet announces onto <=10 kbps interfaces)"
+                                );
+                            }
+                            other => {
+                                tracing::debug!(
+                                    ?other,
+                                    "slow-RF announce filter: SetSlowRfAnnounceFilter not confirmed"
+                                );
+                            }
+                        }
+                    }
+                }
                 // Keep Auto / private-LAN policy inputs fresh (host from config, online from stats).
                 {
                     let config_rows =
@@ -3125,6 +3182,61 @@ impl LiveBridge {
                         )
                         .await
                     {
+                        // Slow-RF announce-rebroadcast backlog watchdog: queued
+                        // announces are deduped per destination but arrive from
+                        // fast boundary hubs far faster than ANNOUNCE_CAP spacing
+                        // can drain them over LoRa, so the backlog otherwise
+                        // grows for hours with stale destinations. Dropping the
+                        // queue lets fresh announces (which peers re-send
+                        // periodically) take the limited airtime instead.
+                        {
+                            // Cooldown is per interface: only interfaces whose
+                            // own last prune is older than the cooldown (or
+                            // that were never pruned) are candidates, so one
+                            // interface's prune does not delay another's.
+                            let now = Instant::now();
+                            let worst = stats
+                                .iter()
+                                .filter(|s| {
+                                    announce_queue_watchdog_needed(
+                                        s.announce_queue.unwrap_or(0),
+                                        s.bitrate,
+                                    ) && announce_queue_watchdog_due(
+                                        last_announce_queue_watchdog_by_interface
+                                            .get(&s.id)
+                                            .copied(),
+                                        now,
+                                    )
+                                })
+                                .max_by_key(|s| s.announce_queue.unwrap_or(0));
+                            // No let-chains: declared Rust minimum is 1.85.
+                            if let Some(worst) = worst {
+                                let queued = worst.announce_queue.unwrap_or(0);
+                                match handle
+                                    .query_control(TransportQuery::DropAnnounceQueue {
+                                        interface_id: worst.id,
+                                    })
+                                    .await
+                                {
+                                    Some(TransportQueryResponse::Ok) => {
+                                        last_announce_queue_watchdog_by_interface
+                                            .insert(worst.id, Instant::now());
+                                        tracing::warn!(
+                                            interface = %worst.name,
+                                            announce_queue = queued,
+                                            bitrate = worst.bitrate,
+                                            "announce queue watchdog: dropping stale announce rebroadcast backlog for slow RF interface"
+                                        );
+                                    }
+                                    other => {
+                                        tracing::debug!(
+                                            ?other,
+                                            "announce queue watchdog: DropAnnounceQueue not confirmed"
+                                        );
+                                    }
+                                }
+                            }
+                        }
                         let live_rows: Vec<InterfaceRow> = stats
                             .iter()
                             .enumerate()
@@ -3466,6 +3578,11 @@ impl LiveBridge {
                 if let Some((peer_hash, retrieve_mode)) = start_silent_get {
                     let pn_hex = hex::encode(peer_hash);
                     let outbound_for_clear = Arc::clone(&outbound);
+                    // Path-table hops from the maintenance tick — avoid hops=1 default on RF.
+                    let initial_path_hops = outbound
+                        .lock()
+                        .ok()
+                        .and_then(|d| d.path_route_for(&peer_hash).map(|(hops, _)| hops));
                     // Only clear the sync latch when we still own this peer — a newer
                     // user Sync may have claimed the target after cancel_client_download.
                     let on_terminal: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
@@ -3493,6 +3610,7 @@ impl LiveBridge {
                         Some(on_terminal),
                         false,
                         retrieve_mode,
+                        initial_path_hops,
                     );
                     if started {
                         tracing::info!(
@@ -4588,21 +4706,24 @@ impl LiveBridge {
         // Hard path gate after announce settle so RequestPath can benefit from the announce.
         // Do this before peering PoW — nonzero peering_cost stamps are expensive and useless
         // when there is no path (would previously burn CPU then stall into syncTimedOut).
-        let hops = self.hops_to_destination(&dest_hex).await;
         if let Err(err) = self
             .ensure_propagation_path_or_unknown(&dest_hex, false)
             .await
         {
             // Path gate awaits; only clear if we still own this attempt's latch.
+            let hops_at_abort = self.hops_to_destination(&dest_hex).await;
             release_claim();
             tracing::info!(
                 target: "propagation-sync",
                 dest = %dest_hex,
-                hops = ?hops,
+                hops = ?hops_at_abort,
                 "propagation sync aborted — no path to PN"
             );
             return Err(err);
         }
+        // Re-read after ensure: RequestPath may have installed a multi-hop route that
+        // was absent (None) before the gate — pass that into the download driver.
+        let hops = self.hops_to_destination(&dest_hex).await;
         // Pin PN pubkey for the duration of the client `/get` link so announce-flood
         // eviction cannot drop it before LRPROOF validation (see known_identities cap).
         let pin_known = || {
@@ -4685,6 +4806,7 @@ impl LiveBridge {
             self.event_tx.clone(),
             Some(on_terminal),
             true,
+            hops,
         ) {
             // Download did not start — drop our claim only if this run still owns it.
             // Never wipe another owner's latch (overlapping silent `/get` / Sync).
@@ -4719,6 +4841,7 @@ impl LiveBridge {
         event_tx: broadcast::Sender<String>,
         on_terminal: Option<Arc<dyn Fn() + Send + Sync>>,
         emit_ui: bool,
+        initial_path_hops: Option<u8>,
     ) -> bool {
         spawn_client_download_driver_task(
             live,
@@ -4734,6 +4857,7 @@ impl LiveBridge {
             on_terminal,
             emit_ui,
             if emit_ui { "get" } else { "get_post_peer" },
+            initial_path_hops,
         )
     }
 
@@ -6987,6 +7111,14 @@ fn peer_route_fields_equal(a: &PeerRow, b: &PeerRow) -> bool {
         && a.public_key == b.public_key
 }
 
+/// Resolve Link initiator hops for PN Sync client `/get` (Nomad TCP hop scaling).
+fn resolve_propagation_link_hops(iface: Option<&str>, path_hops: u8) -> (u8, &'static str, u64) {
+    let egress = iface.map(classify_interface).unwrap_or("network");
+    let link_hops = nomad_timeouts::propagation_link_initiator_hops(egress, path_hops.max(1));
+    let proof_budget_secs = nomad_timeouts::propagation_link_proof_budget_secs(link_hops);
+    (link_hops, egress, proof_budget_secs)
+}
+
 /// After establish failure, suppress dead iface/via and retry client `/get` on another hub.
 #[allow(clippy::too_many_arguments)] // mirrors Nomad path failover state threaded through driver loop
 async fn propagation_download_attempt_failover(
@@ -7001,6 +7133,8 @@ async fn propagation_download_attempt_failover(
     live_ifaces: &[String],
     current_iface: &mut Option<String>,
     current_via: &mut Option<String>,
+    path_hops: &mut u8,
+    active_link_hops: &mut u8,
 ) -> bool {
     if live.is_none() || !should_attempt_propagation_via_failover(*failover_round) {
         return false;
@@ -7023,18 +7157,26 @@ async fn propagation_download_attempt_failover(
     {
         *current_iface = found.iface.clone();
         *current_via = found.via.clone();
+        *path_hops = found.hops.max(1);
     }
+    let (link_hops, egress, proof_budget_secs) =
+        resolve_propagation_link_hops(current_iface.as_deref(), *path_hops);
+    *active_link_hops = link_hops;
     tracing::info!(
         target: "propagation-sync",
         pn_hash = %pn_hex,
         failover_round = *failover_round,
         iface = ?current_iface,
         via_prefix = via_prefix(current_via.as_deref()),
+        path_hops = *path_hops,
+        link_hops,
+        egress,
+        proof_budget_secs,
         establish_error = ?bridge.last_establish_error(),
         tried_interfaces = ?tried_interfaces,
         "propagation client /get establish failover"
     );
-    bridge.start_client_download(pn_hash)
+    bridge.start_client_download(pn_hash, link_hops)
 }
 
 /// Shared client `/get` driver used by user Sync (`emit_ui: true`) and post-peer
@@ -7054,8 +7196,33 @@ fn spawn_client_download_driver_task(
     on_terminal: Option<Arc<dyn Fn() + Send + Sync>>,
     emit_ui: bool,
     retrieve_mode: &'static str,
+    initial_path_hops: Option<u8>,
 ) -> bool {
-    if !bridge.start_client_download(pn_hash) {
+    // Resolve egress iface + hops from the path-table cache before Link start so
+    // RF/BLE routes use path-scaled initiator hops (not the network TCP floor default).
+    let cached_route = outbound
+        .lock()
+        .ok()
+        .and_then(|d| d.path_route_for(&pn_hash));
+    let route_iface = cached_route.as_ref().and_then(|(_, iface)| iface.clone());
+    let mut path_hops = initial_path_hops
+        .or_else(|| cached_route.map(|(hops, _)| hops))
+        .unwrap_or(1)
+        .max(1);
+    let (link_hops, egress, proof_budget_secs) =
+        resolve_propagation_link_hops(route_iface.as_deref(), path_hops);
+    tracing::info!(
+        target: "propagation-retrieve",
+        pn_hash = %pn_hex,
+        path_hops,
+        link_hops,
+        egress,
+        path_iface = ?route_iface,
+        proof_budget_secs,
+        retrieve_mode,
+        "starting client /get download"
+    );
+    if !bridge.start_client_download(pn_hash, link_hops) {
         tracing::debug!(
             target: "propagation-retrieve",
             pn_hash = %pn_hex,
@@ -7065,8 +7232,18 @@ fn spawn_client_download_driver_task(
     }
     tokio::spawn(async move {
         const POLL_INTERVAL: Duration = Duration::from_millis(500);
-        const DOWNLOAD_WATCHDOG: Duration = Duration::from_secs(180);
-        const ESTABLISH_STALL: Duration = Duration::from_secs(45);
+        // Extra wait after Link proof budget before treating Establishing as stalled.
+        const ESTABLISH_STALL_GRACE: Duration = Duration::from_secs(5);
+        // Cover RF max initiator hops (32×6s) across 1+MAX_VIA_FAILOVERS attempts plus
+        // rediscovery probe waits so the overall watchdog does not cut off failover.
+        let download_watchdog = Duration::from_secs(
+            nomad_timeouts::propagation_link_proof_budget_secs(32)
+                * u64::from(1 + path_failover::MAX_VIA_FAILOVERS)
+                + path_failover::VIA_FAILOVER_PROBE_WAIT.as_secs()
+                    * u64::from(path_failover::MAX_VIA_FAILOVERS)
+                + path_failover::VIA_FAILOVER_EXTRA_PROBE_WAIT.as_secs()
+                    * u64::from(path_failover::MAX_VIA_FAILOVERS),
+        );
         let mut interval = tokio::time::interval(POLL_INTERVAL);
         let attempt_started = Instant::now();
         let mut failover_round: u8 = 0;
@@ -7074,8 +7251,9 @@ fn spawn_client_download_driver_task(
         let mut blocked_ifaces: Vec<String> = Vec::new();
         let mut blocked_vias: Vec<String> = Vec::new();
         let mut live_ifaces: Vec<String> = Vec::new();
-        let mut current_iface: Option<String> = None;
+        let mut current_iface: Option<String> = route_iface;
         let mut current_via: Option<String> = None;
+        let mut active_link_hops = link_hops;
         if let Some(ref live_ref) = live {
             if let Ok(ifaces) = live_ref.fetch_interfaces().await {
                 live_ifaces = super::auto_path_policy::order_live_ifaces_private_first(
@@ -7085,15 +7263,23 @@ fn spawn_client_download_driver_task(
             }
             if let Ok((slots, _)) = live_ref.path_slots(&pn_hex).await {
                 current_via = active_via_hash_from_slots(&slots);
-                current_iface = slots
-                    .iter()
-                    .find(|s| {
-                        s.get("active")
-                            .and_then(serde_json::Value::as_bool)
-                            .unwrap_or(false)
-                    })
-                    .and_then(|s| s.get("interface").and_then(|v| v.as_str()))
-                    .map(str::to_string);
+                if let Some(active) = slots.iter().find(|s| {
+                    s.get("active")
+                        .and_then(serde_json::Value::as_bool)
+                        .unwrap_or(false)
+                }) {
+                    current_iface = active
+                        .get("interface")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    if let Some(h) = active.get("hops").and_then(serde_json::Value::as_u64) {
+                        path_hops = (h as u8).max(1);
+                    }
+                    // Stall budget only — Link already started with pre-slot hops.
+                    let (refined, _, _) =
+                        resolve_propagation_link_hops(current_iface.as_deref(), path_hops);
+                    active_link_hops = refined;
+                }
             }
             record_path_failover_attempt(
                 &mut tried_interfaces,
@@ -7173,6 +7359,9 @@ fn spawn_client_download_driver_task(
             };
         'attempt: loop {
             let round_started = Instant::now();
+            let establish_stall = Duration::from_secs(
+                nomad_timeouts::propagation_link_proof_budget_secs(active_link_hops),
+            ) + ESTABLISH_STALL_GRACE;
             let mut last_logged_progress = -1.0_f64;
             run_guarded(&|| {
                 emit_progress(true, 10.0, None);
@@ -7191,12 +7380,14 @@ fn spawn_client_download_driver_task(
                 let progress = bridge.client_download_progress();
                 if progress <= 10.0
                     && bridge.client_download_active()
-                    && round_started.elapsed() > ESTABLISH_STALL
+                    && round_started.elapsed() > establish_stall
                 {
                     tracing::info!(
                         target: "propagation-retrieve",
                         pn_hash = %pn_hex,
                         failover_round,
+                        active_link_hops,
+                        establish_stall_secs = establish_stall.as_secs(),
                         establish_error = ?bridge.last_establish_error(),
                         "client /get stalled while establishing"
                     );
@@ -7212,11 +7403,20 @@ fn spawn_client_download_driver_task(
                         &live_ifaces,
                         &mut current_iface,
                         &mut current_via,
+                        &mut path_hops,
+                        &mut active_link_hops,
                     )
                     .await
                     {
                         continue 'attempt;
                     }
+                    record_path_failover_attempt(
+                        &mut tried_interfaces,
+                        &mut blocked_ifaces,
+                        &mut blocked_vias,
+                        current_iface.as_deref(),
+                        current_via.as_deref(),
+                    );
                     let message =
                         terminal_establish_failure(&bridge, failover_round, &tried_interfaces);
                     run_guarded(&|| {
@@ -7224,10 +7424,11 @@ fn spawn_client_download_driver_task(
                     });
                     break 'attempt;
                 }
-                if attempt_started.elapsed() > DOWNLOAD_WATCHDOG {
+                if attempt_started.elapsed() > download_watchdog {
                     tracing::info!(
                         target: "propagation-retrieve",
                         pn_hash = %pn_hex,
+                        download_watchdog_secs = download_watchdog.as_secs(),
                         "client /get download watchdog timeout"
                     );
                     if propagation_download_attempt_failover(
@@ -7242,11 +7443,20 @@ fn spawn_client_download_driver_task(
                         &live_ifaces,
                         &mut current_iface,
                         &mut current_via,
+                        &mut path_hops,
+                        &mut active_link_hops,
                     )
                     .await
                     {
                         continue 'attempt;
                     }
+                    record_path_failover_attempt(
+                        &mut tried_interfaces,
+                        &mut blocked_ifaces,
+                        &mut blocked_vias,
+                        current_iface.as_deref(),
+                        current_via.as_deref(),
+                    );
                     let message = terminal_download_failure(
                         &bridge,
                         progress,
@@ -7293,11 +7503,20 @@ fn spawn_client_download_driver_task(
                                 &live_ifaces,
                                 &mut current_iface,
                                 &mut current_via,
+                                &mut path_hops,
+                                &mut active_link_hops,
                             )
                             .await
                         {
                             continue 'attempt;
                         }
+                        record_path_failover_attempt(
+                            &mut tried_interfaces,
+                            &mut blocked_ifaces,
+                            &mut blocked_vias,
+                            current_iface.as_deref(),
+                            current_via.as_deref(),
+                        );
                         let message = terminal_download_failure(
                             &bridge,
                             progress,
@@ -8822,7 +9041,35 @@ mod discovered_medium_reconcile_tests {
 
 #[cfg(test)]
 mod live_tx_queue_fields_tests {
-    use super::{live_interface_runtime_mode_if_online, live_interface_tx_queue_fields};
+    use std::time::{Duration, Instant};
+
+    use super::{
+        ANNOUNCE_QUEUE_WATCHDOG_COOLDOWN, announce_queue_watchdog_due,
+        announce_queue_watchdog_needed, live_interface_runtime_mode_if_online,
+        live_interface_tx_queue_fields,
+    };
+
+    #[test]
+    fn announce_queue_watchdog_cooldown_tracks_each_interface_independently() {
+        let now = Instant::now();
+        // Never pruned: due. Just pruned: not due until its own cooldown passes.
+        assert!(announce_queue_watchdog_due(None, now));
+        assert!(!announce_queue_watchdog_due(Some(now), now));
+        assert!(announce_queue_watchdog_due(
+            Some(now),
+            now + ANNOUNCE_QUEUE_WATCHDOG_COOLDOWN + Duration::from_secs(1),
+        ));
+    }
+
+    #[test]
+    fn announce_queue_watchdog_only_for_slow_rf_backlog() {
+        // SF8 RNode (~3125 bps) with a stale backlog triggers.
+        assert!(announce_queue_watchdog_needed(2_461, 3_125));
+        assert!(announce_queue_watchdog_needed(1_000, 3_125));
+        // Below threshold, or a fast interface, does not.
+        assert!(!announce_queue_watchdog_needed(999, 3_125));
+        assert!(!announce_queue_watchdog_needed(5_000, 1_000_000));
+    }
 
     #[test]
     fn online_stats_populate_used_and_max() {

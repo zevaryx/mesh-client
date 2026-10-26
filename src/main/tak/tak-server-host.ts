@@ -120,9 +120,7 @@ export function createTakServerHost(deps: TakServerHostDeps): TakServerHost {
       const remoteSettings = loadTakRemoteSettings();
       if (remoteSettings?.autoConnect && canAutoConnectTakRemote(remoteSettings)) {
         void ensureTakServerManager()
-          .then((m) => {
-            m.startRemote(remoteSettings);
-          })
+          .then((m) => m.startRemote(remoteSettings))
           .catch((e: unknown) => {
             console.error(
               '[TAK] Remote relay auto-connect failed:',

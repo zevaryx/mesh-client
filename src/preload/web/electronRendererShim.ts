@@ -300,10 +300,13 @@ export async function requestHeadlessTilesCookie(
   return false;
 }
 
+/** What `readHeadlessHostPlatform` reads the server's `<meta>` from (the page's `document`). */
+export interface HeadlessMetaSource {
+  querySelector: (selectors: string) => Element | null;
+}
+
 /** Server OS from the `<meta>` the headless server injects (see `injectWebBridgeScript`). */
-export function readHeadlessHostPlatform(
-  doc: Pick<Document, 'querySelector'>,
-): HeadlessHostPlatform {
+export function readHeadlessHostPlatform(doc: HeadlessMetaSource): HeadlessHostPlatform {
   const meta = doc.querySelector(`meta[name="${WEB_BRIDGE_PLATFORM_META}"]`);
   return normalizeHeadlessHostPlatform(meta?.getAttribute('content'));
 }

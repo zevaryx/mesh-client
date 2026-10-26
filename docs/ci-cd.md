@@ -6,20 +6,21 @@ Mesh-Client uses GitHub Actions for continuous integration and deployment.
 
 ## Workflows
 
-| Workflow                    | Trigger                                             | Purpose                                                                                  |
-| --------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| `ci.yaml`                   | Push/PR/`merge_group`/`workflow_dispatch`           | Lint, typecheck, build, policy scanners, Flatpak manifest validation                     |
-| `tests.yaml`                | Push/PR/`merge_group`/`workflow_dispatch`           | Vitest coverage + merge; Reticulum sidecar `llvm-cov` when sidecar paths change          |
-| `buttonmash.yaml`           | PR/`merge_group`/`workflow_dispatch`                | Browser-based chaos testing of the Vite renderer                                         |
-| `e2e.yaml`                  | Daily on `main` + manual `workflow_dispatch`        | Playwright Electron E2E (unpackaged build, 3-OS) + Release preflight; no PR gate         |
-| `build.yaml`                | Manual `workflow_dispatch`                          | Native 3-OS packaging smoke build (+ schema compare vs last official)                    |
-| `reticulum-sidecar.yaml`    | Path-filtered push/PR to `main`                     | Sidecar fmt + Clippy (ubuntu); multi-OS matrix build/test                                |
-| `release.yaml`              | Version tags (`v*`)                                 | Build & publish releases (AppImage/deb/rpm)                                              |
-| `flatpak.yaml`              | Version tags (`v*`), manual                         | Build Flatpak (+ schema compare vs last official); publish to release on tags            |
-| `cut-release.yaml`          | Manual `workflow_dispatch` on `main`                | **Primary** release cut via protected `release-cut` / `RELEASE_CUT_TOKEN`                |
-| `docs.yml`                  | Push to `main`                                      | Deploy MkDocs to GitHub Pages                                                            |
-| `headless-image.yaml`       | Path-filtered PR, push to `main`, `v*` tags, manual | Headless web UI image: size budget + browser smoke; multi-arch GHCR publish (not on PRs) |
-| `third-party-licenses.yaml` | Path-filtered push to `main`                        | Regenerate licenses and open a documentation PR using license-only automation            |
+| Workflow                    | Trigger                                                        | Purpose                                                                                    |
+| --------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `ci.yaml`                   | Push/PR/`merge_group`/`workflow_dispatch`                      | Lint, typecheck, build, policy scanners, Flatpak manifest validation                       |
+| `tests.yaml`                | Push/PR/`merge_group`/`workflow_dispatch`                      | Vitest coverage + merge; Reticulum sidecar `llvm-cov` when sidecar paths change            |
+| `codeql.yaml`               | PR/manual validation; push/merge queue/weekly after activation | Six-language CodeQL; Swift PR input scoping; see [activation](../.github/codeql/README.md) |
+| `buttonmash.yaml`           | PR/`merge_group`/`workflow_dispatch`                           | Browser-based chaos testing of the Vite renderer                                           |
+| `e2e.yaml`                  | Daily on `main` + manual `workflow_dispatch`                   | Playwright Electron E2E (unpackaged build, 3-OS) + Release preflight; no PR gate           |
+| `build.yaml`                | Manual `workflow_dispatch`                                     | Native 3-OS packaging smoke build (+ schema compare vs last official)                      |
+| `reticulum-sidecar.yaml`    | Path-filtered push/PR to `main`                                | Sidecar fmt + Clippy (ubuntu); multi-OS matrix build/test                                  |
+| `release.yaml`              | Version tags (`v*`)                                            | Build & publish releases (AppImage/deb/rpm)                                                |
+| `flatpak.yaml`              | Version tags (`v*`), manual                                    | Build Flatpak (+ schema compare vs last official); publish to release on tags              |
+| `cut-release.yaml`          | Manual `workflow_dispatch` on `main`                           | **Primary** release cut via protected `release-cut` / `RELEASE_CUT_TOKEN`                  |
+| `docs.yml`                  | Push to `main`                                                 | Deploy MkDocs to GitHub Pages                                                              |
+| `headless-image.yaml`       | Path-filtered PR, push to `main`, `v*` tags, manual            | Headless web UI image: size budget + browser smoke; multi-arch GHCR publish (not on PRs)   |
+| `third-party-licenses.yaml` | Path-filtered push to `main`                                   | Regenerate licenses and open a documentation PR using license-only automation              |
 
 ---
 
@@ -69,7 +70,7 @@ Runs on every push, pull request, and merge-queue `merge_group` for `main`:
 2. **Pull requests:** run `vitest related` without coverage for the affected project lanes. Docs-only changes skip Vitest. Shared contracts select all projects.
 3. **Safe fallback:** test infrastructure, dependency manifests, deleted/renamed paths, oversized output, or detector failures run the full matrix.
 4. **Protected events:** `merge_group`, pushes to `main`, and manual runs always run full coverage across `renderer-ui`, `renderer-logic`, and `main`.
-5. **Sharding:** `renderer-ui` runs in three shards; `renderer-logic` and `main` each run once. This applies to both related tests and full coverage. Full runs upload blob reports; related runs write JUnit reports named `junit-<project>-<shard>-<total>.xml` and print results in each shard's log. The existing `Coverage (...)` required checks verify that detection and every shard succeeded.
+5. **Sharding:** `renderer-ui` runs in four shards; `renderer-logic` and `main` each run once. This applies to both related tests and full coverage. Full runs upload blob reports; related runs write JUnit reports named `junit-<project>-<shard>-<total>.xml` and print results in each shard's log. The existing `Coverage (...)` required checks verify that detection and every shard succeeded.
 6. **Merge job:** collect related JUnit reports without checkout, Node/pnpm setup, or dependency installation. Full runs (protected events and PRs that cannot be safely scoped) still run `pnpm run test:coverage:merge` to enforce global thresholds.
 7. **`reticulum-sidecar-coverage`:** when sidecar paths change, clone the `.rsstack/` workspace, run `cargo llvm-cov --fail-under-lines 45`, and upload `lcov.info`.
 8. Upload the `vitest-report` artifact (retained 7 days): separate JUnit files for related shards, including empty shards and available reports from failed runs; one merged `junit.xml` for full runs.
@@ -185,8 +186,9 @@ After merges to `main` that change `package.json`, `pnpm-lock.yaml`, the generat
 4. Audit licenses (`pnpm run check:licenses`)
 5. Regenerate `docs/third-party-licenses.md` (`pnpm run docs:licenses`)
 6. Open a PR via `peter-evans/create-pull-request` when the file changed (branch `chore/third-party-licenses-<run_id>`)
+7. Admin-merge that docs-only PR with `LICENSE_PR_TOKEN` (no maintainer review)
 
-**Authority:** the `license-automation` environment accepts only `main` and has no release approval requirement. The job uses `GITHUB_TOKEN` with Contents and Pull requests write to open a PR restricted to `docs/third-party-licenses.md`. It has no release, signing, or release-cut credentials and does not create tags or releases. An optional environment secret `LICENSE_PR_TOKEN` can supply a dedicated Contents and Pull requests write token so required PR checks run automatically. With the default `GITHUB_TOKEN`, GitHub suppresses those workflow events; a maintainer must start the required checks before merging the documentation PR. Direct pushes to `main` remain blocked by the merge-queue ruleset.
+**Authority:** the `license-automation` environment accepts only `main` and has no required reviewers. It has no release, signing, or release-cut credentials. Direct pushes to `main` remain blocked by the merge-queue ruleset, so the job opens a PR restricted to `docs/third-party-licenses.md` and admin-merges it. Environment secret **`LICENSE_PR_TOKEN` is required** for that path: a repo-admin fine-grained PAT (Contents + Pull requests write). Falling back to `GITHUB_TOKEN` leaves PRs stuck on the merge-queue review / unattributed-change gate (see #1311). The file is already validated in-job (`check:licenses`, `docs:licenses`, Rust stub refuse) before merge.
 
 ---
 
@@ -195,7 +197,7 @@ After merges to `main` that change `package.json`, `pnpm-lock.yaml`, the generat
 Builds the documentation site with `mkdocs build --strict` on pull requests that touch `docs/**`, `README.md`, `CONTRIBUTING.md`, `mkdocs.yml`, or the MkDocs scripts. On every push to `main` it builds the site the same way and deploys it to GitHub Pages:
 
 1. Check out the code with full history (`fetch-depth: 0`) so the git-revision-date plugin can show "last updated" dates
-2. Set up Node 22 and Python 3.x
+2. Set up Node 22 and Python 3.14 (pinned, not `3.x`: `pyyaml==6.0.3` in `docs/requirements.txt` has no Python 3.15 wheel and the install is `--only-binary`)
 3. Install MkDocs dependencies (`docs/requirements.txt`)
 4. Run `node scripts/prepare-mkdocs.mjs`, which generates `docs/contributing.md` from `CONTRIBUTING.md`, plus `docs/install.md` and `docs/features.md` from the `<!-- docs-site:… -->` markers in `README.md`. It also rewrites repository-relative links for the site. These generated pages are gitignored.
 5. Run `mkdocs build --strict`
@@ -328,16 +330,16 @@ Note: The test results artifact upload step is automatically skipped when runnin
 
 ## Pipeline status (issue #378)
 
-| Area                                             | Status                                                              |
-| ------------------------------------------------ | ------------------------------------------------------------------- |
-| PR lint / typecheck / build / tests              | Done (`ci.yaml`, `tests.yaml`)                                      |
-| CodeQL / CodeRabbit                              | Done (CodeQL **default setup** — PR/push/schedule; not merge-queue) |
-| Tag → draft multi-OS + Flatpak + packaging smoke | Done (`release.yaml`, `flatpak.yaml`, `build.yaml`)                 |
-| `pnpm run release` preflight + bump/tag          | Done (`scripts/release.sh`; `--yes` for non-interactive)            |
-| Manual draft **Publish** on GitHub               | Intentional (human review of artifacts)                             |
-| Dep bumps                                        | Manual (`pnpm run update`; Dependabot PRs disabled)                 |
-| Merge queue + required status checks             | Done (ruleset **20821455** on `main`; see below)                    |
-| E2E                                              | Daily / `workflow_dispatch` only — **not** a merge gate             |
+| Area                                             | Status                                                                               |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------ |
+| PR lint / typecheck / build / tests              | Done (`ci.yaml`, `tests.yaml`)                                                       |
+| CodeQL / CodeRabbit                              | Done (CodeQL default setup until [advanced activation](../.github/codeql/README.md)) |
+| Tag → draft multi-OS + Flatpak + packaging smoke | Done (`release.yaml`, `flatpak.yaml`, `build.yaml`)                                  |
+| `pnpm run release` preflight + bump/tag          | Done (`scripts/release.sh`; `--yes` for non-interactive)                             |
+| Manual draft **Publish** on GitHub               | Intentional (human review of artifacts)                                              |
+| Dep bumps                                        | Manual (`pnpm run update`; Dependabot PRs disabled)                                  |
+| Merge queue + required status checks             | Done (ruleset **20821455** on `main`; see below)                                     |
+| E2E                                              | Daily / `workflow_dispatch` only — **not** a merge gate                              |
 
 ---
 
@@ -369,7 +371,7 @@ Each required check is pinned with `integration_id` **15368** (GitHub Actions) i
 
 - `Reticulum sidecar coverage` (path-filtered)
 - `fmt + clippy` / sidecar build matrix (`reticulum-sidecar.yaml`, path-filtered)
-- CodeQL `Analyze (*)` — **default setup does not run on `merge_group`**; CodeQL still runs on PRs/pushes. Requiring it would hang the merge queue until advanced setup + `merge_group` exists.
+- CodeQL `Analyze (*)` — **default setup does not run on `merge_group`**. The advanced workflow supports merge groups after [activation](../.github/codeql/README.md), but no CodeQL ruleset requirement is added by that migration.
 - E2E, packaging smoke, Flatpak, release jobs
 
 `ci.yaml` and `tests.yaml` both listen for `merge_group` so the queue’s temporary ref re-runs the same gates.
@@ -540,7 +542,7 @@ Post-build smoke tests:
   - CI uploads **DMG/ZIP only** — never raw `Mesh-client.app` (see comment in `release.yaml` **Upload macOS Artifact**)
   - Official tag releases receive signing values only from the protected `release` environment on `macos-latest`; manual `build.yaml` packaging is always unsigned (`CSC_IDENTITY_AUTO_DISCOVERY=false`). Layout checks do not require credentials, but signed release builds must pass the codesign/stapler gate above
 - `scripts/test-linux-appimage-reticulum-sidecar.mjs` — x64 uses `--appimage-extract`; arm64 on x64 runners uses `unsquashfs` for cross-arch extract
-- **`scripts/test-linux-appimage-launch.mjs`** — headless launch smoke that proves the packaged Linux AppImage actually **boots and loads the renderer**, not just that its files are well-formed or that the main process wrote a log line. Runs under `xvfb-run` in the `packaging-smoke` Linux leg (`build.yaml` / `release.yaml`), with a 5-minute step timeout. Extracts the AppImage (the file listing is kept out of the CI log unless extraction fails), launches its `AppRun` with `MESH_CLIENT_DISABLE_GPU=1`, `--no-sandbox --disable-setuid-sandbox`, and a throwaway `--user-data-dir`, then asserts the process stays alive past a startup threshold with no crash exit, that `mesh-client.log` contains a renderer-loaded signal (`[Startup] renderer URL:` or a `[renderer` line), and that the log and captured stderr have no renderer-gone, failed-load, or child-process-gone lines (those paths block on an error dialog, so the process can stay alive). Only the **native-arch** AppImage is launched (a cross-arch runtime cannot execute on the runner; that image is still covered by the sidecar extract smoke above). If no AppImage matches the host architecture, the smoke exits non-zero. The step **gates** `build.yaml` and `release.yaml`. Requires `xvfb` + Electron runtime libs (`libnss3`, `libgtk-3-0t64`, `libgbm1`, `libasound2t64`, …), installed by `scripts/ci-install-linux-appimage-smoke-deps.sh` from the Linux smoke step in both workflows.
+- **`scripts/test-linux-appimage-launch.mjs`** — headless launch smoke that proves the packaged Linux AppImage actually **boots and loads the renderer**, not just that its files are well-formed or that the main process wrote a log line. Runs under `xvfb-run` in the `packaging-smoke` Linux leg (`build.yaml` / `release.yaml`), with a 5-minute step timeout. Extracts the AppImage (the file listing is kept out of the CI log unless extraction fails), launches its `AppRun` with `MESH_CLIENT_DISABLE_GPU=1`, `--no-sandbox --disable-setuid-sandbox`, and a throwaway `--user-data-dir`, then asserts the process stays alive past a startup threshold with no crash exit, that `mesh-client.log` contains a renderer-loaded signal (`[Startup] renderer loaded:` after the final `loadURL` resolves; URL-intent and early renderer console lines do not count), and that the log and captured stderr have no renderer-gone, failed-load, or child-process-gone lines (those paths block on an error dialog, so the process can stay alive). Only the **native-arch** AppImage is launched (a cross-arch runtime cannot execute on the runner; that image is still covered by the sidecar extract smoke above). If no AppImage matches the host architecture, the smoke exits non-zero. The step **gates** `build.yaml` and `release.yaml`. Requires `xvfb` + Electron runtime libs (`libnss3`, `libgtk-3-0t64`, `libgbm1`, `libasound2t64`, …), installed by `scripts/ci-install-linux-appimage-smoke-deps.sh` from the Linux smoke step in both workflows.
 - `scripts/test-win-nsis-install.mjs` — NSIS + 7z sidecar probe on WoA
 
 Local packaging parity: see [development-environment.md](development-environment.md#reticulum-sidecar-optional).

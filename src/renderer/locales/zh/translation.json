@@ -40,7 +40,7 @@
     "scrollToTop": "↑ 顶部",
     "footerDiscordTitle": "Colorado Mesh Discord",
     "footerGithubTitle": "Colorado Mesh on GitHub",
-    "footerWebsiteTitle": "Colorado Mesh website",
+    "footerWebsiteTitle": "Colorado Mesh网站",
     "loadingApp": "正在加载网格客户端",
     "reticulumQueueTooltip": "本地RNode “{{name}}”的主机TX队列：等待无线电的数据包（多个RNode时最糟糕的填充）。绿色在25%以下，琥珀色在60%以下，红色在60%或以上。",
     "reticulumQueueTooltipGeneric": "最繁忙的本地RNode的主机TX队列：等待无线电的数据包。绿色在25%以下，琥珀色在60%以下，红色在60%或以上。",
@@ -52,7 +52,18 @@
     "takRemoteOnly": "TAK {{remote}}",
     "takWithRemote": "{{local}}, {{remote}}",
     "savedSettingsUnavailable": "无法加载保存的设置",
-    "savedSettingsRecovery": "您保存的数据已保存。请检查系统钥匙圈是否可用，或等待一分钟，然后重试。"
+    "savedSettingsRecovery": "您保存的数据已保存。请检查系统钥匙圈是否可用，或等待一分钟，然后重试。",
+    "forgetUnavailableCredentials": "移除无法读取的凭据…",
+    "forgetCredentialsTitle": "移除无法读取的凭据？",
+    "forgetCredentialsDescription": "只会移除下面列出的凭据及其已保存的恢复副本。其他设置和凭据将被保留。",
+    "forgetCredentialsAcknowledge": "我了解需要重新配置这些凭据。此操作无法撤销。",
+    "forgetCredentialsConfirm": "移除并重试",
+    "forgetCredentialsFailed": "无法完全移除凭据。请重试，或取消以保留其余数据。",
+    "credentialMqtt": "{{protocol}} MQTT",
+    "credentialIdentity": "MeshCore 身份",
+    "credentialProfiles": "已保存的 MQTT 配置密码",
+    "credentialRoom": "MeshCore 房间 {{node}}",
+    "credentialRepeater": "MeshCore 中继器 {{node}}"
   },
   "appPanel": {
     "failedSaveRetention": "无法保存邮件保留设置。",
@@ -475,7 +486,33 @@
     "autoUpdateDownload": "自动下载更新",
     "autoUpdateDownloadDesc": "每次检查后在后台下载最新更新。关闭时，仍会检测到更新，但只有在按下“下载”按钮时才会下载，这在程序包管理器处理安装时非常有用。",
     "autoUpdateDownloadSaveFailed": "无法保存自动更新下载设置。",
-    "clearAllRepeatersConfirm": "这将从已连接的电台和本地数据库中删除所有未收藏的 MeshCore 中继器。中继器再次发送广播通告时会重新出现。此操作无法撤消。"
+    "clearAllRepeatersConfirm": "这将从已连接的电台和本地数据库中删除所有未收藏的 MeshCore 中继器。中继器再次发送广播通告时会重新出现。此操作无法撤消。",
+    "windowSection": "窗口",
+    "closeToTray": "关闭到系统托盘(&C)",
+    "closeToTraySaveFailed": "无法保存接近托盘的设置。",
+    "closeToTrayDesc": "当设备或MQTT连接处于活动状态时，关闭窗口会将Mesh-Client隐藏到系统托盘（ macOS上的菜单栏） ，而不是将其最小化，因此它继续在后台运行。从托盘图标重新打开它。从托盘菜单或应用菜单退出。关闭时，关闭会像以前一样最小化窗口。",
+    "memoryTitle": "渲染进程内存",
+    "memorySampleNow": "立即测量",
+    "memorySampling": "正在测量…",
+    "memoryDescription": "用于观察趋势的浏览器估计值，在窗口可见时大约每五分钟测量一次。数值可能因应用版本而异。",
+    "memoryRendererProcess": "操作系统报告的渲染器进程内存（物理 RAM）。包含 JavaScript 以外的内存；请比较同一应用版本的采样值。",
+    "memoryIsolated": "跨源隔离已启用。",
+    "memoryNotIsolated": "内存测量需要跨源隔离，但当前会话中不可用。",
+    "memoryUnsupported": "此浏览器不支持内存测量。",
+    "memoryFailed": "内存测量失败。您可以重试。",
+    "memoryLatest": "最新估计值：{{value}}",
+    "memoryEmpty": "暂无测量值。请开始测量或保持窗口可见。",
+    "memoryHistory": "近期测量值",
+    "memoryProcessOnly": "使用渲染器进程工作集（浏览器内存API需要隔离）。",
+    "coiCapabilityTitle": "渲染器功能",
+    "coiCapabilityIsolated": "隔离： {{value}}",
+    "coiCapabilitySab": "SharedArrayBuffer ： {{value}}",
+    "coiCapabilityThreads": "追赶WASM线程： {{count}}",
+    "coiCapabilityTiming": "计时器分辨率： {{value}}",
+    "coiYes": "是",
+    "coiNo": "否",
+    "coiTimingFine": "精细（ ~ 5 µs ）",
+    "coiTimingCoarse": "粗略（ ~ 100 µs ）"
   },
   "aria": {
     "closeDialog": "关闭对话框",
@@ -1176,7 +1213,6 @@
         "dualProtocolContentionHint": "另一个协议可能仍在通过蓝牙连接。请等待几秒钟，然后重试，或切换到其他协议选项卡以检查其连接状态。",
         "scanBusy": "另一次蓝牙扫描正在进行中。稍后再试一次。",
         "sameDeviceConflict": "该蓝牙设备已连接到 {{owner}}。",
-        "chooserCancelledHint": "如果您没有取消，请确保蓝牙已打开（systemctl status bluetooth），然后再次点击“连接”。在 Flatpak 上，重新安装允许蓝牙的版本，或使用 AppImage/.deb/.rpm。",
         "bluetoothctlMissingHint": "操作系统蓝牙配对工具在此环境中不可用（在 Flatpak 中常见）。使用官方 AppImage、.deb 或 .rpm，或将无线电与主机 bluetoothctl 配对，然后重试连接。",
         "stackUnresponsiveGeneric": "蓝牙在较早的连接尝试中被卡住。关闭和打开蓝牙，根据需要重新配对收音机，然后重新启动 mesh-client。",
         "stackUnresponsiveWindowsRePair": "Windows蓝牙在较早的连接尝试中被卡住，通常是因为无线电未正确配对。按下“删除并重新配对设备” ，然后输入收音机上显示的PIN码。如果仍然拒绝连接，请重新启动mesh-client并重试。",
@@ -1417,7 +1453,7 @@
       "modeAria": "Reticulum 接口模式",
       "modeHint": "控制此接口如何加入更广泛的网络（寻路、通告传播）。添加时，类型默认值对 TCP/UDP/I2P 枢纽为 Boundary，对 RNode 为 Access point。编辑时，Default (clear) 会清除模式（RNS Full）。",
       "modeOption": {
-        "full": "Full",
+        "full": "已满",
         "point_to_point": "点对点",
         "access_point": "接入点",
         "roaming": "漫游",
@@ -1528,18 +1564,18 @@
       "fieldOutOfRange": "值超出允许的范围。",
       "fieldTooLong": "此值太长。",
       "fieldInvalidOption": "不支持的V值。",
-      "profilesTitle": "Interface profiles",
+      "profilesTitle": "接口配置文件",
       "profilesHint": "接口已打开的命名使能集。切换配置文件将启用其成员并禁用其余部分。",
       "profilesEmpty": "还没有配置文件。保存当前启用集以创建一个。",
-      "profilesDefault": "Default",
-      "profilesUnnamed": "(unnamed)",
-      "profilesNamePlaceholder": "Profile name",
-      "profilesSaveCurrent": "Save current",
-      "profilesCreateEmpty": "New empty",
-      "profilesRename": "Rename",
-      "profilesSaveRename": "Save",
-      "profilesDelete": "Delete",
-      "profilesRenameAria": "Rename profile {{name}}",
+      "profilesDefault": "默认",
+      "profilesUnnamed": "(æªå½å)",
+      "profilesNamePlaceholder": "档案名称",
+      "profilesSaveCurrent": "保存当前配色方案",
+      "profilesCreateEmpty": "新的空文件",
+      "profilesRename": "重命名",
+      "profilesSaveRename": "保存",
+      "profilesDelete": "删除",
+      "profilesRenameAria": "重命名个人资料{{name}}",
       "bootstrapOnly": "仅Bootstrap",
       "bootstrapOnlyHint": "断开此接口，一旦发现足够多的骨干/TCP服务器自动连接（需要网络→自动连接限制> 0 ）。"
     },
@@ -1740,7 +1776,7 @@
     "errors": {
       "ble": {
         "adapter_missing": "未找到蓝牙适配器。在系统设置中启用蓝牙，然后重试。",
-        "permission_denied": "Bluetooth permission was denied. Allow mesh-client to use Bluetooth, then try again.",
+        "permission_denied": "蓝牙权限被拒绝。允许mesh-client使用蓝牙，然后重试。",
         "scan_busy": "另一个蓝牙扫描正在进行中。请稍等片刻，然后重试。",
         "mac_conflict": "This Bluetooth device is already connected to another protocol. Disconnect it there first.",
         "connect_timeout": "蓝牙连接超时。保持收音机清醒并靠近，然后重试。",
@@ -1853,7 +1889,7 @@
     "selfNodeFallback": "我",
     "heuristicNotesTooltip": "{{count}}启发式注释未在下面显示—请参阅诊断表。",
     "foreignClassMeshcore": "MeshCore活动",
-    "foreignClassMeshtastic": "Meshtastic Traffic",
+    "foreignClassMeshtastic": "Meshtastic流量",
     "foreignClassUnknownLora": "未知LoRa信号",
     "proximityVeryClose": "咫尺",
     "proximityNearby": "身边",
@@ -2058,7 +2094,7 @@
         "edit": "编辑界面",
         "restart_stack": "重启堆栈",
         "add_auto": "添加自动接口",
-        "disable_share_instance": "Turn off Share instance",
+        "disable_share_instance": "关闭共享实例",
         "open_interfaces": "打开接口"
       },
       "audit": {
@@ -3234,7 +3270,9 @@
       "networkIdentity": "網路識別",
       "networkIdentityAria": "用于发现加密和解密的网络身份文件的路径",
       "networkIdentityPlaceholder": "~/.reticulum/storage/identities/my_network",
-      "networkIdentityHint": "可选。需要对加密的发现公告进行解密（并在使用DISCOVERY_ENCRYPT发布时进行加密）。"
+      "networkIdentityHint": "可选。需要对加密的发现公告进行解密（并在使用DISCOVERY_ENCRYPT发布时进行加密）。",
+      "slowRfAnnounceFilter": "限制在慢速射频接口上宣布（非标准）",
+      "slowRfAnnounceFilterHint": "默认开启。停止通过低带宽RNode链接重新广播未经请求的互联网公告，这些链接永远不会耗尽。本地和射频学习目的地仍会公布，互联网目的地仍会按需应答路径请求。关闭库存Reticulum公告行为。"
     },
     "reticulumConfigImport": {
       "title": "导入 Reticulum config",
@@ -3252,16 +3290,16 @@
     "reticulumConfigImportFailed": "配置导入失败。",
     "reticulumConfigNotFound": "在默认路径中未找到系统 Reticulum 配置。",
     "reticulumConfigValidate": {
-      "button": "Check config",
-      "aria": "Validate on-disk network config",
-      "running": "Checking…",
-      "ok": "Config looks good — no audit issues.",
-      "failed": "Config check failed: {{message}}",
-      "issuesHeading_one": "{{count}} config issue",
-      "issuesHeading_other": "{{count}} config issues",
-      "severityError": "error",
-      "severityWarning": "warning",
-      "severityInfo": "info"
+      "button": "检查配置",
+      "aria": "验证磁盘上的网络配置",
+      "running": "检查…",
+      "ok": "配置看起来不错—没有审核问题。",
+      "failed": "配置检查失败： {{message}}",
+      "issuesHeading_one": "{{count}}配置问题",
+      "issuesHeading_other": "{{count}}配置问题",
+      "severityError": "失誤",
+      "severityWarning": "警告",
+      "severityInfo": "信息"
     },
     "reticulumPnHosting": {
       "title": "高级PN出租（危险区域）",
@@ -3954,18 +3992,18 @@
     "renameFailed": "无法保存显示名称。",
     "removeContactConfirmBody": "此操作会将联系人从保存的列表中删除。聊天消息会保留；如果您向其发送消息，它们将保留在历史记录中。",
     "backupPaths": "设置备份路径",
-    "announcedDestinations": "Announced destinations",
-    "openedDestinationBadge": "Opened",
-    "copyAnnouncedHashAria": "Copy {{aspect}} destination hash {{hash}}",
-    "hashCopied": "Destination hash copied.",
+    "announcedDestinations": "已公布的目的地",
+    "openedDestinationBadge": "已打开",
+    "copyAnnouncedHashAria": "复制{{aspect}}目的地哈希{{hash}}",
+    "hashCopied": "目标哈希已复制。",
     "hashCopyFailed": "无法复制目标哈希。",
     "aspect": {
-      "chat": "Chat",
-      "voice": "Voice",
+      "chat": "聊天",
+      "voice": "语音",
       "nomad": "Nomad",
       "rrc": "RRC",
-      "propagation": "Propagation",
-      "unknown": "Unknown"
+      "propagation": "传播",
+      "unknown": "未知"
     },
     "identityUnknown": "身份未知：尚未收到该对等方的通知，因此没有指纹可供验证。",
     "identityUnknownDestination": "目标哈希（不是身份指纹）"
@@ -4404,28 +4442,28 @@
     "offloadReconcileStillFull": "卸载已完成，但无线电仍报告联系人已满（{{count}}/350）。请重新连接并重试。",
     "offloadReconcileStillNearFull": "卸载已完成，但无线电仍报告联系人使用率较高（{{count}}/350）。",
     "offloadReconcileRefreshFailed": "卸载已完成，但联系人刷新失败。重新连接并刷新联系人。",
-    "txEnabledLabel": "TX Enabled",
+    "txEnabledLabel": "TX已启用",
     "txEnabledDesc": "允许此节点传输。禁用只接收操作。",
-    "channelNumLabel": "Channel Number",
+    "channelNumLabel": "通道号",
     "channelNumDesc": "手动选择通道（ 0 =自动）。必须匹配网络上的所有节点。",
-    "overrideFrequencyLabel": "Override Frequency",
+    "overrideFrequencyLabel": "覆盖频率",
     "overrideFrequencyDesc": "覆盖频率（以MHz为单位） （ 0 =使用区域默认值）。确保遵守当地法规。",
-    "ignoreMqttLabel": "Ignore MQTT",
+    "ignoreMqttLabel": "忽略MQTT",
     "ignoreMqttDesc": "不要转播通过MQTT到达的数据包。减少网关流量造成的网格拥塞。",
     "configOkToMqttLabel": "OK to MQTT",
     "configOkToMqttDesc": "向网关发出此节点的数据包可能被转发到MQTT的信号。",
-    "overrideDutyCycleLabel": "Override Duty Cycle",
+    "overrideDutyCycleLabel": "覆盖占空比",
     "overrideDutyCycleDesc": "绕过区域占空比限制。仅用于测试—在空中使用可能是非法的。",
-    "paFanDisabledLabel": "Disable PA Fan",
+    "paFanDisabledLabel": "禁用PA风扇",
     "paFanDisabledDesc": "禁用功率放大器冷却风扇（取决于硬件）。",
-    "rebroadcastModeLabel": "Rebroadcast Mode",
-    "nodeInfoBroadcastSecsLabel": "Node Info Broadcast Interval",
-    "nodeInfoBroadcastSecsDesc": "How often to broadcast node info in seconds (0 = firmware default ~15 min).",
-    "doubleTapAsButtonPressLabel": "Double-tap as Button Press",
-    "doubleTapAsButtonPressDesc": "Treat an accelerometer double-tap as a user button press (hardware-dependent).",
-    "disableTripleClickLabel": "Disable Triple-click",
+    "rebroadcastModeLabel": "重播模式",
+    "nodeInfoBroadcastSecsLabel": "节点信息广播间隔",
+    "nodeInfoBroadcastSecsDesc": "以秒为单位广播节点信息的频率（ 0 =固件默认值~ 15分钟）。",
+    "doubleTapAsButtonPressLabel": "按下按钮时轻触两次",
+    "doubleTapAsButtonPressDesc": "将加速度计双击视为用户按下按钮（取决于硬件）。",
+    "disableTripleClickLabel": "禁用三重点击",
     "disableTripleClickDesc": "禁用用户按钮上的三次点击操作。",
-    "ledHeartbeatDisabledLabel": "Disable LED Heartbeat",
+    "ledHeartbeatDisabledLabel": "禁用LED心跳",
     "ledHeartbeatDisabledDesc": "停止 LED 闪烁以指示节点在线。",
     "buttonGpioLabel": "按钮 GPIO",
     "buttonGpioDesc": "用户按钮的 GPIO 引脚（0 = 硬件默认）。",
@@ -4459,18 +4497,18 @@
         "description": "仅重新广播基本端口号（文本、节点信息、位置、遥测）。"
       }
     },
-    "autoScreenCarouselSecsLabel": "Screen Carousel Interval",
-    "autoScreenCarouselSecsDesc": "Seconds between automatic screen page changes. 0 to disable.",
-    "oledTypeLabel": "OLED Type",
+    "autoScreenCarouselSecsLabel": "屏幕轮播间隔",
+    "autoScreenCarouselSecsDesc": "屏幕页面自动更改之间的秒数。0表示禁用。",
+    "oledTypeLabel": "OLED类型",
     "flipScreenLabel": "翻转屏幕",
     "flipScreenDesc": "将显示屏旋转 180 度。",
     "displayModeLabel": "显示模式",
     "headingBoldLabel": "粗体标题",
     "wakeOnTapOrMotionLabel": "轻触或移动时唤醒",
     "wakeOnTapOrMotionDesc": "当设备被轻触或移动时唤醒屏幕。",
-    "use12hClockLabel": "12-Hour Clock",
-    "useLongNodeNameLabel": "Use Long Node Name",
-    "useLongNodeNameDesc": "Show full node name instead of short name on screen.",
+    "use12hClockLabel": "十二小時制",
+    "useLongNodeNameLabel": "使用长节点名称",
+    "useLongNodeNameDesc": "在屏幕上显示完整的节点名称而不是短名称。",
     "enableMessageBubblesLabel": "消息气泡",
     "enableMessageBubblesDesc": "在显示屏上以气泡形式显示收到的消息。",
     "oledTypes": {
@@ -4495,28 +4533,28 @@
     },
     "displayModes": {
       "0": {
-        "label": "Default"
+        "label": "默认"
       },
       "1": {
-        "label": "Two Color"
+        "label": "两种颜色"
       },
       "2": {
-        "label": "Inverted"
+        "label": "反转"
       },
       "3": {
         "label": "Color"
       }
     },
-    "btPairingModeLabel": "Pairing Mode",
+    "btPairingModeLabel": "配对模式",
     "btPairingModes": {
       "0": {
-        "label": "Random PIN"
+        "label": "随机PIN"
       },
       "1": {
-        "label": "Fixed PIN"
+        "label": "固定PIN"
       },
       "2": {
-        "label": "No PIN"
+        "label": "无 PIN"
       }
     },
     "tzdefPlaceholder": "例如EST5EDT、M3.2.0、M11.1.0",
@@ -5161,7 +5199,7 @@
     "notice": {
       "body": "未配置传播节点。离线或无法访问的对等节点需要一个传播节点来存储和转发LXMF交付。",
       "openSettings": "设置传播",
-      "openSettingsAria": "Open Reticulum Network propagation settings",
+      "openSettingsAria": "打开Reticulum网络传播设置",
       "bodyWithDiscoveries": "未配置传播节点。在网络上发现{{count}} —在下面添加一个或打开网络设置。",
       "addClosest": "添加最近发现的",
       "addClosestAria": "添加最近发现的传播节点并将其设置为首选",
@@ -5276,7 +5314,8 @@
     "establishRecoveryDualTcpTip": "启用了两个或多个TCP接口。公告和同步链接可以保留在不同的路径上—在连接→接口下禁用一个主干，然后公告并重试。",
     "establishRecoveryOpenInterfaces": "打开接口",
     "establishRecoveryOpenInterfacesAria": "打开连接接口以调整TCP骨干网",
-    "syncRequestFailed": "传播同步到达节点，但请求未完成。它将在下一次同步时重试。"
+    "syncRequestFailed": "传播同步到达节点，但请求未完成。它将在下一次同步时重试。",
+    "syncEstablishTimeout": "建立到此节点的链接时，传播同步超时—它可能很慢或无法访问。其他节点可能仍然有效。"
   },
   "reticulumRmapDiscovery": {
     "sectionTitle": "RMAP v4发现",
@@ -5807,7 +5846,10 @@
     "directMessages": "实时消息",
     "directMessagesHint": "让ATAK设备向此收音机的同伴发送消息。此收音机CAN消息的每个伴侣都会在ATAK中获得聊天选项，并从此收音机发出消息，前缀为发件人的呼号。它的回复会发送到上次写入它的ATAK设备，或者在没有设备时发送到每个设备。没有位置的伴侣在消息后一天出现在0 ， 0。",
     "messagingTitleReticulum": "ATAK中的Reticulum消息",
-    "messagingIntroReticulum": "让ATAK设备向LXMF个同行发送消息。可以从其标记向具有位置的同行发送消息；一旦mesh-client与之进行对话，没有位置的同行将显示为0、0 ，因此联系人列表中不会填写每个听到的同行。"
+    "messagingIntroReticulum": "让ATAK设备向LXMF个同行发送消息。可以从其标记向具有位置的同行发送消息；一旦mesh-client与之进行对话，没有位置的同行将显示为0、0 ，因此联系人列表中不会填写每个听到的同行。",
+    "channelCallsign": "添加呼号",
+    "channelCallsignFor": "将发件人的ATAK呼号放在发送到{{channel}}的消息前面",
+    "channelCallsignHint": "关闭添加呼叫签名后， ATAK设备发送的内容将完全按照键入的内容发出。关闭机器人通道：机器人在消息开头查找其命令，因此会错过以呼号开头的命令。"
   },
   "telemetryPanel": {
     "title": "遥测",
@@ -5927,19 +5969,19 @@
     "addAsInterfaceAddedAria": "{{name}}已添加为连接接口"
   },
   "rrc": {
-    "hubsTitle": "RRC Hubs",
+    "hubsTitle": "RRC集线器",
     "hubs": {
-      "favourites": "Favourites",
-      "discovered": "Discovered",
+      "favourites": "收藏夹",
+      "discovered": "已发现",
       "connected": "已連線"
     },
-    "searchHubs": "Search hubs…",
-    "searchRooms": "Search rooms…",
-    "nickname": "Nickname",
-    "refreshHubs": "Refresh hubs",
+    "searchHubs": "搜索集线器…",
+    "searchRooms": "搜索详情页",
+    "nickname": "昵称",
+    "refreshHubs": "刷新集线器",
     "manualHashPlaceholder": "Hub destination hash (32 hex)",
     "connectManual": "连接到哈希",
-    "invalidHubHash": "Enter a valid 32-character hex destination hash.",
+    "invalidHubHash": "输入有效的32个字符的十六进制目标哈希。",
     "connectFailed": "无法连接到 RRC 中心。",
     "joinFailed": "无法加入房间。",
     "sendFailed": "无法发送消息。",
@@ -5950,18 +5992,18 @@
     "hopsAway_one": "{{count}} 跳之外",
     "hopsAway_other": "{{count}} 跳之外",
     "noDiscoveredHubs": "尚未发现在线 RRC 中心。保持协议栈运行以监听 announce。",
-    "rooms": "Rooms",
-    "joinRoom": "Room name",
-    "join": "Join room",
+    "rooms": "房间数",
+    "joinRoom": "房间名称",
+    "join": "加入房间",
     "joinRoomPrompt": "加入房间开始聊天。",
     "noRoomsJoined": "尚未加入任何房间。",
-    "selectRoom": "Open room {{name}}",
-    "leaveRoom": "Leave room",
-    "disconnect": "Disconnect",
-    "toggleTimestamps": "Toggle timestamps",
-    "muteRoom": "Mute room",
-    "unmuteRoom": "Unmute room",
-    "members": "Members",
+    "selectRoom": "开放房间{{name}}",
+    "leaveRoom": "離開聊天室",
+    "disconnect": "断开连接",
+    "toggleTimestamps": "切换时间戳",
+    "muteRoom": "将房间设为静音",
+    "unmuteRoom": "取消房间静音",
+    "members": "成员名字",
     "noMembers": "枢纽未提供成员列表。",
     "copyMessage": "复制消息",
     "messagePlaceholder": "输入消息…",
@@ -6047,7 +6089,7 @@
     "roomLegend": "★ 收藏夹· A切换自动联接",
     "disconnectFailed": "无法断开 RRC 中心。",
     "partFailed": "无法离开房间。",
-    "selectHubUnread": "Select hub {{name}}, {{marker}}, {{count}} unread",
+    "selectHubUnread": "选择HUB {{name}}, {{marker}}, {{count}}未读",
     "clearHistory": "清除历史记录",
     "clearHistoryTitle": "清除房间历史记录",
     "clearHistoryConfirm": "删除 {{room}} 的所有已保存消息历史记录？此操作无法撤消。",
@@ -6139,7 +6181,7 @@
     "confirmContactImportAction": "导入联系人",
     "confirmMeshcoreContactImportTitle": "导入MeshCore联系人？",
     "confirmMeshcoreContactImportBody": "将MeshCore联系人QR中的{{name}}添加到您的联系人？",
-    "confirmMeshcoreContactImportAction": "Import MeshCore contact",
+    "confirmMeshcoreContactImportAction": "导入MeshCore联系人",
     "confirmMeshcoreChannelImportTitle": "导入MeshCore频道？",
     "confirmMeshcoreChannelImportBody": "在“广播”选项卡上应用来自MeshCore频道QR的频道{{name}} ？",
     "confirmMeshcoreChannelImportAction": "导入频道",
@@ -6735,9 +6777,9 @@
     "channel": "频道消息",
     "dm": "私信",
     "reply": "回复和提及",
-    "mecp": "MECP ROUTINE",
-    "mecpSafety": "MECP SAFETY",
-    "mecpEas": "MECP URGENT",
+    "mecp": "MECP常规",
+    "mecpSafety": "MECP安全",
+    "mecpEas": "MECP紧急",
     "mecpSiren": "MECP MAYDAY",
     "default": "原声",
     "chime": "磬声",
@@ -7180,7 +7222,7 @@
       "RF": "RF",
       "MQTT": "MQTT",
       "unknown": "未知来源",
-      "Beacon": "Beacon"
+      "Beacon": "回避信标"
     },
     "corescope": {
       "feed": "区域 CoreScope",

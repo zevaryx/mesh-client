@@ -8,6 +8,7 @@ import { type TakChannelInfo, useTakChannelStore } from '../stores/takChannelSto
 import { type TakChannelMode, useTakRelayPrefsStore } from '../stores/takRelayPrefsStore';
 import { useTakSinkStore } from '../stores/takSinkStore';
 import { CHECKBOX_CLASS, INPUT_BOX_SM_CLASS, SELECT_BOX_SM_CLASS } from './ui/formClasses';
+import { SettingsSection } from './ui/SettingsSection';
 
 const NO_CHANNELS: readonly TakChannelInfo[] = [];
 
@@ -134,6 +135,7 @@ export default function TakChannelRelaySection({
   const setChatChannel = useTakRelayPrefsStore((s) => s.setChatChannel);
   const setChatSend = useTakRelayPrefsStore((s) => s.setChatSend);
   const setChatRemote = useTakRelayPrefsStore((s) => s.setChatRemote);
+  const setChatCallsign = useTakRelayPrefsStore((s) => s.setChatCallsign);
   const setAtakName = useTakRelayPrefsStore((s) => s.setAtakName);
   if (!sinkActive || !identityId) return null;
 
@@ -142,12 +144,12 @@ export default function TakChannelRelaySection({
   const showList = channels.length > 0 && (mode !== 'off' || showTrackers);
 
   return (
-    <div
-      data-setting-anchor={anchorId}
-      className="bg-deep-black border-ink-800 space-y-3 rounded-xl border p-4"
+    <SettingsSection
+      anchorId={anchorId}
+      title={title}
+      description={description}
+      bodyClassName="space-y-3"
     >
-      <h3 className="text-ink-300 text-sm font-medium">{title}</h3>
-      <p className="text-ink-400 text-xs">{description}</p>
       {channels.length === 0 ? (
         <p className="text-muted text-xs">{emptyText}</p>
       ) : (
@@ -177,6 +179,7 @@ export default function TakChannelRelaySection({
             const name = ch.name || t('takServerPanel.channelRelayUnnamed', { n: ch.index });
             const picked = prefs?.chatChannels.includes(ch.key) ?? false;
             const served = mode === 'all' || (mode === 'selected' && picked);
+            const sending = prefs?.sendChannels.includes(ch.key) ?? false;
             const rowId = `tak-channel-${identityId}-${ch.index}`;
             return (
               <li key={ch.key} className="flex flex-wrap items-center gap-3 text-xs">
@@ -206,13 +209,24 @@ export default function TakChannelRelaySection({
                     />
                     <RowCheck
                       id={`${rowId}-send`}
-                      checked={prefs?.sendChannels.includes(ch.key) ?? false}
+                      checked={sending}
                       onChange={(on) => {
                         setChatSend(identityId, ch.key, on);
                       }}
                       label={t('takServerPanel.channelSend')}
                       ariaLabel={t('takServerPanel.channelSendFor', { channel: name })}
                     />
+                    {sending && (
+                      <RowCheck
+                        id={`${rowId}-callsign`}
+                        checked={!(prefs?.noCallsignChannels.includes(ch.key) ?? false)}
+                        onChange={(on) => {
+                          setChatCallsign(identityId, ch.key, on);
+                        }}
+                        label={t('takServerPanel.channelCallsign')}
+                        ariaLabel={t('takServerPanel.channelCallsignFor', { channel: name })}
+                      />
+                    )}
                     <RowCheck
                       id={`${rowId}-remote`}
                       checked={prefs?.remoteChannels.includes(ch.key) ?? false}
@@ -240,8 +254,11 @@ export default function TakChannelRelaySection({
           })}
         </ul>
       )}
+      {showList && mode !== 'off' && (
+        <p className="text-muted text-xs">{t('takServerPanel.channelCallsignHint')}</p>
+      )}
       {children}
-    </div>
+    </SettingsSection>
   );
 }
 
@@ -303,10 +320,8 @@ export function TakDirectMessagesSection({
   const sinkActive = useTakSinkStore((s) => s.active);
   if (!sinkActive || !identityId) return null;
   return (
-    <div className="bg-deep-black border-ink-800 space-y-3 rounded-xl border p-4">
-      <h3 className="text-ink-300 text-sm font-medium">{title}</h3>
-      <p className="text-ink-400 text-xs">{description}</p>
+    <SettingsSection title={title} description={description} bodyClassName="space-y-3">
       <TakDirectMessagesToggle identityId={identityId} anchorId={anchorId} />
-    </div>
+    </SettingsSection>
   );
 }

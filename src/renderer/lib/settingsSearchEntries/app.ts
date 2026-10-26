@@ -14,6 +14,7 @@ const hasDestinationRetention = (ctx: SettingsSearchContext) =>
 const DANGER = 'appPanel.dangerZoneSection';
 const RETENTION = 'appPanel.retentionLimitsHeading';
 const UPDATES = 'appPanel.updatesSection';
+const WINDOW = 'appPanel.windowSection';
 
 const appEntries: readonly SettingSearchEntry[] = [
   {
@@ -265,6 +266,28 @@ const appEntries: readonly SettingSearchEntry[] = [
     visible: hasNodeDbRetention,
   },
   {
+    id: 'app.support.rendererMemory',
+    slot: 'App',
+    labelKey: 'appPanel.memoryTitle',
+    sectionKey: 'appPanel.supportSection',
+    keywords: ['memory', 'renderer', 'leak', 'sample', 'isolation', 'coi'],
+  },
+  {
+    id: 'app.support.coiCapability',
+    slot: 'App',
+    labelKey: 'appPanel.coiCapabilityTitle',
+    sectionKey: 'appPanel.supportSection',
+    keywords: [
+      'coi',
+      'isolation',
+      'sharedarraybuffer',
+      'threads',
+      'catch up',
+      'timing',
+      'performance',
+    ],
+  },
+  {
     id: 'app.support.exportForGitHub',
     slot: 'App',
     labelKey: 'appPanel.exportForGitHubButton',
@@ -312,6 +335,13 @@ const appEntries: readonly SettingSearchEntry[] = [
     labelKey: 'appPanel.use24HourTime',
     sectionKey: 'appPanel.appearanceSection',
     keywords: ['clock', 'time format'],
+  },
+  {
+    id: 'app.window.closeToTray',
+    slot: 'App',
+    labelKey: 'appPanel.closeToTray',
+    sectionKey: WINDOW,
+    keywords: ['tray', 'minimize', 'minimise', 'close', 'background', 'system tray', 'hide'],
   },
   {
     id: 'app.updates.autoDownload',
@@ -709,6 +739,7 @@ export const appSurface: SettingsSearchSurface = {
   entries: appEntries,
   files: [
     { path: 'src/renderer/components/AppPanel.tsx', sweepAllKeys: true },
+    { path: 'src/renderer/components/AppSupportSection.tsx', sweepAllKeys: true },
     { path: 'src/renderer/components/AppAiSection.tsx', sweepAllKeys: true },
     { path: 'src/renderer/components/AppTranslationSection.tsx', sweepAllKeys: true },
   ],
@@ -873,6 +904,26 @@ export const appSurface: SettingsSearchSurface = {
     'appPanel.capStoredMessages': 'accessible name of the indexed stored-message caps',
     'appPanel.capStoredRrcMessages': 'accessible name of the indexed RRC message cap',
     'appPanel.supportSectionDesc': 'section prose, no control',
+    'appPanel.memorySampleNow': 'child action of the indexed renderer memory section',
+    'appPanel.memorySampling': 'busy label of the indexed memory sample action',
+    'appPanel.memoryRendererProcess': 'scope label for the indexed renderer memory measurement',
+    'appPanel.memoryDescription': 'help text for the indexed memory section',
+    'appPanel.memoryIsolated': 'availability status of the indexed memory section',
+    'appPanel.memoryNotIsolated': 'availability status of the indexed memory section',
+    'appPanel.memoryUnsupported': 'availability status of the indexed memory section',
+    'appPanel.memoryFailed': 'measurement error in the indexed memory section',
+    'appPanel.memoryLatest': 'measurement output in the indexed memory section',
+    'appPanel.memoryEmpty': 'empty state of the indexed memory section',
+    'appPanel.memoryHistory': 'history disclosure in the indexed memory section',
+    'appPanel.memoryProcessOnly': 'scope note under the indexed memory section',
+    'appPanel.coiCapabilityIsolated': 'status line under the indexed COI capability card',
+    'appPanel.coiCapabilitySab': 'status line under the indexed COI capability card',
+    'appPanel.coiCapabilityThreads': 'status line under the indexed COI capability card',
+    'appPanel.coiCapabilityTiming': 'status line under the indexed COI capability card',
+    'appPanel.coiYes': 'yes/no interpolant for COI capability status lines',
+    'appPanel.coiNo': 'yes/no interpolant for COI capability status lines',
+    'appPanel.coiTimingFine': 'timing-resolution interpolant for COI capability status',
+    'appPanel.coiTimingCoarse': 'timing-resolution interpolant for COI capability status',
     'appPanel.exportForGitHub': 'accessible name of the indexed GitHub export button',
     'appPanel.exportForDeveloper': 'accessible name of the indexed developer export button',
     'appPanel.exportForDeveloperWarning': 'warning text under the indexed developer export',

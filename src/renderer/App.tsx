@@ -7,6 +7,7 @@
  */
 import { Crosshair, Search, TriangleAlert } from 'lucide-react-motion';
 import {
+  startTransition,
   Suspense,
   useCallback,
   useEffect,
@@ -15,6 +16,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  useTransition,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -286,6 +288,7 @@ import {
 import { SHELL_COMPACT_QUERY } from './lib/bottomNav';
 import { playMessageNotification } from './lib/chatNotifications';
 import { meshcoreMessageReceptionStats } from './lib/chatSignalReport';
+import { startCoiMemorySampler } from './lib/coiMemorySampler';
 import {
   deviceHeaderVariant,
   headerDotClass,
@@ -434,7 +437,6 @@ import { useReticulumSetupGuideStore } from './stores/reticulumSetupGuideStore';
 import { useReticulumVoiceMemoStore } from './stores/reticulumVoiceMemoStore';
 import { useRncpTransferStore } from './stores/rncpTransferStore';
 import { useRrcSessionStore } from './stores/rrcSessionStore';
-import { useTimeFormatStore } from './stores/timeFormatStore';
 import { useWeatherFilterStore } from './stores/weatherFilterStore';
 
 // Tabs capability filtering lives in appTabMappings.ts (computeTabMappings).
@@ -507,6 +509,7 @@ function PanelSkeleton() {
       className="border-ink-800 bg-ink-900/50 flex h-full min-h-[12rem] items-center justify-center rounded-xl border"
       role="status"
       aria-busy="true"
+      data-panel-loading="true"
     >
       <span className="sr-only">{t('app.loadingPanel')}</span>
       <div className="bg-ink-700 h-8 w-8 animate-pulse rounded-full" aria-hidden />
@@ -592,26 +595,6 @@ function AppContent() {
     void loadNotificationSoundSettings().catch((error: unknown) => {
       console.warn('[App] notification sounds hydrate failed ' + errLikeToLogString(error));
     });
-  }, []);
-
-  // Reconcile 24h clock from SQLite early — AppPanel is lazy and Chat reads the store first.
-  useEffect(() => {
-    let cancelled = false;
-    void window.electronAPI.appSettings
-      .getAll()
-      .then((raw) => {
-        if (cancelled) return;
-        const use24 = raw?.use24HourTime;
-        if (use24 === 'true' || use24 === 'false') {
-          useTimeFormatStore.getState().hydrateFromSqlite(use24 === 'true');
-        }
-      })
-      .catch((err: unknown) => {
-        console.warn('[App] use24HourTime hydrate failed ' + errLikeToLogString(err));
-      });
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   const runtimes = useAllRuntimes();
@@ -875,6 +858,7 @@ function AppContent() {
   }, []);
 
   const [protocol, setProtocol] = useState<MeshProtocol>(() => getStoredEnabledMeshProtocol());
+  const [protocolSwitchPending, startProtocolTransition] = useTransition();
   const [hiddenProtocols, setHiddenProtocols] = useState<MeshProtocol[]>(loadHiddenProtocols);
   const enabledProtocols = useMemo(() => enabledProtocolsFrom(hiddenProtocols), [hiddenProtocols]);
   const reticulumEnabled = enabledProtocols.includes('reticulum');
@@ -918,6 +902,7 @@ function AppContent() {
     hiddenProtocols,
   });
   useRendererHeartbeat();
+  useEffect(() => startCoiMemorySampler(), []);
   useWeatherForecastIngest();
   const serviceAnnouncements = useServiceAnnouncements();
   useSerialServiceListeners();
@@ -2043,13 +2028,17 @@ function AppContent() {
 
   const handleNavSectionSelect = useCallback(
     (id: NavSectionId) => {
+      // Same guard as handleTabSelect: sections are scoped to the displayed
+      // protocol, so ignore their selections while a protocol switch is
+      // pending instead of applying a stale protocol's tab index.
+      if (protocolSwitchPending) return;
       const section = navSections.find((s) => s.id === id);
       if (!section) return;
       setActiveTab(
         resolveSectionTargetTab(section, lastPanelBySectionRef.current.get(`${protocol}:${id}`)),
       );
     },
-    [navSections, protocol],
+    [navSections, protocol, protocolSwitchPending],
   );
 
   const openSlotPanel = useCallback(
@@ -2365,11 +2354,18 @@ function AppContent() {
 
       lastTabByProtocol.current.set(protocol, activeTab);
       lastPanelByProtocol.current.set(protocol, activePanelIndex);
-      setActiveTab(targetTab);
 
       useDiagnosticsStore.getState().clearDiagnostics({ preserveForeignLora: true });
       localStorage.setItem(MESH_PROTOCOL_STORAGE_KEY, newProtocol);
-      setProtocol(newProtocol);
+      // Protocol switches remount per-protocol panels and can take hundreds
+      // of ms of render work after time away (large peer/message stores).
+      // As a transition, React keeps the current UI interactive and renders
+      // the incoming protocol's tree interruptibly instead of freezing input
+      // on one blocking commit.
+      startProtocolTransition(() => {
+        setActiveTab(targetTab);
+        setProtocol(newProtocol);
+      });
     },
     [protocol, activeTab, activePanelIndex, tabsByProtocol],
   );
@@ -2378,6 +2374,24 @@ function AppContent() {
     const fallback = enabledProtocols[0];
     if (fallback && !enabledProtocols.includes(protocol)) handleProtocolChange(fallback);
   }, [enabledProtocols, protocol, handleProtocolChange]);
+
+  // Section-tab switches (e.g. RRC <-> Chat) reactivate keep-alive panels
+  // whose commit can block for hundreds of ms after time away. Rendering the
+  // switch as a transition keeps the current panel interactive while the
+  // incoming panel's tree renders interruptibly.
+  const handleTabSelect = useCallback(
+    (tabIndex: number) => {
+      // Tab indices are scoped to the protocol that rendered them. While a
+      // protocol switch is pending the visible tabs still belong to the old
+      // protocol, so ignore their selections instead of queueing an
+      // old-protocol index behind the switch's destination tab.
+      if (protocolSwitchPending) return;
+      startTransition(() => {
+        setActiveTab(tabIndex);
+      });
+    },
+    [protocolSwitchPending],
+  );
 
   const allConnectionActionsRef = useRef(allConnectionActions);
   useEffect(() => {
@@ -4380,7 +4394,7 @@ function AppContent() {
               onSectionSelect={handleNavSectionSelect}
               pins={railPins}
               activeTabIndex={activeTab}
-              onPinSelect={setActiveTab}
+              onPinSelect={handleTabSelect}
             />
           )}
           <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -4389,7 +4403,7 @@ function AppContent() {
               sectionLabel={activeNavSection ? t(NAV_SECTION_LABEL_KEYS[activeNavSection.id]) : ''}
               activeTabIndex={activeTab}
               badgeCounts={navBadgeCounts}
-              onTabSelect={setActiveTab}
+              onTabSelect={handleTabSelect}
               actions={
                 <>
                   {mobileWebShell && enabledProtocols.length > 1 ? (

@@ -15,7 +15,7 @@ import {
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-const FIXTURE_YAML = `minimumReleaseAge: 540
+const FIXTURE_YAML = `trustPolicy: no-downgrade
 
 overrides:
   # A comment inside the block
@@ -63,7 +63,7 @@ describe('parseOverrides', () => {
     );
     expect(overrides.length).toBeGreaterThan(5);
     const undici = overrides.find((o) => o.packageName === 'undici');
-    expect(undici).toMatchObject({ range: '^7.29.0' });
+    expect(undici).toMatchObject({ range: '^7.30.1' });
     // patchedDependencies must not leak into the overrides list.
     expect(overrides.some((o) => o.range.includes('.patch'))).toBe(false);
   });

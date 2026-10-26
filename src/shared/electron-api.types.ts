@@ -18,6 +18,7 @@ import type {
   GamesStatusResponse,
 } from './games-types';
 import type { GeoResolvedPlace, GeoResolvePlaceRequest } from './geoPlace';
+import type { IncidentSnapshot } from './incidentTypes';
 import type { MeshProtocol } from './meshProtocol';
 import type { NotificationSoundsApi } from './notificationSounds';
 import type { OfflineMapBasemapId } from './offlineMaps/basemapRegistry';
@@ -226,7 +227,7 @@ export interface UpdateCheckingPayload {
 export interface GattBleDevice {
   deviceId: string;
   deviceName: string;
-  /** Advertised / last-seen BLE RSSI in dBm; null when unknown (e.g. Linux Web Bluetooth). */
+  /** Advertised / last-seen BLE RSSI in dBm; null when unavailable from the native adapter. */
   rssi?: number | null;
   /**
    * Hardware BLE MAC when the OS exposes one.
@@ -348,6 +349,8 @@ export interface RendererLivenessSnapshot {
   rendererUnresponsiveSeen: boolean;
   rss: number;
   heapUsed: number;
+  /** Physical RAM for the requesting renderer process; distinct from main rss/heapUsed. */
+  rendererProcessMemoryBytes?: number;
 }
 
 // ─── ElectronAPI interface ────────────────────────────────────────────────────
@@ -388,6 +391,9 @@ export interface ElectronAPI {
   ai: AiAPI;
   // ─── Database operations ────────────────────────────────────────────────────
   db: {
+    getIncidents: () => Promise<IncidentSnapshot>;
+    saveIncidents: (snapshot: IncidentSnapshot) => Promise<void>;
+    seedIncidents: (legacyJson: string | null) => Promise<IncidentSnapshot>;
     saveMessage: (message: {
       sender_id: number;
       sender_name: string;
@@ -508,6 +514,22 @@ export interface ElectronAPI {
     setNodeFavorited: (nodeId: number, favorited: boolean) => Promise<void>;
     getNodeNote: (nodeId: number) => Promise<string | null>;
     setNodeNote: (nodeId: number, note: string) => Promise<void>;
+    /** Persist a COI / process memory sample (retention-bounded in main). */
+    recordRendererMemorySample: (sample: {
+      capturedAt: number;
+      bytes: number;
+      source: 'user-agent' | 'renderer-process';
+      sessionId?: string;
+    }) => Promise<void>;
+    /** Compact summary for Support bundles (no raw rows). */
+    getRendererMemorySampleSummary: () => Promise<{
+      count: number;
+      firstAt: number | null;
+      lastAt: number | null;
+      minBytes: number | null;
+      maxBytes: number | null;
+      spanMs: number | null;
+    }>;
     deleteNodesBySource: (source: string) => Promise<number>;
     migrateRfStubNodes: () => Promise<number>;
     deleteNodesWithoutLongname: () => Promise<number>;

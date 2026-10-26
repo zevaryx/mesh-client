@@ -4,7 +4,6 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 
 import { errLikeToLogString } from '@/renderer/lib/errLikeToLogString';
-import { DetailsChevron } from '@/renderer/lib/icons/detailsChevron';
 import { handleReticulumQrIngest } from '@/renderer/lib/reticulum/handleReticulumQrIngest';
 import { translateReticulumAuditIssue } from '@/renderer/lib/reticulum/reticulumConfigAudit';
 import {
@@ -63,6 +62,7 @@ import {
   TEXTAREA_BOX_CLASS,
   TEXTAREA_BOX_SM_CLASS,
 } from './ui/formClasses';
+import { SettingsCollapsible } from './ui/SettingsSection';
 
 type IdentityReplaceAction = 'generate' | 'importPhrase' | 'importBackup' | 'importPrivate';
 
@@ -105,21 +105,15 @@ function ReticulumCollapsibleSection({
   anchorId?: string;
 }) {
   return (
-    <details
-      data-setting-anchor={anchorId}
-      className={`group bg-deep-black/50 rounded-lg border ${danger ? 'border-red-900/50' : 'border-ink-700'}`}
-      open={defaultOpen || undefined}
+    <SettingsCollapsible
+      title={title}
+      anchorId={anchorId}
+      defaultOpen={defaultOpen}
+      variant={danger ? 'danger' : 'default'}
+      titleAs="span"
     >
-      <summary
-        className={`hover:bg-ink-800 flex cursor-pointer items-center justify-between rounded-lg px-4 py-3 font-medium transition-colors ${
-          danger ? 'text-red-300' : 'text-ink-200'
-        }`}
-      >
-        <span>{title}</span>
-        <DetailsChevron />
-      </summary>
-      <div className="space-y-4 px-4 pb-4">{children}</div>
-    </details>
+      {children}
+    </SettingsCollapsible>
   );
 }
 
@@ -202,6 +196,7 @@ export function ReticulumNetworkPanel({
     required_discovery_value: 16,
     interface_discovery_sources: '',
     network_identity: '',
+    slow_rf_announce_filter: true,
   });
   /** Last GET snapshot — save only sends keys that differ so concurrent patches are preserved. */
   const stackSettingsBaselineRef = useRef<typeof stackSettings | null>(null);
@@ -228,6 +223,7 @@ export function ReticulumNetworkPanel({
         required_discovery_value: body.required_discovery_value,
         interface_discovery_sources: body.interface_discovery_sources,
         network_identity: body.network_identity,
+        slow_rf_announce_filter: body.slow_rf_announce_filter,
       };
       setStackSettings(next);
       stackSettingsBaselineRef.current = next;
@@ -711,6 +707,9 @@ export function ReticulumNetworkPanel({
       if (baseline.network_identity !== stackSettings.network_identity) {
         patch.network_identity = stackSettings.network_identity;
       }
+      if (baseline.slow_rf_announce_filter !== stackSettings.slow_rf_announce_filter) {
+        patch.slow_rf_announce_filter = stackSettings.slow_rf_announce_filter;
+      }
       if (Object.keys(patch).length === 0) {
         return;
       }
@@ -779,6 +778,23 @@ export function ReticulumNetworkPanel({
             />
             {t('networkPanel.reticulumStackSettings.shareInstance')}
           </label>
+          <label
+            data-setting-anchor="radio.reticulumStack.slowRfAnnounceFilter"
+            className="text-ink-300 flex items-center gap-2"
+          >
+            <input
+              type="checkbox"
+              checked={stackSettings.slow_rf_announce_filter}
+              disabled={!sidecarApiReady}
+              onChange={(e) => {
+                setStackSettings((s) => ({ ...s, slow_rf_announce_filter: e.target.checked }));
+              }}
+            />
+            {t('networkPanel.reticulumStackSettings.slowRfAnnounceFilter')}
+          </label>
+          <p className="text-label text-muted pl-6">
+            {t('networkPanel.reticulumStackSettings.slowRfAnnounceFilterHint')}
+          </p>
           <ReticulumShareForOtherApps sidecarApiReady={sidecarApiReady} />
           <label
             data-setting-anchor="radio.reticulumStack.logLevel"
