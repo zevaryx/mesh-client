@@ -528,7 +528,8 @@
     "coiYes": "tak",
     "coiNo": "nie",
     "coiTimingFine": "drobny (~5 µs)",
-    "coiTimingCoarse": "gruboziarnisty (~100 µs)"
+    "coiTimingCoarse": "gruboziarnisty (~100 µs)",
+    "shareMyLocationOffStaticActive": "Udostępnianie lokalizacji jest wyłączone — automatyczne odświeżanie GPS hosta i wysyłanie siatki są wyłączone. Twoja aktywna zapisana lokalizacja (i radiowy GPS, jeśli jest dostępny) są nadal używane lokalnie do filtrowania mapy i odległości."
   },
   "aria": {
     "closeDialog": "Zamknij okno dialogowe",
@@ -630,7 +631,8 @@
       "send_failed": "Nie można wysłać żądania historii do radia. Połącz ponownie lub spróbuj ponownie.",
       "cooldown": "Niedawno pobrano historię tego routera. Poczekaj, zanim ponownie wyślesz żądanie.",
       "offline_gate": "Odczekaj kilka minut po ponownym połączeniu przed automatycznym pobieraniem cykli; użyj ręcznego nadrobienia zaległości.",
-      "already_requested": "Żądanie historii dla tego routera jest już w toku."
+      "already_requested": "Żądanie historii dla tego routera jest już w toku.",
+      "missing_router_key": "Klucz routera nie jest jeszcze znany. Poczekaj na informacje o węźle i spróbuj ponownie."
     },
     "replyRequiresPacketId": "Odpowiedź wymaga identyfikatora pakietu RF wiadomości (poczekaj na potwierdzenie wysłania lub odśwież czat).",
     "queueButton": "Kolejka",
@@ -1218,7 +1220,10 @@
         "accessDeniedLinuxHint": "W systemie Linux dodaj użytkownika do grupy dialout: sudo usermod -aG dialout $USER (następnie wyloguj się i zaloguj ponownie)",
         "disconnectedHint": "Upewnij się, że kabel USB jest podłączony, a urządzenie jest włączone.",
         "timeoutHint": "Jeśli port pojawił się na chwilę, spróbuj ponownie podłączyć kabel USB.",
-        "portStillOpenHint": "Port szeregowy USB nie został prawidłowo zwolniony. Zamknij całkowicie mesh-client i otwórz go ponownie lub odłącz i ponownie podłącz kabel USB, a następnie podłącz ponownie."
+        "portStillOpenHint": "Port szeregowy USB nie został prawidłowo zwolniony. Zamknij całkowicie mesh-client i otwórz go ponownie lub odłącz i ponownie podłącz kabel USB, a następnie podłącz ponownie.",
+        "openFailedLinuxHint": "W dniu Linux często oznacza to, że Twój użytkownik nie znajduje się w grupie dial-out (UŻYTKOWNIK sudo usermod -aG dialout $, a następnie wylogowuje się i ponownie wchodzi) lub inny program korzysta z portu (migacze zamykania, ModemManager lub terminale szeregowe).",
+        "openFailedWindowsHint": "Upewnij się, że zainstalowany jest prawidłowy sterownik USB (CH340, CP210x lub FTDI), zamknij dowolną inną aplikację za pomocą portu COM, a następnie odłącz i ponownie podłącz kabel.",
+        "openFailedGenericHint": "Zamknij dowolną inną aplikację za pomocą portu szeregowego, a następnie odłącz i ponownie podłącz kabel USB i spróbuj ponownie."
       },
       "http": {
         "timeoutMdnsWindows": "W systemie Windows meshtastic.local wymaga Bonjour (instalowanego z iTunes). Zamiast tego użyj adresu IP urządzenia.",
@@ -5174,6 +5179,7 @@
     "cliAutoPingToast": "Ustalanie trasy za pomocą polecenia ping przed CLI…",
     "cliAutoPingFailed": "Ping nie powiódł się; uruchom Ping ręcznie przed ponowną próbą CLI na repeaterach wielokrotnych przeskoków.",
     "cliCommandTooLong": "Polecenie CLI jest zbyt długie (maks. {{max}} znaków).",
+    "cliCommandMustBeSingleLine": "Polecenie CLI musi być w jednym wierszu.",
     "currentRouteLabel": "Aktualna trasa:",
     "neighborsLoadMore": "Załaduj więcej ({{loaded}} z {{total}} załadowanych)",
     "neighborsLoadMoreAria": "Załaduj więcej sąsiadów ({{loaded}} z {{total}} załadowanych)",
@@ -7653,6 +7659,10 @@
     "consoleInput": "Dowództwo towarzyszące",
     "consolePlaceholder": "np. uzyskaj radio",
     "consoleSend": "Wyślij",
+    "notConnected": "Brak połączenia z radiem MeshCore.",
+    "requiresCliFirmware": "Companion CLI wymaga oprogramowania MeshCore companion v1.18 lub nowszego.",
+    "commandMustBeSingleLine": "Polecenie companion musi być w jednym wierszu.",
+    "commandTooLong": "Polecenie companion jest za długie (maks. {{max}} bajtów).",
     "groups": {
       "device": "Urządzenie",
       "radio": "Dostrajanie radia",
@@ -7972,6 +7982,7 @@
     "maxCollectedMessages": "Limit wiadomości do nadrobienia",
     "maxCollectedMessagesHint": "Maksymalna liczba wiadomości, które może zebrać jedna osoba do nadrobienia zaległości (100–5000). Domyślnie 2000. Wyższe wartości trwają dłużej i mogą wymagać większego limitu czasu.",
     "capacityHint": "Około {{count}} typowych wiadomości siatkowych pasuje do jednego przejścia wnioskowania w tym silniku (najpierw nowsze). Nadrabianie zaległości pozwala przetworzyć do {{ceiling}} wiadomości za pomocą wielu przejść. Dłuższe wiadomości zużywają więcej z każdego przejścia. Duże zasięgi wymagają dłuższego czasu oczekiwania.",
-    "capacityHintChooseEngine": "Wbudowana sztuczna inteligencja systemu operacyjnego i pobrane modele pasują do około {{onDevice}} typowych wiadomości na przejazd; lokalny lub zdalny serwer około {{endpoint}}. Nadrabianie zaległości może pokryć do {{ceiling}} wiadomości za pomocą wielu przepustek. Zwiększ limit komunikatów i limit czasu dla zajętych siatek."
+    "capacityHintChooseEngine": "Wbudowana sztuczna inteligencja systemu operacyjnego i pobrane modele pasują do około {{onDevice}} typowych wiadomości na przejazd; lokalny lub zdalny serwer około {{endpoint}}. Nadrabianie zaległości może pokryć do {{ceiling}} wiadomości za pomocą wielu przepustek. Zwiększ limit komunikatów i limit czasu dla zajętych siatek.",
+    "lowThreadBudgetWarning": "To urządzenie ma tylko {{count}} nadrobić zaległości w wątkach WASM. Podsumowania pobranych modeli zwykle potrzebują około 6 lub więcej, aby działać dobrze i potrwa to dłużej. Preferuj inny silnik lub zwiększ limit czasu poniżej."
   }
 }

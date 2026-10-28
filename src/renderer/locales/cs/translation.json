@@ -520,7 +520,8 @@
     "coiYes": "ano",
     "coiNo": "no",
     "coiTimingFine": "jemný (~5 µs)",
-    "coiTimingCoarse": "hrubá (~100 µs)"
+    "coiTimingCoarse": "hrubá (~100 µs)",
+    "shareMyLocationOffStaticActive": "Sdílení polohy je vypnuto — automatické obnovení GPS hostitele a odesílání sítě jsou zakázány. Vaše aktivní uložená poloha (a rádiová GPS, pokud je k dispozici) se stále používá místně pro mapy a filtry vzdálenosti."
   },
   "aria": {
     "closeDialog": "Zavřít dialog",
@@ -622,7 +623,8 @@
       "send_failed": "Nelze odeslat požadavek na historii do rádia. Připojte se znovu nebo to zkuste znovu.",
       "cooldown": "Pro tento směrovač byla nedávno načtena historie. Než požádáš znovu, počkej.",
       "offline_gate": "Před spuštěním automatického načítání počkejte několik minut po opětovném připojení; použijte možnost Dohnat ručně.",
-      "already_requested": "Žádost o historii pro tento směrovač již probíhá."
+      "already_requested": "Žádost o historii pro tento směrovač již probíhá.",
+      "missing_router_key": "Klíč routeru ještě není znám. Počkejte na informace o uzlu a zkuste to znovu."
     },
     "replyRequiresPacketId": "Odpověď vyžaduje ID RF paketu zprávy (počkejte na odeslání ack nebo obnovení chatu).",
     "queueButton": "Fronta",
@@ -1203,7 +1205,10 @@
         "accessDeniedLinuxHint": "V systému Linux přidejte svého uživatele do skupiny dialout: sudo usermod -aG dialout $USER (pak se odhlaste a znovu přihlaste)",
         "disconnectedHint": "Ujistěte se, že je připojen kabel USB a zařízení je zapnuté.",
         "timeoutHint": "Pokud se port krátce objeví, zkuste znovu připojit kabel USB.",
-        "portStillOpenHint": "Sériový port USB se neuvolnil čistě. Úplně ukončete mesh-client a znovu jej otevřete, nebo odpojte a znovu připojte kabel USB a poté jej znovu připojte."
+        "portStillOpenHint": "Sériový port USB se neuvolnil čistě. Úplně ukončete mesh-client a znovu jej otevřete, nebo odpojte a znovu připojte kabel USB a poté jej znovu připojte.",
+        "openFailedLinuxHint": "Dne Linux to často znamená, že váš uživatel není ve skupině vytáčených čísel (sudo usermod -aG vytáčený UŽIVATEL $, poté se odhlásí a znovu přihlásí) nebo jiný program používá port (blikače, ModemManager nebo sériové terminály).",
+        "openFailedWindowsHint": "Ujistěte se, že je nainstalován správný ovladač USB (CH340, CP210x nebo FTDI), zavřete jakoukoli jinou aplikaci pomocí portu COM, poté odpojte a znovu zapojte kabel.",
+        "openFailedGenericHint": "Zavřete jakoukoli jinou aplikaci pomocí sériového portu, odpojte a znovu připojte kabel USB a zkuste to znovu."
       },
       "http": {
         "timeoutMdnsWindows": "Ve Windows vyžaduje meshtastic.local Bonjour (nainstalovaný s iTunes). Místo toho použijte IP adresu zařízení.",
@@ -5136,6 +5141,7 @@
     "cliAutoPingToast": "Vytvoření trasy s Ping před CLI...",
     "cliAutoPingFailed": "Ping selhal; před dalším CLI na vícehopových uzlech spusťte Ping ručně.",
     "cliCommandTooLong": "Příkaz CLI je příliš dlouhý (max {{max}} znaků).",
+    "cliCommandMustBeSingleLine": "Příkaz CLI musí být na jednom řádku.",
     "currentRouteLabel": "Aktuální trasa:",
     "neighborsLoadMore": "Načíst další ({{loaded}} z {{total}} načteno)",
     "neighborsLoadMoreAria": "Načíst další sousedy ({{loaded}} z {{total}} načteno)",
@@ -7604,6 +7610,10 @@
     "consoleInput": "Doprovodný příkaz",
     "consolePlaceholder": "např. získat rádio",
     "consoleSend": "Odeslat",
+    "notConnected": "Nepřipojeno k rádiu MeshCore.",
+    "requiresCliFirmware": "Companion CLI vyžaduje firmware MeshCore companion v1.18 nebo novější.",
+    "commandMustBeSingleLine": "Příkaz companion musí být na jednom řádku.",
+    "commandTooLong": "Příkaz companion je příliš dlouhý (max. {{max}} bajtů).",
     "groups": {
       "device": "Zařízení",
       "radio": "Ladění rádia",
@@ -7920,6 +7930,7 @@
     "maxCollectedMessages": "Limit pro dohánění zpráv",
     "maxCollectedMessagesHint": "Maximální počet zpráv, které může jeden dohnat (100–5000). Výchozí 2000. Vyšší hodnoty trvají déle a mohou vyžadovat delší časový limit.",
     "capacityHint": "Typické síťové zprávy {{count}} odpovídají jednomu inferenčnímu průchodu s tímto motorem (novější jako první). Dohnat můžeš až {{ceiling}} zpráv prostřednictvím více průkazů. Delší zprávy používají více z každého průchodu. Velké rozsahy vyžadují delší časový limit.",
-    "capacityHintChooseEngine": "Vestavěná OS AI a stažené modely odpovídají přibližně {{onDevice}} typickým zprávám na jeden průchod; místní nebo vzdálený server přibližně {{endpoint}}. Dohánění může pokrýt až {{ceiling}} zprávy s více průchody. Zvyšte limit zpráv a časový limit pro zaneprázdněné sítě."
+    "capacityHintChooseEngine": "Vestavěná OS AI a stažené modely odpovídají přibližně {{onDevice}} typickým zprávám na jeden průchod; místní nebo vzdálený server přibližně {{endpoint}}. Dohánění může pokrýt až {{ceiling}} zprávy s více průchody. Zvyšte limit zpráv a časový limit pro zaneprázdněné sítě.",
+    "lowThreadBudgetWarning": "Toto zařízení má pouze {{count}} Dohnat WASM vlákna. Souhrny stažených modelů obvykle potřebují asi 6 nebo více, aby fungovaly dobře, a zde to bude trvat déle. Preferujte jiný motor nebo zvyšte časový limit níže."
   }
 }

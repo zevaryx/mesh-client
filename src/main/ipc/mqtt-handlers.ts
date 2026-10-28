@@ -285,6 +285,8 @@ export interface MqttIpcDeps {
   getMainWindow: () => RendererPushTarget | null;
   /** MQTT node updates also feed the TAK bridge when it is running. */
   getTakServerManager: () => Pick<TakServerManager, 'onNodeUpdate'> | null;
+  /** Desktop: an MQTT client's status changed (re-evaluate the power-save blocker). */
+  onStatusChange?: () => void;
   /**
    * Headless: stores Meshtastic MQTT chat / node updates while no browser tab is attached
    * (`meshtastic-backend/mqttRecords.ts`). Gets every event; it checks presence itself.
@@ -319,6 +321,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
   };
 
   mqttManager.on('status', (s: string) => {
+    deps.onStatusChange?.();
     push('mqtt:status', { status: s, protocol: 'meshtastic' }, 'mqtt:status', s);
   });
   mqttManager.on('error', (msg: string) => {
@@ -361,6 +364,7 @@ export function registerMqttIpcHandlers(deps: MqttIpcDeps): void {
   });
 
   meshcoreMqttAdapter.on('status', (s: string) => {
+    deps.onStatusChange?.();
     push('mqtt:status', { status: s, protocol: 'meshcore' }, 'mqtt:status (meshcore)', s);
   });
   meshcoreMqttAdapter.on('error', (msg: string) => {

@@ -512,7 +512,8 @@
     "coiYes": "あり",
     "coiNo": "なし",
     "coiTimingFine": "細かい（〜5 µ s ）",
-    "coiTimingCoarse": "粗い（〜100 µ s ）"
+    "coiTimingCoarse": "粗い（〜100 µ s ）",
+    "shareMyLocationOffStaticActive": "位置情報の共有がオフになっています。ホストのGPS自動更新とメッシュ送信は無効になっています。アクティブな保存済みの位置情報（および利用可能な場合は無線GPS ）は、地図と距離のフィルタにローカルで引き続き使用されます。"
   },
   "aria": {
     "closeDialog": "ダイアログを閉じる",
@@ -615,7 +616,8 @@
       "send_failed": "ラジオに履歴リクエストを送信できませんでした。再接続するか、もう一度お試しください。",
       "cooldown": "このルーターの履歴は最近取得されました。再度リクエストする前にお待ちください。",
       "offline_gate": "自動フェッチが実行されるまで、再接続後数分待ちます。手動でキャッチアップを使用してください。",
-      "already_requested": "このルーターの履歴リクエストはすでに進行中です。"
+      "already_requested": "このルーターの履歴リクエストはすでに進行中です。",
+      "missing_router_key": "ルーターキーはまだ不明です。ノード情報を待ってから、もう一度試してください。"
     },
     "replyRequiresPacketId": "応答には、メッセージRFパケットIDが必要です（送信確認またはチャットの更新を待ちます）。",
     "queueButton": "キュー処理",
@@ -1182,7 +1184,10 @@
         "accessDeniedLinuxHint": "Linux では、ユーザーをダイヤルアウト グループに追加します: sudo usermod -aG digialout $USER (その後、ログアウトして再度ログインします)",
         "disconnectedHint": "USB ケーブルが接続されており、デバイスの電源が入っていることを確認します。",
         "timeoutHint": "ポートが一時的に表示された場合は、USB ケーブルを再接続してみてください。",
-        "portStillOpenHint": "USB シリアル ポートが正常に解放されませんでした。 mesh-client を完全に終了して再度開くか、USB ケーブルを抜き差しし、再度接続します。"
+        "portStillOpenHint": "USB シリアル ポートが正常に解放されませんでした。 mesh-client を完全に終了して再度開くか、USB ケーブルを抜き差しし、再度接続します。",
+        "openFailedLinuxHint": "Linuxでは、これは多くの場合、ユーザーがダイヤルアウトグループ（ sudo usermod - aG dialout $ USER、ログアウトして再度ログイン）に属していないこと、または他のプログラムがポート（ close flashers、ModemManager、またはシリアル端末）を使用していることを意味します。",
+        "openFailedWindowsHint": "正しいUSBドライバ（ CH 340、CP 210 x、またはFTDI ）がインストールされていることを確認し、COMポートを使用して他のアプリを閉じてから、ケーブルを抜き差しします。",
+        "openFailedGenericHint": "シリアルポートを使用して他のアプリを閉じ、USBケーブルのプラグを抜いて交換してから、もう一度やり直してください。"
       },
       "http": {
         "timeoutMdnsWindows": "Windows では、meshtastic.local には Bonjour (iTunes とともにインストールされる) が必要です。代わりにデバイスの IP アドレスを使用してください。",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "CLIの前にPingでルートを確立しています...",
     "cliAutoPingFailed": "Pingに失敗しました。マルチホップリピーターでCLIを再試行する前に、手動でPingを実行してください。",
     "cliCommandTooLong": "CLIコマンドが長すぎます（最大{{max}}文字）。",
+    "cliCommandMustBeSingleLine": "CLI コマンドは 1 行である必要があります。",
     "currentRouteLabel": "現在のルート:",
     "neighborsLoadMore": "さらに読み込む（{{loaded}}/{{total}} 読み込み済み）",
     "neighborsLoadMoreAria": "隣接ノードをさらに読み込む（{{loaded}}/{{total}} 読み込み済み）",
@@ -7531,6 +7537,10 @@
     "consoleInput": "コンパニオンコマンド",
     "consolePlaceholder": "例： GET RADIO",
     "consoleSend": "送信",
+    "notConnected": "MeshCore 無線機に接続されていません。",
+    "requiresCliFirmware": "Companion CLI には MeshCore companion ファームウェア v1.18 以降が必要です。",
+    "commandMustBeSingleLine": "Companion コマンドは 1 行である必要があります。",
+    "commandTooLong": "Companion コマンドが長すぎます（最大 {{max}} バイト）。",
     "groups": {
       "device": "デバイス",
       "radio": "ラジオチューニング",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "キャッチアップメッセージの制限",
     "maxCollectedMessagesHint": "キャッチアップが集めることができるメッセージの最大数（ 100 -5000 ）。デフォルトは2000です。値が大きいほど時間がかかり、タイムアウトが長くなる場合があります。",
     "capacityHint": "{{count}}についての典型的なメッシュメッセージは、このエンジンで1つの推論パスに適合します（新しいものが最初）。キャッチアップは、複数のパスを介して最大{{ceiling}}件のメッセージを処理できます。メッセージが長いほど、各パスの使用回数が増えます。大規模な範囲では、より長いタイムアウトが必要です。",
-    "capacityHintChooseEngine": "組み込みのOS AIとダウンロードされたモデルは、パスあたり約{{onDevice}}の典型的なメッセージに適合します。ローカルまたはリモートサーバーは約{{endpoint}}です。キャッチアップは、マルチパスで最大{{ceiling}}件のメッセージをカバーできます。ビジーメッシュのメッセージ制限とタイムアウトを上げます。"
+    "capacityHintChooseEngine": "組み込みのOS AIとダウンロードされたモデルは、パスあたり約{{onDevice}}の典型的なメッセージに適合します。ローカルまたはリモートサーバーは約{{endpoint}}です。キャッチアップは、マルチパスで最大{{ceiling}}件のメッセージをカバーできます。ビジーメッシュのメッセージ制限とタイムアウトを上げます。",
+    "lowThreadBudgetWarning": "このデバイスは{{count}}のみWASMスレッドをキャッチアップしています。ダウンロードしたモデルのサマリーは、通常、正常に実行するには約6つ以上必要で、ここでは時間がかかります。別のエンジンを使用するか、以下のタイムアウトを上げてください。"
   }
 }

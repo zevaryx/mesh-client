@@ -730,6 +730,8 @@ export interface ChatPanelProps {
     destination?: number,
     replyRef?: number | string,
   ) => string | undefined | Promise<string | undefined>;
+  /** Block composer submits while a protocol switch has not committed. The draft stays. */
+  composerDisabled?: boolean;
   onReact: (glyph: string, replyId: number, channel: number) => Promise<void>;
   onResend: (msg: ChatMessage) => void;
   onNodeClick: (nodeNum: number) => void;
@@ -818,6 +820,7 @@ function ChatPanel({
   myNodeNum,
   ownNodeIds,
   onSend,
+  composerDisabled = false,
   onReact,
   onResend,
   onNodeClick,
@@ -4795,7 +4798,9 @@ function ChatPanel({
           connectionType={connectionType}
           isMqttOnly={isMqttOnly}
           isDmMode={isDmMode}
-          disabled={(dmOnlyChat && activeDmNode == null) || reticulumDmMissingLxmf}
+          disabled={
+            composerDisabled || (dmOnlyChat && activeDmNode == null) || reticulumDmMissingLxmf
+          }
           composerContext={viewMode === 'dm' ? 'dm' : 'channel'}
           senderDisplayName={composerSelfDisplayName}
           placeholder={composePlaceholder}

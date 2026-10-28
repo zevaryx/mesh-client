@@ -512,7 +512,8 @@
     "coiYes": "是",
     "coiNo": "否",
     "coiTimingFine": "精细（ ~ 5 µs ）",
-    "coiTimingCoarse": "粗略（ ~ 100 µs ）"
+    "coiTimingCoarse": "粗略（ ~ 100 µs ）",
+    "shareMyLocationOffStaticActive": "位置共享已关闭—主机GPS自动刷新和网格发送已禁用。您保存的有效位置（以及可用的无线电GPS ）仍会在本地用于地图和距离过滤器。"
   },
   "aria": {
     "closeDialog": "关闭对话框",
@@ -615,7 +616,8 @@
       "send_failed": "无法向收音机发送历史记录请求。请重新连接或重试。",
       "cooldown": "最近已为此路由器获取历史记录。请稍候再请求。",
       "offline_gate": "重新连接后等待几分钟，然后自动提取运行；手动使用“追赶”。",
-      "already_requested": "此路由器的历史记录请求已在进行中。"
+      "already_requested": "此路由器的历史记录请求已在进行中。",
+      "missing_router_key": "路由器密钥尚不可用。请等待节点信息后再试。"
     },
     "replyRequiresPacketId": "回复需要消息RF数据包ID （等待发送确认或刷新聊天）。",
     "queueButton": "队列",
@@ -1182,7 +1184,10 @@
         "accessDeniedLinuxHint": "在 Linux 上，将您的用户添加到 dialout 组： sudo usermod -aG dialout $USER （然后注销并重新登录）",
         "disconnectedHint": "确保 USB 电缆已连接并且设备已开机。",
         "timeoutHint": "如果该端口短暂出现，请尝试重新连接 USB 电缆。",
-        "portStillOpenHint": "USB 串口没有完全释放。完全退出 mesh-client 并重新打开它，或者拔下并重新插入 USB 电缆，然后重新连接。"
+        "portStillOpenHint": "USB 串口没有完全释放。完全退出 mesh-client 并重新打开它，或者拔下并重新插入 USB 电缆，然后重新连接。",
+        "openFailedLinuxHint": "在Linux ，这通常意味着您的用户不在拨出组中（ sudo usermod -aG dialout $ USER ，然后注销并重新登录） ，或者其他程序正在使用端口（关闭闪光灯、ModemManager或串行终端）。",
+        "openFailedWindowsHint": "确保安装了正确的USB驱动程序（ CH340、CP210x或FTDI ） ，使用COM端口关闭任何其他应用程序，然后拔下并重新插入电缆。",
+        "openFailedGenericHint": "使用串行端口关闭任何其他应用程序，然后拔下并重新插入USB电缆，然后重试。"
       },
       "http": {
         "timeoutMdnsWindows": "在 Windows 上，meshtastic.local 需要 Bonjour（与 iTunes 一起安装）。请改用设备的 IP 地址。",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "在CLI之前使用Ping建立路由…",
     "cliAutoPingFailed": "Ping失败；在多跳中继器上重试CLI之前手动运行Ping。",
     "cliCommandTooLong": "CLI命令太长（最多{{max}}个字符）。",
+    "cliCommandMustBeSingleLine": "CLI 命令必须为单行。",
     "currentRouteLabel": "当前路线：",
     "neighborsLoadMore": "加载更多（{{loaded}}/{{total}}）",
     "neighborsLoadMoreAria": "加载更多邻居（已加载{{loaded}}/{{total}}）",
@@ -7531,6 +7537,10 @@
     "consoleInput": "精灵命令",
     "consolePlaceholder": "例如：获取无线电",
     "consoleSend": "傳送",
+    "notConnected": "未连接到 MeshCore 电台。",
+    "requiresCliFirmware": "Companion CLI 需要 MeshCore companion 固件 v1.18 或更高版本。",
+    "commandMustBeSingleLine": "Companion 命令必须为单行。",
+    "commandTooLong": "Companion 命令过长（最多 {{max}} 字节）。",
     "groups": {
       "device": "设备",
       "radio": "无线电调谐",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "追赶消息限制",
     "maxCollectedMessagesHint": "一个Catch up可以收集的最大消息数（ 100–5000 ）。默认值2000。更高的值需要更长的时间，可能需要更大的超时时间。",
     "capacityHint": "关于{{count}}的典型网格消息适合此引擎的一个推理通道（首先是较新的）。Catch up可以通过多次通行证处理最多{{ceiling}}条消息。较长的消息每次使用通行证的使用次数较多。较大的范围需要较长的超时时间。",
-    "capacityHintChooseEngine": "内置操作系统的人工智能和下载的模型每通约适合{{onDevice}}条典型消息；本地或远程服务器约适合{{endpoint}}条。使用多重通行证，最多可以覆盖{{ceiling}}条消息。提高繁忙网格的消息限制和超时。"
+    "capacityHintChooseEngine": "内置操作系统的人工智能和下载的模型每通约适合{{onDevice}}条典型消息；本地或远程服务器约适合{{endpoint}}条。使用多重通行证，最多可以覆盖{{ceiling}}条消息。提高繁忙网格的消息限制和超时。",
+    "lowThreadBudgetWarning": "此设备只有{{count}}个追赶WASM线程。下载的模型摘要通常需要大约6个或更多才能正常运行，并且在这里需要更长的时间。首选其他引擎，或提高下面的超时时间。"
   }
 }

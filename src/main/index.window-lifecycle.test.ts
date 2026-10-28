@@ -244,7 +244,62 @@ describe('window close-to-tray behaviour', () => {
     expect(body).toContain('resolveWindowCloseAction({');
     expect(body).toContain('closeToTrayEnabled: readCloseToTrayEnabled()');
     expect(body).toContain('trayAvailable: tray !== null');
-    expect(body).toContain('hasConnection: isConnected || isAnyMqttConnected()');
+    expect(body).toContain('hasConnection: hasLiveConnection()');
+  });
+
+  function closeActionFor(flags: {
+    meshcore?: boolean;
+    sidecar?: boolean;
+    meshtastic?: boolean;
+    mqtt?: boolean;
+  }): 'allow' | 'hide' | 'minimize' {
+    const state = {
+      process: { platform: 'linux' as const },
+      resolveWindowCloseAction,
+      isQuitting: false,
+      meshtasticDeviceConnected: flags.meshtastic ?? false,
+      meshcoreDeviceConnected: flags.meshcore ?? false,
+      reticulumSidecarManager: flags.sidecar ? { getStatus: () => ({ running: true }) } : null,
+      isAnyMqttConnected: () => flags.mqtt ?? false,
+      readCloseToTrayEnabled: () => true,
+      tray: {},
+      console: { debug: vi.fn() },
+    };
+    const fnStart = INDEX_SOURCE.indexOf('function isReticulumSidecarRunning()');
+    const fnEnd = INDEX_SOURCE.indexOf('let mainWindow: BrowserWindow | null = null;');
+    const closeStart = INDEX_SOURCE.indexOf("win.on('close', (event)");
+    const closeEnd = INDEX_SOURCE.indexOf("win.on('focus'", closeStart);
+    expect(fnStart).toBeGreaterThan(-1);
+    expect(fnEnd).toBeGreaterThan(fnStart);
+    expect(closeStart).toBeGreaterThan(-1);
+    const source = `(function (win) {
+      ${INDEX_SOURCE.slice(fnStart, fnEnd)}
+      ${INDEX_SOURCE.slice(closeStart, closeEnd)}
+      return win;
+    })`;
+    const register = runInNewContext(transpileModule(source, {}).outputText, state) as (
+      win: ReturnType<typeof createCloseWindow>,
+    ) => ReturnType<typeof createCloseWindow>;
+    const win = createCloseWindow();
+    register(win);
+    const event = { preventDefault: vi.fn() };
+    win.emit('close', event);
+    if (!event.preventDefault.mock.calls.length) return 'allow';
+    if (win.hide.mock.calls.length) return 'hide';
+    return 'minimize';
+  }
+
+  function createCloseWindow() {
+    return Object.assign(new EventEmitter(), {
+      hide: vi.fn(),
+      minimize: vi.fn(),
+    });
+  }
+
+  it('keeps the window when only MeshCore, or only the sidecar, is up', () => {
+    expect(closeActionFor({ meshcore: true })).toBe('hide');
+    expect(closeActionFor({ sidecar: true })).toBe('hide');
+    expect(closeActionFor({})).toBe('allow');
   });
 
   it('hides to tray and keeps the minimize fallback', () => {
@@ -273,25 +328,53 @@ describe('window close-to-tray behaviour', () => {
 });
 
 describe('Web Serial window ownership', () => {
+  interface SerialPortMeta {
+    displayName: string;
+    portName: string;
+    vendorId: string | number | undefined;
+    productId: string | number | undefined;
+  }
+
   function serialSelectionHarness(platform: string) {
     const session = new EventEmitter();
+    const ipcHandlers = new Map<string, (...args: unknown[]) => void>();
+    let timeoutHandler: (() => void) | null = null;
     const state = {
       process: { platform },
       resolveWindowCloseAction,
       isQuitting: false,
-      isConnected: true,
+      hasLiveConnection: () => true,
       isAnyMqttConnected: () => false,
       readCloseToTrayEnabled: () => true,
       tray: {},
       trustedRendererUrl: 'mesh-client://renderer/index.html',
       isAllowedRendererNavigation,
       pendingSerialCallback: null as ((portId: string) => void) | null,
-      pendingSerialSelectionTimer: null,
+      pendingSerialSelectionTimer: null as ReturnType<typeof setTimeout> | null,
       lastSerialPortIds: new Set<string>(),
+      lastSerialPortsById: new Map<string, SerialPortMeta>(),
+      clearLastSerialPortDiscovery: () => {
+        /* assigned below so free calls keep state refs after Map reassignment */
+      },
       clearPendingSerialSelectionTimer: vi.fn(),
       SERIAL_PORT_SELECTION_TIMEOUT_MS: 120_000,
-      setTimeout: vi.fn(() => 1),
+      setTimeout: vi.fn((cb: () => void) => {
+        timeoutHandler = cb;
+        return 1 as unknown as ReturnType<typeof setTimeout>;
+      }),
+      clearTimeout: vi.fn(),
+      ipcMain: {
+        on(channel: string, handler: (...args: unknown[]) => void) {
+          ipcHandlers.set(channel, handler);
+        },
+      },
+      validateIpcSender: () => true,
+      sanitizeLogMessage: (message: string) => message,
       console: { debug: vi.fn(), warn: vi.fn() },
+    };
+    state.clearLastSerialPortDiscovery = () => {
+      state.lastSerialPortIds.clear();
+      state.lastSerialPortsById.clear();
     };
     const createWindow = () =>
       Object.assign(new EventEmitter(), {
@@ -320,13 +403,67 @@ describe('Web Serial window ownership', () => {
     const register = runInNewContext(transpileModule(source, {}).outputText, state) as (
       window: ReturnType<typeof createWindow>,
     ) => void;
-    return { session, state, createWindow, register };
+
+    const ipcStart = INDEX_SOURCE.indexOf('// ─── IPC: Serial port selected by user');
+    // The serial handlers end where the (moved) bluetoothctl handlers are registered.
+    const ipcEnd = INDEX_SOURCE.indexOf('// ─── IPC: bluetoothctl pairing helpers', ipcStart);
+    expect(ipcStart).toBeGreaterThan(-1);
+    expect(ipcEnd).toBeGreaterThan(ipcStart);
+    runInNewContext(
+      transpileModule(`(function () { ${INDEX_SOURCE.slice(ipcStart, ipcEnd)} })()`, {}).outputText,
+      state,
+    );
+
+    const emitSerialIpc = (
+      channel: 'serial-port-selected' | 'serial-port-cancelled',
+      portId?: unknown,
+    ) => {
+      const handler = ipcHandlers.get(channel);
+      expect(handler).toBeTypeOf('function');
+      handler?.({}, portId);
+    };
+    const fireSelectionTimeout = () => {
+      expect(timeoutHandler).toBeTypeOf('function');
+      timeoutHandler?.();
+    };
+    return {
+      session,
+      state,
+      createWindow,
+      register,
+      emitSerialIpc,
+      fireSelectionTimeout,
+    };
+  }
+
+  function startSerialSelection(
+    harness: ReturnType<typeof serialSelectionHarness>,
+    ports: {
+      portId: string;
+      displayName?: string;
+      portName?: string;
+      vendorId?: string | number;
+      productId?: string | number;
+    }[],
+  ) {
+    const window = harness.createWindow();
+    harness.register(window);
+    const callback = vi.fn();
+    harness.session.emit(
+      'select-serial-port',
+      { preventDefault: vi.fn() },
+      ports,
+      window.webContents,
+      callback,
+    );
+    return { window, callback };
   }
 
   it.each(['linux', 'darwin', 'win32'])(
     'only lets the reopened window own its chooser callback on %s',
     (platform) => {
-      const { session, state, createWindow, register } = serialSelectionHarness(platform);
+      const harness = serialSelectionHarness(platform);
+      const { session, state, createWindow, register, emitSerialIpc } = harness;
       const unrelatedListener = vi.fn();
       session.on('select-serial-port', unrelatedListener);
       const original = createWindow();
@@ -355,7 +492,7 @@ describe('Web Serial window ownership', () => {
       expect(event.preventDefault).toHaveBeenCalledOnce();
       expect(callback).not.toHaveBeenCalled();
       expect(state.pendingSerialCallback).toBe(callback);
-      state.pendingSerialCallback?.('new-window-port');
+      emitSerialIpc('serial-port-selected', 'new-window-port');
       expect(callback).toHaveBeenCalledExactlyOnceWith('new-window-port');
       expect(originalContents.send).not.toHaveBeenCalled();
       expect(reopened.webContents.send).toHaveBeenCalledOnce();
@@ -387,6 +524,88 @@ describe('Web Serial window ownership', () => {
       );
       expect(state.pendingSerialCallback).toBe(callback);
       expect(callback).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(['linux', 'darwin', 'win32'])(
+    'logs selected port metadata and clears discovery via serial-port-selected on %s',
+    (platform) => {
+      const harness = serialSelectionHarness(platform);
+      const clearSpy = vi.spyOn(harness.state, 'clearLastSerialPortDiscovery');
+      const { callback } = startSerialSelection(harness, [
+        {
+          portId: 'wio-port',
+          displayName: 'Wio Tracker',
+          portName: '/dev/ttyACM0',
+          vendorId: '2886',
+          productId: '0057',
+        },
+      ]);
+      expect(harness.state.lastSerialPortsById.get('wio-port')).toEqual({
+        displayName: 'Wio Tracker',
+        portName: '/dev/ttyACM0',
+        vendorId: '2886',
+        productId: '0057',
+      });
+
+      harness.emitSerialIpc('serial-port-selected', 'wio-port');
+
+      expect(callback).toHaveBeenCalledExactlyOnceWith('wio-port');
+      expect(harness.state.console.debug).toHaveBeenCalledWith(
+        '[IPC] serial-port-selected:',
+        'wio-port',
+        'Wio Tracker',
+        '/dev/ttyACM0',
+        'vid=2886',
+        'pid=0057',
+      );
+      expect(clearSpy).toHaveBeenCalled();
+      expect(harness.state.lastSerialPortIds.size).toBe(0);
+      expect(harness.state.lastSerialPortsById.size).toBe(0);
+      expect(harness.state.pendingSerialCallback).toBeNull();
+    },
+  );
+
+  it.each(['linux', 'darwin', 'win32'])(
+    'clears discovery maps on serial-port-cancelled on %s',
+    (platform) => {
+      const harness = serialSelectionHarness(platform);
+      const clearSpy = vi.spyOn(harness.state, 'clearLastSerialPortDiscovery');
+      const { callback } = startSerialSelection(harness, [
+        { portId: 'busy-port', portName: '/dev/ttyUSB0', vendorId: 1, productId: 2 },
+      ]);
+      expect(harness.state.lastSerialPortsById.size).toBe(1);
+
+      harness.emitSerialIpc('serial-port-cancelled');
+
+      expect(callback).toHaveBeenCalledExactlyOnceWith('');
+      expect(clearSpy).toHaveBeenCalled();
+      expect(harness.state.lastSerialPortIds.size).toBe(0);
+      expect(harness.state.lastSerialPortsById.size).toBe(0);
+      expect(harness.state.pendingSerialCallback).toBeNull();
+    },
+  );
+
+  it.each(['linux', 'darwin', 'win32'])(
+    'clears discovery maps when serial selection times out on %s',
+    (platform) => {
+      const harness = serialSelectionHarness(platform);
+      const clearSpy = vi.spyOn(harness.state, 'clearLastSerialPortDiscovery');
+      const { callback } = startSerialSelection(harness, [
+        { portId: 'stale-port', displayName: 'Stale', portName: '/dev/ttyACM1' },
+      ]);
+      expect(harness.state.lastSerialPortsById.size).toBe(1);
+
+      harness.fireSelectionTimeout();
+
+      expect(callback).toHaveBeenCalledExactlyOnceWith('');
+      expect(harness.state.console.warn).toHaveBeenCalledWith(
+        '[IPC] Serial port selection callback stale after timeout — auto-cancelling',
+      );
+      expect(clearSpy).toHaveBeenCalled();
+      expect(harness.state.lastSerialPortIds.size).toBe(0);
+      expect(harness.state.lastSerialPortsById.size).toBe(0);
+      expect(harness.state.pendingSerialCallback).toBeNull();
     },
   );
 });

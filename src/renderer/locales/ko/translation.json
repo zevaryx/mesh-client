@@ -512,7 +512,8 @@
     "coiYes": "예",
     "coiNo": "아니오",
     "coiTimingFine": "미세 (~ 5 µs)",
-    "coiTimingCoarse": "거친 (~ 100 µs)"
+    "coiTimingCoarse": "거친 (~ 100 µs)",
+    "shareMyLocationOffStaticActive": "위치 공유가 꺼져 있음 — 호스트 GPS 자동 새로 고침 및 메시 전송이 비활성화되었습니다. 활성 저장 위치 (및 사용 가능한 경우 무선 GPS) 는 여전히 지도 및 거리 필터에 로컬로 사용됩니다."
   },
   "aria": {
     "closeDialog": "대화상자 닫기",
@@ -615,7 +616,8 @@
       "send_failed": "라디오에 기록 요청을 보낼 수 없습니다. 다시 연결하거나 다시 시도하세요.",
       "cooldown": "최근 이 라우터에 대한 기록을 가져왔습니다. 다시 요청하기 전에 기다리세요.",
       "offline_gate": "자동 가져오기가 실행되기 전에 다시 연결한 후 몇 분 정도 기다리십시오. 수동으로 따라잡기를 사용하십시오.",
-      "already_requested": "이 라우터에 대한 기록 요청이 이미 진행 중입니다."
+      "already_requested": "이 라우터에 대한 기록 요청이 이미 진행 중입니다.",
+      "missing_router_key": "라우터 키를 아직 모릅니다. 노드 정보를 기다린 다음 다시 시도하세요."
     },
     "replyRequiresPacketId": "회신하려면 메시지 RF 패킷 ID가 필요합니다 (ACK 전송 또는 채팅 새로 고침을 기다림).",
     "queueButton": "대기열",
@@ -1182,7 +1184,10 @@
         "accessDeniedLinuxHint": "Linux에서는 다이얼아웃 그룹에 사용자를 추가합니다. sudo usermod -aG 다이얼아웃 $USER(그런 다음 로그아웃했다가 다시 로그인)",
         "disconnectedHint": "USB 케이블이 연결되어 있고 장치의 전원이 켜져 있는지 확인하세요.",
         "timeoutHint": "포트가 잠시 나타나는 경우 USB 케이블을 다시 연결해 보세요.",
-        "portStillOpenHint": "USB 직렬 포트가 완전히 해제되지 않았습니다. mesh-client을(를) 완전히 종료했다가 다시 열거나 USB 케이블을 뽑았다가 다시 연결한 후 다시 연결하세요."
+        "portStillOpenHint": "USB 직렬 포트가 완전히 해제되지 않았습니다. mesh-client을(를) 완전히 종료했다가 다시 열거나 USB 케이블을 뽑았다가 다시 연결한 후 다시 연결하세요.",
+        "openFailedLinuxHint": "Linux 에서는 사용자가 다이얼아웃 그룹 (sudo usermod -aG dialout $ USER, 로그아웃했다가 다시 로그인) 에 있지 않거나 다른 프로그램이 포트를 사용하고 있음을 의미합니다 (점멸기, ModemManager 또는 시리얼 터미널 닫기).",
+        "openFailedWindowsHint": "올바른 USB 드라이버 (CH340, CP210x 또는 FTDI) 가 설치되어 있는지 확인하고 COM 포트를 사용하여 다른 앱을 닫은 다음 케이블을 뽑고 다시 연결합니다.",
+        "openFailedGenericHint": "직렬 포트를 사용하여 다른 앱을 닫은 다음 USB 케이블을 뽑았다가 다시 연결하고 다시 시도하세요."
       },
       "http": {
         "timeoutMdnsWindows": "Windows의 경우 meshtastic.local에는 Bonjour(iTunes와 함께 설치)가 필요합니다. 대신 장치의 IP 주소를 사용하십시오.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "CLI 전에 Ping으로 경로 설정 중...",
     "cliAutoPingFailed": "핑 실패. 멀티 홉 리피터에서 CLI를 다시 시도하기 전에 수동으로 핑을 실행하십시오.",
     "cliCommandTooLong": "CLI 명령이 너무 깁니다(최대 {{max}}자).",
+    "cliCommandMustBeSingleLine": "CLI 명령은 한 줄이어야 합니다.",
     "currentRouteLabel": "현재 경로:",
     "neighborsLoadMore": "더 보기 ({{loaded}}/{{total}} 로드됨)",
     "neighborsLoadMoreAria": "더 많은 이웃 로드 ({{loaded}}/{{total}} 로드됨)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "동반자 명령",
     "consolePlaceholder": "예: GET 라디오",
     "consoleSend": "보내기",
+    "notConnected": "MeshCore 무전기에 연결되어 있지 않습니다.",
+    "requiresCliFirmware": "Companion CLI에는 MeshCore companion 펌웨어 v1.18 이상이 필요합니다.",
+    "commandMustBeSingleLine": "Companion 명령은 한 줄이어야 합니다.",
+    "commandTooLong": "Companion 명령이 너무 깁니다(최대 {{max}}바이트).",
     "groups": {
       "device": "장치",
       "radio": "라디오 튜닝",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "메시지 한도 따라잡기",
     "maxCollectedMessagesHint": "Catch up이 수집할 수 있는 최대 메시지 수 (100-5000개). 기본값은 2000입니다. 값이 높을수록 시간이 더 오래 걸리고 더 큰 시간 초과가 필요할 수 있습니다.",
     "capacityHint": "약 {{count}} 일반적인 메시 메시 메시지는 이 엔진과 하나의 추론 패스에 적합합니다 (최신 버전 우선). 여러 패스를 통해 최대 {{ceiling}} 개의 메시지를 처리할 수 있습니다. 더 긴 메시지는 각 이용권을 더 많이 사용합니다. 큰 범위에는 더 긴 시간 초과가 필요합니다.",
-    "capacityHintChooseEngine": "내장된 OS AI와 다운로드된 모델은 패스당 약 {{onDevice}} 개의 일반 메시지에 적합하며, 로컬 또는 원격 서버는 약 {{endpoint}} 입니다. 멀티 패스로 최대 {{ceiling}} 개의 메시지를 커버할 수 있습니다. 혼잡 메시에 대한 메시지 제한 및 시간 초과를 높입니다."
+    "capacityHintChooseEngine": "내장된 OS AI와 다운로드된 모델은 패스당 약 {{onDevice}} 개의 일반 메시지에 적합하며, 로컬 또는 원격 서버는 약 {{endpoint}} 입니다. 멀티 패스로 최대 {{ceiling}} 개의 메시지를 커버할 수 있습니다. 혼잡 메시에 대한 메시지 제한 및 시간 초과를 높입니다.",
+    "lowThreadBudgetWarning": "이 장치에는 {{count}} 개의 WASM 스레드만 있습니다. 다운로드한 모델 요약은 일반적으로 잘 실행하려면 약 6개 이상이 필요하며 여기서 더 오래 걸립니다. 다른 엔진을 선호하거나 아래 시간 초과를 올리십시오."
   }
 }

@@ -512,7 +512,8 @@
     "coiYes": "evet",
     "coiNo": "hayır",
     "coiTimingFine": "ince (~5 µs)",
-    "coiTimingCoarse": "kaba (~100 µs)"
+    "coiTimingCoarse": "kaba (~100 µs)",
+    "shareMyLocationOffStaticActive": "Konum paylaşımı kapalı. Ana bilgisayar GPS otomatik yenileme ve mesh gönderme devre dışı. Kaydedilen etkin konumunuz (ve mevcut olduğunda radyo GPS'iniz) harita ve mesafe filtreleri için yerel olarak kullanılmaya devam eder."
   },
   "aria": {
     "closeDialog": "İletişim kutusunu kapat",
@@ -615,7 +616,8 @@
       "send_failed": "Radyoya geçmiş isteği gönderilemedi. Yeniden bağlanın veya tekrar deneyin.",
       "cooldown": "Bu yönlendirici için geçmiş yakın zamanda alındı. Yeniden istek göndermeden önce bekleyin.",
       "offline_gate": "Otomatik yakalama çalıştırmadan önce yeniden bağladıktan sonra birkaç dakika bekleyin; manuel olarak Yakala'yı kullanın.",
-      "already_requested": "Bu yönlendirici için bir geçmiş isteği zaten devam ediyor."
+      "already_requested": "Bu yönlendirici için bir geçmiş isteği zaten devam ediyor.",
+      "missing_router_key": "Yönlendirici anahtarı henüz bilinmiyor. Düğüm bilgisini bekleyin, sonra yeniden deneyin."
     },
     "replyRequiresPacketId": "Yanıt, RF paket kimliği mesajını gerektirir (mesajın gönderilmesini bekleyin veya sohbeti yenileyin).",
     "queueButton": "Kuyruk (sıra)",
@@ -1182,7 +1184,10 @@
         "accessDeniedLinuxHint": "Linux'ta kullanıcınızı arama grubuna ekleyin: sudo usermod -aG dialout $USER (sonra oturumu kapatıp tekrar açın)",
         "disconnectedHint": "USB kablosunun bağlı olduğundan ve cihazın açık olduğundan emin olun.",
         "timeoutHint": "Bağlantı noktası kısa süreliğine belirirse USB kablosunu yeniden bağlamayı deneyin.",
-        "portStillOpenHint": "USB seri bağlantı noktası temiz bir şekilde serbest bırakılmadı. mesh-client'ten tamamen çıkın ve yeniden açın veya USB kablosunu çıkarıp yeniden takın ve ardından tekrar bağlayın."
+        "portStillOpenHint": "USB seri bağlantı noktası temiz bir şekilde serbest bırakılmadı. mesh-client'ten tamamen çıkın ve yeniden açın veya USB kablosunu çıkarıp yeniden takın ve ardından tekrar bağlayın.",
+        "openFailedLinuxHint": "Linux tarihinde bu genellikle kullanıcınızın arama grubunda olmadığı (sudo usermod - aG dialout $USER, ardından çıkış yapıp tekrar giriş yaptığı) veya başka bir programın bağlantı noktasını kullandığı (flaşörleri, ModemManager'ı veya seri terminalleri kapattığı) anlamına gelir.",
+        "openFailedWindowsHint": "Doğru USB sürücüsünün (CH340, CP210x veya FTDI) yüklendiğinden emin olun, com bağlantı noktasını kullanarak diğer uygulamaları kapatın, ardından kabloyu çıkarıp yeniden takın.",
+        "openFailedGenericHint": "Seri bağlantı noktasını kullanarak diğer uygulamaları kapatın, ardından USB kablosunu çıkarıp yeniden takın ve tekrar deneyin."
       },
       "http": {
         "timeoutMdnsWindows": "Windows'ta meshtastic.local, Bonjour'u (iTunes ile birlikte yüklenir) gerektirir. Bunun yerine cihazın IP adresini kullanın.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "CLI öncesi Ping ile rota oluşturuluyor…",
     "cliAutoPingFailed": "Ping başarısız oldu; çok atlama tekrarlayıcılarda CLI'yi yeniden denemeden önce Ping'i manuel olarak çalıştırın.",
     "cliCommandTooLong": "CLI komutu çok uzun (en fazla {{max}} karakter).",
+    "cliCommandMustBeSingleLine": "CLI komutu tek satır olmalıdır.",
     "currentRouteLabel": "Mevcut rota:",
     "neighborsLoadMore": "Daha fazla yükle ({{loaded}}/{{total}})",
     "neighborsLoadMoreAria": "Daha fazla komşu yükleyin ({{loaded}}/{{total}} yüklü)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "Refakatçi komutu",
     "consolePlaceholder": "ör. get radio",
     "consoleSend": "Gönder",
+    "notConnected": "Bir MeshCore radyosuna bağlı değil.",
+    "requiresCliFirmware": "Companion CLI, MeshCore companion üretici yazılımı v1.18 veya daha yenisini gerektirir.",
+    "commandMustBeSingleLine": "Companion komutu tek satır olmalıdır.",
+    "commandTooLong": "Companion komutu çok uzun (en fazla {{max}} bayt).",
     "groups": {
       "device": "Cihaz",
       "radio": "Radyo ayarlama",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "Mesaj sınırını yakala",
     "maxCollectedMessagesHint": "Bir Yakalamanın toplayabileceği maksimum mesaj (100 -5000). Varsayılan 2000. Daha yüksek değerler daha uzun sürer ve daha büyük bir zaman aşımı gerekebilir.",
     "capacityHint": "Yaklaşık {{count}} tipik mesh mesajları bu motorla bir çıkarım geçişine uyar (önce daha yeni). Yetişme, birden fazla paso aracılığıyla {{ceiling}} kadar mesajı işleyebilir. Daha uzun mesajlarda her pasodan daha fazla kullanılır. Büyük aralıkların daha uzun bir zaman aşımına ihtiyacı vardır.",
-    "capacityHintChooseEngine": "Yerleşik işletim sistemi yapay zekası ve indirilen modeller, geçiş başına yaklaşık {{onDevice}} tipik mesaja uyar; {{endpoint}} hakkında yerel veya uzak bir sunucu. Arayı kapatmak {{ceiling}} kadar mesajı çoklu geçişle kapatabilir. Meşgul ağlar için mesaj sınırını ve zaman aşımını artırın."
+    "capacityHintChooseEngine": "Yerleşik işletim sistemi yapay zekası ve indirilen modeller, geçiş başına yaklaşık {{onDevice}} tipik mesaja uyar; {{endpoint}} hakkında yerel veya uzak bir sunucu. Arayı kapatmak {{ceiling}} kadar mesajı çoklu geçişle kapatabilir. Meşgul ağlar için mesaj sınırını ve zaman aşımını artırın.",
+    "lowThreadBudgetWarning": "Bu cihazda yalnızca {{count}} WASM ileti dizilerini yakalayın. İndirilen model özetlerinin iyi çalışması için genellikle yaklaşık 6 veya daha fazlasına ihtiyaç vardır ve burada daha uzun sürecektir. Başka bir motor tercih edin veya aşağıdaki zaman aşımını artırın."
   }
 }

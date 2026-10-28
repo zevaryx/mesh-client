@@ -512,7 +512,8 @@
     "coiYes": "oui",
     "coiNo": "non=",
     "coiTimingFine": "fin (~5 µs)",
-    "coiTimingCoarse": "grossier (~100 µs)"
+    "coiTimingCoarse": "grossier (~100 µs)",
+    "shareMyLocationOffStaticActive": "Le partage de localisation est désactivé — l'actualisation automatique du GPS de l'hôte et l'envoi maillé sont désactivés. Votre position enregistrée active (et le GPS radio lorsqu'il est disponible) sont toujours utilisés localement pour les filtres de carte et de distance."
   },
   "aria": {
     "closeDialog": "Fermer la boîte de dialogue",
@@ -614,7 +615,8 @@
       "send_failed": "Impossible d'envoyer la demande d'historique à la radio. Reconnectez-vous ou réessayez.",
       "cooldown": "L'historique a été récupéré récemment pour ce routeur. Attendez avant de refaire une demande.",
       "offline_gate": "Attendez quelques minutes après la reconnexion avant que la récupération automatique ne s'exécute ; utilisez Rattraper manuellement.",
-      "already_requested": "Une demande d'historique est déjà en cours pour ce routeur."
+      "already_requested": "Une demande d'historique est déjà en cours pour ce routeur.",
+      "missing_router_key": "La clé du routeur n'est pas encore connue. Attendez les informations du nœud, puis réessayez."
     },
     "replyRequiresPacketId": "La réponse nécessite l'identifiant du paquet RF du message (attendez l'envoi de l'ack ou l'actualisation du chat).",
     "queueButton": "File d’attente",
@@ -1181,7 +1183,10 @@
         "accessDeniedLinuxHint": "Sous Linux, ajoutez votre utilisateur au groupe de numérotation : sudo usermod -aG dialout $USER (puis déconnectez-vous et reconnectez-vous)",
         "disconnectedHint": "Assurez-vous que le câble USB est connecté et que l'appareil est sous tension.",
         "timeoutHint": "Si le port apparaît brièvement, essayez de reconnecter le câble USB.",
-        "portStillOpenHint": "Le port série USB ne s'est pas libéré proprement. Quittez complètement mesh-client et rouvrez-le, ou débranchez et rebranchez le câble USB, puis reconnectez-le."
+        "portStillOpenHint": "Le port série USB ne s'est pas libéré proprement. Quittez complètement mesh-client et rouvrez-le, ou débranchez et rebranchez le câble USB, puis reconnectez-le.",
+        "openFailedLinuxHint": "Sur Linux, cela signifie souvent que votre utilisateur ne fait pas partie du groupe de numérotation (sudo usermod -aG dialout $USER, puis déconnectez-vous et reconnectez-vous), ou qu'un autre programme utilise le port (clignotants proches, ModemManager ou terminaux série).",
+        "openFailedWindowsHint": "Assurez-vous que le pilote USB correct est installé (CH340, CP210x ou FTDI), fermez toute autre application à l'aide du port COM, puis débranchez et rebranchez le câble.",
+        "openFailedGenericHint": "Fermez toute autre application à l'aide du port série, puis débranchez et rebranchez le câble USB et réessayez."
       },
       "http": {
         "timeoutMdnsWindows": "Sous Windows, meshtastic.local nécessite Bonjour (installé avec iTunes). Utilisez plutôt l'adresse IP de l'appareil.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "Établissement de l'itinéraire avec Ping avant CLI…",
     "cliAutoPingFailed": "Échec du Ping ; lancez Ping manuellement avant de réessayer la CLI sur les nœuds multi-sauts.",
     "cliCommandTooLong": "La commande CLI est trop longue (max {{max}} caractères).",
+    "cliCommandMustBeSingleLine": "La commande CLI doit tenir sur une seule ligne.",
     "currentRouteLabel": "Itinéraire actuel :",
     "neighborsLoadMore": "Charger plus ({{loaded}} sur {{total}})",
     "neighborsLoadMoreAria": "Charger plus de voisins ({{loaded}} sur {{total}} chargés)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "Commande compagnon",
     "consolePlaceholder": "par exemple, obtenir la radio",
     "consoleSend": "Envoyer",
+    "notConnected": "Non connecté à une radio MeshCore.",
+    "requiresCliFirmware": "La CLI companion exige le firmware MeshCore companion v1.18 ou plus récent.",
+    "commandMustBeSingleLine": "La commande companion doit tenir sur une seule ligne.",
+    "commandTooLong": "La commande companion est trop longue ({{max}} octets maximum).",
     "groups": {
       "device": "Dispositif",
       "radio": "Réglage radio",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "Limite de messages de rattrapage",
     "maxCollectedMessagesHint": "Nombre maximum de messages qu'un Rattrapage peut collecter (100–5000). 2000 par défaut. Les valeurs plus élevées prennent plus de temps et peuvent nécessiter un délai d'attente plus long.",
     "capacityHint": "Environ {{count}} messages maillés typiques correspondent à une passe d'inférence avec ce moteur (plus récent en premier). Le rattrapage peut traiter jusqu'à {{ceiling}} messages via plusieurs passes. Les messages plus longs utilisent plus de chaque passe. Les grandes plages nécessitent un délai d'attente plus long.",
-    "capacityHintChooseEngine": "L'IA intégrée du système d'exploitation et les modèles téléchargés correspondent à environ {{onDevice}} messages typiques par passage ; un serveur local ou distant à propos de {{endpoint}}. Le rattrapage peut couvrir jusqu'à {{ceiling}} messages avec plusieurs passes. Augmentez la limite de message et le délai d'expiration pour les maillages occupés."
+    "capacityHintChooseEngine": "L'IA intégrée du système d'exploitation et les modèles téléchargés correspondent à environ {{onDevice}} messages typiques par passage ; un serveur local ou distant à propos de {{endpoint}}. Le rattrapage peut couvrir jusqu'à {{ceiling}} messages avec plusieurs passes. Augmentez la limite de message et le délai d'expiration pour les maillages occupés.",
+    "lowThreadBudgetWarning": "Cet appareil n'a que {{count}} fil(s) de rattrapage WASM. Les résumés de modèles téléchargés ont généralement besoin d'environ 6 ou plus pour bien fonctionner et prendront plus de temps ici. Préférez un autre moteur ou augmentez le délai d'attente ci-dessous."
   }
 }

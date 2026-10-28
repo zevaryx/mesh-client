@@ -512,7 +512,8 @@
     "coiYes": "sim",
     "coiNo": "não",
     "coiTimingFine": "fino (~5 µs)",
-    "coiTimingCoarse": "grosso (~100 µs)"
+    "coiTimingCoarse": "grosso (~100 µs)",
+    "shareMyLocationOffStaticActive": "O compartilhamento de localização está desativado — a atualização automática do GPS do anfitrião e o envio de malha estão desativados. Sua localização salva ativa (e GPS de rádio, quando disponível) ainda são usados localmente para os filtros de mapa e distância."
   },
   "aria": {
     "closeDialog": "Fechar janela",
@@ -615,7 +616,8 @@
       "send_failed": "Não foi possível enviar a solicitação de histórico para o rádio. Reconecte ou tente novamente.",
       "cooldown": "O histórico foi obtido recentemente para este roteador. Aguarde antes de solicitar novamente.",
       "offline_gate": "Aguarde alguns minutos após a reconexão antes de executar a busca automática; use Atualizar a partir da Loja e Encaminhar manualmente.",
-      "already_requested": "Uma solicitação de histórico já está em andamento para este roteador."
+      "already_requested": "Uma solicitação de histórico já está em andamento para este roteador.",
+      "missing_router_key": "A chave do roteador ainda não é conhecida. Aguarde as informações do nó e tente novamente."
     },
     "replyRequiresPacketId": "A resposta requer o ID do pacote RF da mensagem (aguarde a confirmação de envio ou atualize o chat).",
     "queueButton": "Fila de espera",
@@ -1182,7 +1184,10 @@
         "accessDeniedLinuxHint": "No Linux, adicione seu usuário ao grupo dialout: sudo usermod -aG dialout $USER (depois efetue logout e login novamente)",
         "disconnectedHint": "Certifique-se de que o cabo USB esteja conectado e o dispositivo esteja ligado.",
         "timeoutHint": "Se a porta aparecer brevemente, tente reconectar o cabo USB.",
-        "portStillOpenHint": "A porta serial USB não foi liberada de forma limpa. Saia do mesh-client completamente e reabra-o, ou desconecte e reconecte o cabo USB e conecte novamente."
+        "portStillOpenHint": "A porta serial USB não foi liberada de forma limpa. Saia do mesh-client completamente e reabra-o, ou desconecte e reconecte o cabo USB e conecte novamente.",
+        "openFailedLinuxHint": "Em Linux, isso geralmente significa que seu usuário não está no grupo de discagem (sudo usermod -aG dialout $USER, depois faça logout e faça login novamente) ou outro programa está usando a porta (feche flashers, ModemManager ou terminais seriais).",
+        "openFailedWindowsHint": "Certifique-se de que o driver USB correto esteja instalado (CH340, CP210x ou FTDI), feche qualquer outro aplicativo usando a porta com e, em seguida, desconecte e reconecte o cabo.",
+        "openFailedGenericHint": "Feche qualquer outro aplicativo usando a porta serial, desconecte e reconecte o cabo USB e tente novamente."
       },
       "http": {
         "timeoutMdnsWindows": "No Windows, Meshtastic.local requer Bonjour (instalado com iTunes). Use o endereço IP do dispositivo.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "Estabelecendo a rota com o Ping antes da CLI...",
     "cliAutoPingFailed": "Falha no ping; execute o ping manualmente antes de tentar novamente a CLI em repetidores multi-hop.",
     "cliCommandTooLong": "O comando CLI é muito longo (máx. {{max}} caracteres).",
+    "cliCommandMustBeSingleLine": "O comando CLI deve ser uma única linha.",
     "currentRouteLabel": "Rota atual:",
     "neighborsLoadMore": "Carregar mais ({{loaded}} de {{total}} carregados)",
     "neighborsLoadMoreAria": "Carregar mais vizinhos ({{loaded}} de {{total}} carregados)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "Comando acompanhante",
     "consolePlaceholder": "por exemplo, obter rádio",
     "consoleSend": "Enviar",
+    "notConnected": "Não conectado a um rádio MeshCore.",
+    "requiresCliFirmware": "A CLI do companion exige o firmware MeshCore companion v1.18 ou mais recente.",
+    "commandMustBeSingleLine": "O comando do companion deve ser uma única linha.",
+    "commandTooLong": "O comando do companion é longo demais (máx. {{max}} bytes).",
     "groups": {
       "device": "Dispositivo",
       "radio": "...",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "Limite de mensagens de recuperação",
     "maxCollectedMessagesHint": "Máximo de mensagens que um Catch up pode coletar (100–5000). Padrão 2000. Valores mais altos demoram mais e podem precisar de um tempo limite maior.",
     "capacityHint": "Sobre {{count}} mensagens de malha típicas cabem uma passagem de inferência com este mecanismo (mais recentes primeiro). A atualização pode processar até {{ceiling}} mensagens através de vários passes. Mensagens mais longas usam mais de cada passagem. Grandes faixas precisam de um tempo limite mais longo.",
-    "capacityHintChooseEngine": "Os modelos integrados de OS AI e baixados se encaixam em cerca de {{onDevice}} mensagens típicas por passagem; um servidor local ou remoto sobre {{endpoint}}. A atualização pode cobrir até {{ceiling}} mensagens com várias passagens. Aumente o limite de mensagens e o tempo limite para malhas ocupadas."
+    "capacityHintChooseEngine": "Os modelos integrados de OS AI e baixados se encaixam em cerca de {{onDevice}} mensagens típicas por passagem; um servidor local ou remoto sobre {{endpoint}}. A atualização pode cobrir até {{ceiling}} mensagens com várias passagens. Aumente o limite de mensagens e o tempo limite para malhas ocupadas.",
+    "lowThreadBudgetWarning": "Este dispositivo tem apenas {{count}} Atualizar thread(s) WASM. Os resumos de modelos baixados geralmente precisam de cerca de 6 ou mais para funcionar bem e levarão mais tempo aqui. Prefira outro motor ou aumente o tempo limite abaixo."
   }
 }

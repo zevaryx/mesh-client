@@ -512,7 +512,8 @@
     "coiYes": "ja",
     "coiNo": "nicht",
     "coiTimingFine": "fein (~5 µs)",
-    "coiTimingCoarse": "grob (~100 µs)"
+    "coiTimingCoarse": "grob (~100 µs)",
+    "shareMyLocationOffStaticActive": "Die Standortfreigabe ist deaktiviert — Host-GPS-Autoaktualisierung und Mesh-Versand sind deaktiviert. Ihr aktiver gespeicherter Standort (und Funk-GPS, wenn verfügbar) werden weiterhin lokal für die Karten- und Entfernungsfilter verwendet."
   },
   "aria": {
     "closeDialog": "Schließen Dialog",
@@ -614,7 +615,8 @@
       "send_failed": "Verlaufsanfrage konnte nicht an das Funkgerät gesendet werden. Verbinden Sie sich erneut oder versuchen Sie es erneut.",
       "cooldown": "Der Verlauf wurde kürzlich für diesen Router abgerufen. Warten Sie, bevor Sie erneut anfordern.",
       "offline_gate": "Warten Sie nach dem Wiederverbinden einige Minuten, bevor der automatische Abruf ausgeführt wird. Verwenden Sie „Vom Store & Forward einholen“ manuell.",
-      "already_requested": "Für diesen Router wird bereits eine Verlaufsanforderung ausgeführt."
+      "already_requested": "Für diesen Router wird bereits eine Verlaufsanforderung ausgeführt.",
+      "missing_router_key": "Der Router-Schlüssel ist noch nicht bekannt. Warte auf Knoteninformationen und versuche es dann erneut."
     },
     "replyRequiresPacketId": "Antwort erfordert die RF-Paket-ID der Nachricht (warten Sie auf Sendebestätigung oder Chat-Aktualisierung).",
     "queueButton": "Warteschlange",
@@ -1180,7 +1182,10 @@
         "accessDeniedLinuxHint": "Fügen Sie unter Linux Ihren Benutzer zur Dialout-Gruppe hinzu: sudo usermod -aG dialout $USER (dann abmelden und wieder anmelden)",
         "disconnectedHint": "Stellen Sie sicher, dass das USB-Kabel angeschlossen und das Gerät eingeschaltet ist.",
         "timeoutHint": "Wenn der Anschluss kurzzeitig angezeigt wird, versuchen Sie, das USB-Kabel erneut anzuschließen.",
-        "portStillOpenHint": "Die serielle USB-Schnittstelle wurde nicht sauber freigegeben. Beenden Sie den mesh-client vollständig und öffnen Sie ihn erneut, oder ziehen Sie den Stecker und stecken Sie das USB-Kabel erneut ein und schließen Sie es erneut an."
+        "portStillOpenHint": "Die serielle USB-Schnittstelle wurde nicht sauber freigegeben. Beenden Sie den mesh-client vollständig und öffnen Sie ihn erneut, oder ziehen Sie den Stecker und stecken Sie das USB-Kabel erneut ein und schließen Sie es erneut an.",
+        "openFailedLinuxHint": "Auf Linux bedeutet dies oft, dass sich dein Benutzer nicht in der Dialout-Gruppe befindet (sudo usermod -aG dialout $USER, dann abmelden und wieder einloggen) oder ein anderes Programm den Port verwendet (Close Flashers, ModemManager oder serielle Terminals).",
+        "openFailedWindowsHint": "Stelle sicher, dass der richtige USB -Treiber installiert ist (CH340, CP210x oder FTDI). Schließe jede andere App über den COM-Port, ziehe dann den Stecker und stecke das Kabel erneut ein.",
+        "openFailedGenericHint": "Schließen Sie eine andere App über den seriellen Anschluss, ziehen Sie dann den Netzstecker und stecken Sie das USB -Kabel erneut ein, und versuchen Sie es erneut."
       },
       "http": {
         "timeoutMdnsWindows": "Unter Windows erfordert meshtastic.local Bonjour (installiert mit iTunes). Verwenden Sie stattdessen die IP-Adresse des Geräts.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "Route mit Ping vor CLI wird festgelegt...",
     "cliAutoPingFailed": "Ping fehlgeschlagen; vor erneutem CLI auf Mehrhop-Knoten Ping manuell ausführen.",
     "cliCommandTooLong": "Der CLI-Befehl ist zu lang (max. {{max}} Zeichen).",
+    "cliCommandMustBeSingleLine": "Der CLI-Befehl muss eine einzelne Zeile sein.",
     "currentRouteLabel": "Aktuelle Route:",
     "neighborsLoadMore": "Mehr laden ({{loaded}} von {{total}} geladen)",
     "neighborsLoadMoreAria": "Weitere Nachbarn laden ({{loaded}} von {{total}} geladen)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "Begleitkommando",
     "consolePlaceholder": "z.B. Radio holen",
     "consoleSend": "Senden",
+    "notConnected": "Nicht mit einem MeshCore-Funkgerät verbunden.",
+    "requiresCliFirmware": "Companion-CLI erfordert MeshCore-Companion-Firmware v1.18 oder neuer.",
+    "commandMustBeSingleLine": "Der Companion-Befehl muss eine einzelne Zeile sein.",
+    "commandTooLong": "Der Companion-Befehl ist zu lang (max. {{max}} Bytes).",
     "groups": {
       "device": "Gerät",
       "radio": "Radio-Tuning",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "Nachrichtenlimit aufholen",
     "maxCollectedMessagesHint": "Maximale Anzahl von Nachrichten, die ein Catch-up sammeln kann (100–5000). Standard 2000. Höhere Werte dauern länger und benötigen möglicherweise eine längere Zeitüberschreitung.",
     "capacityHint": "Über {{count}} typische Mesh-Nachrichten passen zu einem Inferenzdurchgang mit dieser Engine (neuere zuerst). Nachholen kann bis zu {{ceiling}} Nachrichten über mehrere Durchgänge verarbeiten. Längere Nachrichten verbrauchen mehr von jedem Durchgang. Große Reichweiten benötigen ein längeres Timeout.",
-    "capacityHintChooseEngine": "Die integrierte Betriebssystem-KI und heruntergeladene Modelle passen zu {{onDevice}} typischen Nachrichten pro Durchgang; ein lokaler oder Remote-Server zu {{endpoint}}. Nachholen kann bis zu {{ceiling}} Nachrichten mit Multi-Pass abdecken. Erhöhen Sie das Nachrichtenlimit und die Zeitüberschreitung für ausgelastete Netze."
+    "capacityHintChooseEngine": "Die integrierte Betriebssystem-KI und heruntergeladene Modelle passen zu {{onDevice}} typischen Nachrichten pro Durchgang; ein lokaler oder Remote-Server zu {{endpoint}}. Nachholen kann bis zu {{ceiling}} Nachrichten mit Multi-Pass abdecken. Erhöhen Sie das Nachrichtenlimit und die Zeitüberschreitung für ausgelastete Netze.",
+    "lowThreadBudgetWarning": "Dieses Gerät hat nur {{count}} Aufhol-WASM-Thread (s). Zusammenfassungen von heruntergeladenen Modellen benötigen in der Regel etwa 6 oder mehr, um gut zu laufen, und werden hier länger dauern. Bevorzugen Sie einen anderen Motor oder erhöhen Sie die Zeitüberschreitung unten."
   }
 }

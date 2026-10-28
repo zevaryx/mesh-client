@@ -512,7 +512,8 @@
     "coiYes": "Ya",
     "coiNo": "tidak",
     "coiTimingFine": "baik (~5 µs)",
-    "coiTimingCoarse": "kasar (~100 µs)"
+    "coiTimingCoarse": "kasar (~100 µs)",
+    "shareMyLocationOffStaticActive": "Berbagi lokasi tidak aktif — penyegaran otomatis GPS tuan rumah dan pengiriman jala dinonaktifkan. Lokasi tersimpan aktif Anda (dan GPS radio bila tersedia) masih digunakan secara lokal untuk filter peta dan jarak."
   },
   "aria": {
     "closeDialog": "Tutup dialog",
@@ -615,7 +616,8 @@
       "send_failed": "Tidak dapat mengirim permintaan riwayat ke radio. Sambungkan kembali atau coba lagi.",
       "cooldown": "Riwayat baru saja diambil untuk router ini. Tunggu sebelum meminta lagi.",
       "offline_gate": "Tunggu beberapa menit setelah tersambung kembali sebelum pengambilan otomatis berjalan; gunakan Kejar dari Toko & Teruskan secara manual.",
-      "already_requested": "Permintaan riwayat sudah berlangsung untuk router ini."
+      "already_requested": "Permintaan riwayat sudah berlangsung untuk router ini.",
+      "missing_router_key": "Kunci router belum diketahui. Tunggu informasi node, lalu coba lagi."
     },
     "replyRequiresPacketId": "Balasan memerlukan ID paket RF pesan (tunggu konfirmasi kirim atau segarkan obrolan).",
     "queueButton": "Antrian",
@@ -1182,7 +1184,10 @@
         "accessDeniedLinuxHint": "Di Linux, tambahkan pengguna Anda ke grup dialout: sudo usermod -aG dialout $USER (lalu logout dan masuk kembali)",
         "disconnectedHint": "Pastikan kabel USB terhubung dan perangkat dihidupkan.",
         "timeoutHint": "Jika port muncul sebentar, coba sambungkan kembali kabel USB.",
-        "portStillOpenHint": "Port serial USB tidak terlepas dengan bersih. Keluar dari mesh-client sepenuhnya dan buka kembali, atau cabut dan pasang kembali kabel USB, lalu sambungkan lagi."
+        "portStillOpenHint": "Port serial USB tidak terlepas dengan bersih. Keluar dari mesh-client sepenuhnya dan buka kembali, atau cabut dan pasang kembali kabel USB, lalu sambungkan lagi.",
+        "openFailedLinuxHint": "Pada Linux ini sering berarti pengguna Anda tidak berada dalam grup dialout (sudo usermod - aG dialout $USER, lalu keluar dan masuk kembali), atau program lain menggunakan port (close flasher, ModemManager, atau terminal serial).",
+        "openFailedWindowsHint": "Pastikan driver USB yang benar terpasang (CH340, CP210x, atau FTDI), tutup aplikasi lain menggunakan port com, lalu cabut dan pasang kembali kabelnya.",
+        "openFailedGenericHint": "Tutup aplikasi lain menggunakan port serial, lalu cabut dan pasang kembali kabel USB dan coba lagi."
       },
       "http": {
         "timeoutMdnsWindows": "Di Windows, meshtastic.local memerlukan Bonjour (diinstal dengan iTunes). Gunakan alamat IP perangkat sebagai gantinya.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "Menetapkan rute dengan Ping sebelum CLI…",
     "cliAutoPingFailed": "Ping gagal; jalankan Ping secara manual sebelum mencoba kembali CLI pada repeater multi - hop.",
     "cliCommandTooLong": "Perintah CLI terlalu panjang (maks {{max}} karakter).",
+    "cliCommandMustBeSingleLine": "Perintah CLI harus satu baris.",
     "currentRouteLabel": "Rute saat ini:",
     "neighborsLoadMore": "Muat lebih banyak ({{loaded}} dari {{total}})",
     "neighborsLoadMoreAria": "Muat lebih banyak tetangga ({{loaded}} dari {{total}} dimuat)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "Perintah pendamping",
     "consolePlaceholder": "mis. dapatkan radio",
     "consoleSend": "Kirim",
+    "notConnected": "Tidak terhubung ke radio MeshCore.",
+    "requiresCliFirmware": "CLI companion memerlukan firmware MeshCore companion v1.18 atau yang lebih baru.",
+    "commandMustBeSingleLine": "Perintah companion harus satu baris.",
+    "commandTooLong": "Perintah companion terlalu panjang (maks. {{max}} byte).",
     "groups": {
       "device": "Perangkat",
       "radio": "Penyetelan radio",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "Menangkap batas pesan",
     "maxCollectedMessagesHint": "Pesan maksimum yang dapat dikumpulkan oleh satu Penangkapan (100 -5000). Default 2000. Nilai yang lebih tinggi membutuhkan waktu lebih lama dan mungkin memerlukan batas waktu yang lebih besar.",
     "capacityHint": "Tentang {{count}} pesan mesh biasa sesuai dengan satu pass inferensi dengan mesin ini (lebih baru terlebih dahulu). Mengejar ketinggalan bisa memproses hingga {{ceiling}} pesan melalui beberapa pass. Pesan yang lebih panjang menggunakan lebih banyak pass. Rentang yang besar membutuhkan batas waktu yang lebih lama.",
-    "capacityHintChooseEngine": "Model AI dan unduhan OS bawaan cocok untuk {{onDevice}} pesan khas per pass; server lokal atau jarak jauh untuk {{endpoint}}. Kejar - kejaran bisa mencakup hingga {{ceiling}} pesan dengan multi - pass. Naikkan batas pesan dan batas waktu untuk jerat yang sibuk."
+    "capacityHintChooseEngine": "Model AI dan unduhan OS bawaan cocok untuk {{onDevice}} pesan khas per pass; server lokal atau jarak jauh untuk {{endpoint}}. Kejar - kejaran bisa mencakup hingga {{ceiling}} pesan dengan multi - pass. Naikkan batas pesan dan batas waktu untuk jerat yang sibuk.",
+    "lowThreadBudgetWarning": "Perangkat ini hanya memiliki {{count}} Tangkap utas WASM. Ringkasan model yang diunduh biasanya membutuhkan sekitar 6 atau lebih untuk berjalan dengan baik dan akan memakan waktu lebih lama di sini. Pilih mesin lain, atau naikkan batas waktu di bawah ini."
   }
 }

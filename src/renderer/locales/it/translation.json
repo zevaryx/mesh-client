@@ -512,7 +512,8 @@
     "coiYes": "si",
     "coiNo": "no",
     "coiTimingFine": "fine (~5 µs)",
-    "coiTimingCoarse": "grossolana (~100 µs)"
+    "coiTimingCoarse": "grossolana (~100 µs)",
+    "shareMyLocationOffStaticActive": "La condivisione della posizione è disattivata: l'aggiornamento automatico del GPS dell'host e l'invio di mesh sono disabilitati. La tua posizione salvata attiva (e il GPS radio quando disponibile) sono ancora utilizzati localmente per i filtri mappa e distanza."
   },
   "aria": {
     "closeDialog": "Chiudi finestra",
@@ -614,7 +615,8 @@
       "send_failed": "Impossibile inviare la richiesta di cronologia alla radio. Riconnettiti o riprova.",
       "cooldown": "La cronologia è stata recuperata di recente per questo router. Attendi prima di richiedere di nuovo.",
       "offline_gate": "Attendere alcuni minuti dopo la riconnessione prima di eseguire il recupero automatico; utilizzare Recupera manualmente.",
-      "already_requested": "È già in corso una richiesta di cronologia per questo router."
+      "already_requested": "È già in corso una richiesta di cronologia per questo router.",
+      "missing_router_key": "La chiave del router non è ancora nota. Attendi le informazioni del nodo, poi riprova."
     },
     "replyRequiresPacketId": "La risposta richiede l'ID del pacchetto RF del messaggio (attendere la conferma di invio o aggiornare la chat).",
     "queueButton": "Coda",
@@ -1180,7 +1182,10 @@
         "accessDeniedLinuxHint": "Su Linux, aggiungi il tuo utente al gruppo dialout: sudo usermod -aG dialout $USER (quindi disconnettiti e accedi nuovamente)",
         "disconnectedHint": "Assicurarsi che il cavo USB sia collegato e che il dispositivo sia acceso.",
         "timeoutHint": "Se la porta viene visualizzata brevemente, provare a ricollegare il cavo USB.",
-        "portStillOpenHint": "La porta seriale USB non è stata rilasciata in modo corretto. Esci completamente da mesh-client e riaprilo oppure scollega e ricollega il cavo USB, quindi ricollegalo."
+        "portStillOpenHint": "La porta seriale USB non è stata rilasciata in modo corretto. Esci completamente da mesh-client e riaprilo oppure scollega e ricollega il cavo USB, quindi ricollegalo.",
+        "openFailedLinuxHint": "Il Linux questo spesso significa che il tuo utente non è nel gruppo di chiamate in uscita (sudo usermod -aG dialout $USER, quindi esci e riaccedi), o che un altro programma sta utilizzando la porta (chiudi flashers, ModemManager o terminali seriali).",
+        "openFailedWindowsHint": "Assicurarsi che sia installato il driver USB corretto (CH340, CP210x o FTDI), chiudere qualsiasi altra app utilizzando la porta COM, quindi scollegare e ricollegare il cavo.",
+        "openFailedGenericHint": "Chiudere qualsiasi altra app utilizzando la porta seriale, quindi scollegare e ricollegare il cavo USB e riprovare."
       },
       "http": {
         "timeoutMdnsWindows": "Su Windows, Meshtastic.local richiede Bonjour (installato con iTunes). Utilizza invece l'indirizzo IP del dispositivo.",
@@ -5092,6 +5097,7 @@
     "cliAutoPingToast": "Stabilire il percorso con Ping prima di CLI...",
     "cliAutoPingFailed": "Ping non riuscito; eseguire Ping manualmente prima di riprovare CLI su ripetitori multi-hop.",
     "cliCommandTooLong": "Il comando CLI è troppo lungo (max {{max}} caratteri).",
+    "cliCommandMustBeSingleLine": "Il comando CLI deve essere su una sola riga.",
     "currentRouteLabel": "Itinerario attuale:",
     "neighborsLoadMore": "Carica altro ({{loaded}} di {{total}} caricati)",
     "neighborsLoadMoreAria": "Carica altri vicini ({{loaded}} di {{total}} caricati)",
@@ -7531,6 +7537,10 @@
     "consoleInput": "Comando Companion",
     "consolePlaceholder": "ad es. prendi la radio",
     "consoleSend": "Invia",
+    "notConnected": "Non connesso a una radio MeshCore.",
+    "requiresCliFirmware": "La CLI companion richiede il firmware MeshCore companion v1.18 o successivo.",
+    "commandMustBeSingleLine": "Il comando companion deve essere su una sola riga.",
+    "commandTooLong": "Il comando companion è troppo lungo (max {{max}} byte).",
     "groups": {
       "device": "Dispositivo",
       "radio": "Sintonizzazione radio",
@@ -7844,6 +7854,7 @@
     "maxCollectedMessages": "Raggiungi il limite di messaggi",
     "maxCollectedMessagesHint": "Numero massimo di messaggi che un Recupero può raccogliere (100–5000). Valore predefinito 2000. I valori più alti richiedono più tempo e potrebbero richiedere un timeout maggiore.",
     "capacityHint": "Circa {{count}} i messaggi mesh tipici si adattano a un passaggio di inferenza con questo motore (prima i più recenti). Il recupero può elaborare fino a {{ceiling}} messaggi tramite più passaggi. I messaggi più lunghi utilizzano più di ogni passaggio. Le grandi gamme richiedono un timeout più lungo.",
-    "capacityHintChooseEngine": "L'intelligenza artificiale del sistema operativo integrato e i modelli scaricati si adattano a circa {{onDevice}} messaggi tipici per passaggio; un server locale o remoto a circa {{endpoint}}. Il recupero può coprire fino a {{ceiling}} messaggi con multi-pass. Aumentare il limite di messaggi e il timeout per le mesh occupate."
+    "capacityHintChooseEngine": "L'intelligenza artificiale del sistema operativo integrato e i modelli scaricati si adattano a circa {{onDevice}} messaggi tipici per passaggio; un server locale o remoto a circa {{endpoint}}. Il recupero può coprire fino a {{ceiling}} messaggi con multi-pass. Aumentare il limite di messaggi e il timeout per le mesh occupate.",
+    "lowThreadBudgetWarning": "Questo dispositivo ha solo {{count}} Recupera thread WASM. I riepiloghi dei modelli scaricati di solito ne richiedono circa 6 o più per funzionare bene e richiederanno più tempo qui. Preferisci un altro motore o aumenta il timeout qui sotto."
   }
 }
